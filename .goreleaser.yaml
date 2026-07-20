@@ -1,0 +1,39 @@
+version: 2
+
+project_name: harmos
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  # darwin needs cgo for the concealed-clipboard path (spec §4a); built on a
+  # macOS runner.
+  - id: darwin
+    main: ./cmd/harmos
+    binary: harmos
+    env:
+      - CGO_ENABLED=1
+    goos: [darwin]
+    goarch: [amd64, arm64]
+  # linux and windows stay pure Go and cross-compile.
+  - id: nocgo
+    main: ./cmd/harmos
+    binary: harmos
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  use: github
