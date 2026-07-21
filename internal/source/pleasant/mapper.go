@@ -36,6 +36,17 @@ const (
 	MetaExpiry    = "harmos.Expiry"
 )
 
+// Cache KDF cost (spec §14). gokeepasslib's default is a weak 1 MiB / 2 rounds;
+// this is the OWASP Argon2 baseline — 19 MiB, 2 iterations, 1 lane — far dearer
+// to brute-force if the cache file leaks, still a sub-second unlock. The cache
+// is a re-syncable derived artifact, so this is a deliberate, documented middle
+// ground, not the library default by accident.
+const (
+	cacheKDFMemoryBytes uint64 = 19 * 1024 * 1024 // 19 MiB
+	cacheKDFIterations  uint64 = 2
+	cacheKDFParallelism uint32 = 1
+)
+
 // Meta is provenance written into the kdbx so status/TUI can report cache age
 // and package expiry without a network call (spec §6).
 type Meta struct {
@@ -105,6 +116,13 @@ func Map(zr *zip.Reader, meta Meta) (*Result, error) {
 // Write encrypts db with the master password and writes it to path as a 0600
 // KDBX4 file.
 func Write(db *gokeepasslib.Database, path string, master secret.Secret) (err error) {
+	// Strengthen the Argon2 cost beyond gokeepasslib's weak default (§14).
+	if kdf := db.Header.FileHeaders.KdfParameters; kdf != nil {
+		kdf.Memory = cacheKDFMemoryBytes
+		kdf.Iterations = cacheKDFIterations
+		kdf.Parallelism = cacheKDFParallelism
+	}
+
 	db.Credentials = gokeepasslib.NewPasswordCredentials(master.Reveal())
 	if err := db.LockProtectedEntries(); err != nil {
 		return fmt.Errorf("lock entries: %w", err)
