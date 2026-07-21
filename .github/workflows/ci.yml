@@ -38,6 +38,22 @@ jobs:
         if: runner.os == 'macOS'
         run: CGO_ENABLED=1 go build ./internal/clip/...
 
+  oracle:
+    # The differential check: an independent tool must open the cache we produce.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - name: Install keepassxc-cli
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends keepassxc
+          keepassxc-cli --version
+      - name: Oracle test
+        run: go test -run TestKeepassXCOpensCache ./internal/source/pleasant/
+
   lint:
     runs-on: ubuntu-latest
     steps:
