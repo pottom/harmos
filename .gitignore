@@ -1,0 +1,38 @@
+# === SECRETS — never commit ===
+# Credentials, tokens, master passwords. One stray leak burns a public repo.
+.env
+.env.*
+*.env
+*.token
+
+# OS keyring / cert material
+*.key
+*.pem
+!**/testdata/**/*.pem   # allow synthetic test certs only under testdata/
+
+# === Local vault caches & KeePass files ===
+*.kdbx
+*.kdbx.lock
+*.lock
+
+# === PoC / scratch / raw dumps (real data) ===
+scratch/
+tmp/
+*.dump
+*.dump.json
+dump*.json
+offline-package*.json
+offlinepackage*.json
+
+# === PoC findings — may hold real data until sanitized ===
+FINDINGS.md
+
+# === Real config with credentials ===
+config.toml
+
+# === Build / tooling ===
+/harmos
+/dist/
+*.out
+coverage.*
+.DS_Store

@@ -1,0 +1,23 @@
+name: gitleaks
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1" # weekly full-history sweep
+
+permissions:
+  contents: read
+  pull-requests: read # gitleaks-action lists PR commits via the API on pull_request
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history — a leak must scream on the push that made it
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # required to scan pull_request events
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
