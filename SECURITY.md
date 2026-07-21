@@ -14,6 +14,14 @@ will get an acknowledgement as soon as possible.
 software. Read the source before trusting it with credentials; that is a
 deliberate design goal (the codebase is meant to be small and auditable).
 
+## At-rest protection of the cache
+
+Each Pleasant cache is a KDBX4 file encrypted with ChaCha20-256, keyed from your
+harmos master password via Argon2d. The cache is a re-syncable derived artifact,
+so the KDF cost is a deliberate middle ground (spec §14): **19 MiB memory, 2
+iterations** — the OWASP Argon2 baseline, far dearer to brute-force than a
+library default, while keeping unlock well under a second.
+
 ## Honest limitations
 
 - **Memory zeroing is best-effort only.** Go's garbage collector may move
