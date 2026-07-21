@@ -3,6 +3,7 @@ package pleasant
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -34,7 +35,7 @@ func TestSyncProducesOpenableCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cache not written: %v", err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Errorf("cache perms = %#o, want 0600", info.Mode().Perm())
 	}
 

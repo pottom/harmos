@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -89,7 +90,9 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	if info.Mode().Perm()&0o077 != 0 {
+	// POSIX permission bits are not meaningful on Windows (it uses ACLs), where
+	// files report 0666 regardless; only enforce 0600 where it applies.
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf("config %s is group/world accessible (mode %#o); run: chmod 600 %s",
 			path, info.Mode().Perm(), path)
 	}

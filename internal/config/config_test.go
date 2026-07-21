@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -75,6 +76,9 @@ path = "/tmp/x.kdbx"
 }
 
 func TestRejectsLoosePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permissions are not enforced on Windows")
+	}
 	path := writeConfig(t, valid)
 	if err := os.Chmod(path, 0o644); err != nil {
 		t.Fatal(err)
