@@ -28,7 +28,7 @@ func newLsCmd() *cobra.Command {
 }
 
 func runLs(configPath, profile string, out io.Writer) error {
-	res, err := openAll(configPath)
+	res, _, err := openAll(configPath)
 	if err != nil {
 		return err
 	}

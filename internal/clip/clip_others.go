@@ -1,10 +1,16 @@
-//go:build !darwin
+//go:build !darwin && !linux && !windows
 
 package clip
 
-// Non-darwin platforms use MIME/format hints (KDE, wl-clipboard) or a Win32
-// clipboard format instead of a pasteboard type; those land with the clipboard
-// milestone. No cgo here, so Linux and Windows cross-compile normally.
-func concealedType() string {
-	return ""
+import "fmt"
+
+// No clipboard convention (and no implementation) on this platform.
+func concealedType() string { return "" }
+
+func platformWrite([]byte) error {
+	return fmt.Errorf("clipboard not supported on this platform")
+}
+
+func platformRead() ([]byte, error) {
+	return nil, fmt.Errorf("clipboard not supported on this platform")
 }

@@ -39,14 +39,14 @@ func resolveMaster() (secret.Secret, error) {
 // openAll loads the config, resolves the master, and opens every source. A kdbx
 // source's own password comes from a prompt on a TTY; with no TTY a
 // password-protected external file is simply excluded (spec §2a).
-func openAll(configPath string) (*session.Result, error) {
+func openAll(configPath string) (*session.Result, *config.Config, error) {
 	cfg, err := loadConfigAt(configPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	master, err := resolveMaster()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ask := func(p config.Profile) (secret.Secret, error) {
 		if onTTY() {
@@ -54,7 +54,7 @@ func openAll(configPath string) (*session.Result, error) {
 		}
 		return secret.Secret{}, nil
 	}
-	return session.Open(cfg, master, ask), nil
+	return session.Open(cfg, master, ask), cfg, nil
 }
 
 func warnExcluded(res *session.Result) {
