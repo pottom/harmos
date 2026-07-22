@@ -1,0 +1,200 @@
+package vault
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"testing"
+
+	gokeepasslib "github.com/tobischo/gokeepasslib/v3"
+	w "github.com/tobischo/gokeepasslib/v3/wrappers"
+
+	"github.com/pottom/harmos/internal/secret"
+)
+
+func val(k, v string) gokeepasslib.ValueData {
+	return gokeepasslib.ValueData{Key: k, Value: gokeepasslib.V{Content: v}}
+}
+func pval(k, v string) gokeepasslib.ValueData {
+	return gokeepasslib.ValueData{Key: k, Value: gokeepasslib.V{Content: v, Protected: w.NewBoolWrapper(true)}}
+}
+
+// makeKDBX writes a small KDBX4 file (Root/Infra/db-prod) with the given creds.
+func makeKDBX(t *testing.T, path string, creds *gokeepasslib.DBCredentials) {
+	t.Helper()
+	db := gokeepasslib.NewDatabase(gokeepasslib.WithDatabaseKDBXVersion4())
+	db.Credentials = creds
+	e := gokeepasslib.NewEntry()
+	e.Values = append(e.Values,
+		val("Title", "db-prod"),
+		val("UserName", "svc"),
+		pval("Password", "secret-pw"),
+		val("URL", "https://db"),
+	)
+	e.Tags = "infra;prod"
+	infra := gokeepasslib.NewGroup()
+	infra.Name = "Infra"
+	infra.Entries = []gokeepasslib.Entry{e}
+	root := gokeepasslib.NewGroup()
+	root.Name = "Root"
+	root.Groups = []gokeepasslib.Group{infra}
+	db.Content.Root = &gokeepasslib.RootData{Groups: []gokeepasslib.Group{root}}
+	if err := db.LockProtectedEntries(); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := gokeepasslib.NewEncoder(f).Encode(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func makeKeyfile(t *testing.T) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "key.keyx")
+	if err := os.WriteFile(p, []byte("synthetic-keyfile-content-0123456789"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// keyData reads a keyfile's bytes. Use the *DataCredentials constructors in
+// tests too: gokeepasslib's path-based constructors leak the file handle, which
+// blocks temp-dir cleanup on Windows.
+func keyData(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func assertOneEntry(t *testing.T, v *Vault) {
+	t.Helper()
+	if len(v.Entries) != 1 {
+		t.Fatalf("entries = %d, want 1", len(v.Entries))
+	}
+	e := v.Entries[0]
+	if e.Title != "db-prod" || e.Username != "svc" || e.URL != "https://db" {
+		t.Errorf("fields wrong: %+v", e)
+	}
+	if e.Path != "Infra" {
+		t.Errorf("path = %q, want Infra (root group name dropped)", e.Path)
+	}
+	if e.Password.Reveal() != "secret-pw" {
+		t.Error("password did not round-trip")
+	}
+	if len(e.Tags) != 2 {
+		t.Errorf("tags = %v, want 2", e.Tags)
+	}
+}
+
+func TestOpenPasswordOnly(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "pw.kdbx")
+	makeKDBX(t, p, gokeepasslib.NewPasswordCredentials("pw"))
+
+	v, err := Open(p, "work", Credentials{Password: secret.New("pw")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Source != "work" || v.Entries[0].Source != "work" {
+		t.Error("source not tagged")
+	}
+	assertOneEntry(t, v)
+}
+
+func TestOpenKeyfileOnly(t *testing.T) {
+	key := makeKeyfile(t)
+	creds, err := gokeepasslib.NewKeyDataCredentials(keyData(t, key))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(t.TempDir(), "key.kdbx")
+	makeKDBX(t, p, creds)
+
+	v, err := Open(p, "k", Credentials{Keyfile: key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOneEntry(t, v)
+}
+
+func TestOpenPasswordAndKeyfile(t *testing.T) {
+	key := makeKeyfile(t)
+	creds, err := gokeepasslib.NewPasswordAndKeyDataCredentials("pw", keyData(t, key))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(t.TempDir(), "both.kdbx")
+	makeKDBX(t, p, creds)
+
+	// opens with BOTH
+	v, err := Open(p, "both", Credentials{Password: secret.New("pw"), Keyfile: key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOneEntry(t, v)
+
+	// must NOT open with the password alone
+	if _, err := Open(p, "both", Credentials{Password: secret.New("pw")}); err == nil {
+		t.Error("a composite-key file must not open with the password alone")
+	}
+}
+
+// The core M3 invariant: reading an external kdbx never modifies it.
+func TestReadOnlyInvariant(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "ro.kdbx")
+	makeKDBX(t, p, gokeepasslib.NewPasswordCredentials("pw"))
+
+	before, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeInfo, _ := os.Stat(p)
+
+	v, err := Open(p, "s", Credentials{Password: secret.New("pw")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range v.Entries { // touch every field, including secrets
+		_ = e.Password.Reveal()
+	}
+
+	after, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterInfo, _ := os.Stat(p)
+
+	if !bytes.Equal(before, after) {
+		t.Error("file bytes changed after a read session")
+	}
+	if !beforeInfo.ModTime().Equal(afterInfo.ModTime()) {
+		t.Errorf("mtime changed: %v -> %v", beforeInfo.ModTime(), afterInfo.ModTime())
+	}
+	// no KeePass lock file created beside it
+	if _, err := os.Stat(p + ".lock"); !os.IsNotExist(err) {
+		t.Error("a .lock file was created next to the source")
+	}
+}
+
+func TestOpenErrors(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "e.kdbx")
+	makeKDBX(t, p, gokeepasslib.NewPasswordCredentials("pw"))
+
+	if _, err := Open(p, "s", Credentials{}); err == nil {
+		t.Error("no credentials should error")
+	}
+	if _, err := Open(p, "s", Credentials{Password: secret.New("wrong")}); err == nil {
+		t.Error("wrong password should error")
+	}
+	if _, err := Open(filepath.Join(t.TempDir(), "missing.kdbx"), "s", Credentials{Password: secret.New("x")}); err == nil {
+		t.Error("missing file should error")
+	}
+}
