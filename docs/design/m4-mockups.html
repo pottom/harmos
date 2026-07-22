@@ -1,0 +1,324 @@
+<title>harmos — M4 TUI design review</title>
+
+<style>
+  :root {
+    /* page chrome — steel-warm neutrals, brass accent (previews the real tokens) */
+    --page-bg: #100f0c;
+    --page-surface: #17150f;
+    --page-line: #2a281f;
+    --ink: #d9d4c6;
+    --ink-dim: #9a9484;
+    --ink-faint: #6c6656;
+    --brass: #d4a24c;
+    --brass-deep: #b8863a;
+    --teal: #5fb0a0;
+    --rust: #c76a52;
+    --radius: 10px;
+    --maxw: 1180px;
+    --mono: ui-monospace, "SF Mono", "Menlo", "Consolas", monospace;
+    --sans: ui-sans-serif, -apple-system, "Segoe UI", "Helvetica Neue", sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --page-bg: #efe9dc; --page-surface: #f6f1e6; --page-line: #d9d1bf;
+      --ink: #2a271f; --ink-dim: #6b6455; --ink-faint: #938b78;
+      --brass: #9a6f22; --brass-deep: #7d591b; --teal: #2f7d6e; --rust: #a2472f;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page-bg: #100f0c; --page-surface: #17150f; --page-line: #2a281f;
+    --ink: #d9d4c6; --ink-dim: #9a9484; --ink-faint: #6c6656;
+    --brass: #d4a24c; --brass-deep: #b8863a; --teal: #5fb0a0; --rust: #c76a52;
+  }
+  :root[data-theme="light"] {
+    --page-bg: #efe9dc; --page-surface: #f6f1e6; --page-line: #d9d1bf;
+    --ink: #2a271f; --ink-dim: #6b6455; --ink-faint: #938b78;
+    --brass: #9a6f22; --brass-deep: #7d591b; --teal: #2f7d6e; --rust: #a2472f;
+  }
+
+  body {
+    background: var(--page-bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: clamp(1.2rem, 4vw, 3rem) clamp(1rem, 4vw, 2rem) 5rem; }
+
+  header.masthead { border-bottom: 1px solid var(--page-line); padding-bottom: 1.6rem; margin-bottom: 2.2rem; }
+  .kicker { font-family: var(--mono); font-size: .72rem; letter-spacing: .22em; text-transform: uppercase; color: var(--brass); }
+  h1 { font-size: clamp(1.7rem, 4.2vw, 2.7rem); font-weight: 620; letter-spacing: -0.01em; text-wrap: balance; margin: .5rem 0 .3rem; }
+  h1 .lower { color: var(--ink); }
+  .dek { color: var(--ink-dim); max-width: 62ch; font-size: 1.02rem; }
+
+  /* the three decisions the owner makes */
+  .decisions { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); margin-top: 1.6rem; }
+  .decision { background: var(--page-surface); border: 1px solid var(--page-line); border-radius: var(--radius); padding: .95rem 1.05rem; }
+  .decision .n { font-family: var(--mono); font-size: .72rem; color: var(--brass); letter-spacing: .1em; }
+  .decision h3 { font-size: .98rem; margin: .15rem 0 .25rem; font-weight: 600; }
+  .decision p { font-size: .86rem; color: var(--ink-dim); }
+
+  section { margin-top: 3.2rem; }
+  .sechead { display: flex; align-items: baseline; gap: .8rem; border-bottom: 1px solid var(--page-line); padding-bottom: .5rem; margin-bottom: 1.4rem; flex-wrap: wrap; }
+  .sechead h2 { font-size: 1.28rem; font-weight: 600; letter-spacing: -0.005em; }
+  .sechead .tag { font-family: var(--mono); font-size: .72rem; color: var(--ink-faint); letter-spacing: .08em; }
+  .note { color: var(--ink-dim); font-size: .9rem; max-width: 68ch; margin-bottom: 1.2rem; }
+  .note b { color: var(--ink); font-weight: 600; }
+
+  .pair { display: grid; gap: 1.4rem; grid-template-columns: 1fr; }
+  @media (min-width: 900px) { .pair { grid-template-columns: 1fr 1fr; } }
+
+  .specimen { min-width: 0; }
+  .specimen .cap { font-family: var(--mono); font-size: .74rem; letter-spacing: .06em; margin-bottom: .5rem; display: flex; gap: .5rem; align-items: center; }
+  .specimen .cap .dot { width: .55rem; height: .55rem; border-radius: 50%; }
+  .cap .lead { color: var(--ink); font-weight: 600; }
+  .cap .sub { color: var(--ink-faint); }
+
+  /* ---- terminal specimen ---- */
+  .term {
+    --bg: #0e0d0b; --surface: #16130d; --line: #2b2820;
+    --fg: #c3bdad; --dim: #837d6d; --faint: #575142;
+    --acc: #d4a24c; --acc-bg: #2c2314; --ok: #5fb0a0; --bad: #c76a52; --hl: #e7c988;
+    background: var(--bg); color: var(--fg);
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.5;
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: .7rem .85rem; overflow-x: auto;
+  }
+  .term.charm {
+    --bg: #100f18; --surface: #17162200; --line: #2a2740;
+    --fg: #c9c6d8; --dim: #7f7c98; --faint: #565274;
+    --acc: #7D56F4; --acc-bg: #241d3f; --ok: #43d69a; --bad: #ff5f87; --hl: #b9a7ff;
+  }
+  .term .scr { min-width: max-content; }
+  .row { display: flex; white-space: pre; }
+  .grow { flex: 1; }
+  .dim { color: var(--dim); } .faint { color: var(--faint); }
+  .acc { color: var(--acc); } .ok { color: var(--ok); } .bad { color: var(--bad); }
+  .hl { color: var(--hl); } .strong { color: #efe9da; font-weight: 600; }
+  .term.charm .strong { color: #f0eefc; }
+  .brand { color: var(--acc); font-weight: 700; }
+  .sel { background: var(--acc-bg); color: var(--fg); }
+  .sel .acc { color: var(--hl); }
+  .badge { color: var(--dim); }
+  .rule { color: var(--faint); }
+  .sep { color: var(--faint); }
+  .match { color: var(--acc); text-decoration: underline; text-underline-offset: 2px; }
+  .term.charm .match { color: var(--bad); }
+
+  /* countdown bar built from box characters */
+  .bar .fill { color: var(--acc); }
+  .bar .empty { color: var(--faint); }
+  .term.charm .bar .fill { background: linear-gradient(90deg, #ff5f87, #7D56F4); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+  .blank { height: .35rem; }
+
+  /* palette swatches */
+  .swatches { display: grid; gap: .7rem; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .sw { border: 1px solid var(--page-line); border-radius: 8px; overflow: hidden; background: var(--page-surface); }
+  .sw .chip { height: 52px; }
+  .sw .meta { padding: .5rem .6rem; font-family: var(--mono); font-size: .72rem; }
+  .sw .meta .role { color: var(--ink); font-weight: 600; }
+  .sw .meta .hex { color: var(--ink-dim); }
+
+  .colcols { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); margin-top: .4rem; }
+  .colcol { font-family: var(--mono); font-size: .78rem; border: 1px solid var(--page-line); border-radius: 8px; padding: .55rem .65rem; background: var(--page-surface); }
+  .colcol .w { color: var(--brass); font-size: .72rem; letter-spacing: .05em; }
+  .colcol ol { list-style: none; margin-top: .3rem; }
+  .colcol li { color: var(--ink-dim); padding: .08rem 0; }
+  .colcol li.keep { color: var(--ink); }
+  .colcol li.drop { text-decoration: line-through; color: var(--ink-faint); }
+
+  footer { margin-top: 4rem; border-top: 1px solid var(--page-line); padding-top: 1.4rem; color: var(--ink-faint); font-size: .82rem; font-family: var(--mono); }
+  a { color: var(--brass); }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <div class="kicker">harmos · milestone M4 · design phase (paper only)</div>
+    <h1>Two ways to dress a <span class="lower">password bench</span></h1>
+    <p class="dek">The engine is done; this decides how it looks. Every screen below is drawn against the real vault's shape — ~10k entries, folders eight deep, titles up to 123 columns, duplicate names, accents everywhere. Same data, two treatments. Pick, and theming becomes free.</p>
+
+    <div class="decisions">
+      <div class="decision"><div class="n">Decision 1</div><h3>Default theme</h3><p>Brass (locksmith's bench) or charm (the stock Charm purple/pink). This is the one that matters.</p></div>
+      <div class="decision"><div class="n">Decision 2</div><h3>Breakpoints</h3><p>Where the layout switches from two-pane to push/pop to compact. Starting guesses shown; adjust to the content.</p></div>
+      <div class="decision"><div class="n">Decision 3</div><h3>Column-drop order</h3><p>What falls away as the terminal narrows. Title and the source badge never drop.</p></div>
+    </div>
+  </header>
+
+  <!-- ===================== THEME COMPARISON ===================== -->
+  <section>
+    <div class="sechead"><h2>Decision 1 — the two themes, same screen</h2><span class="tag">browsing · search “admin” · ≥100 cols · two-pane</span></div>
+    <p class="note">Six <b>admin</b> hits across four sources — the case where copying the wrong one is the worst thing the program can do. Watch what carries the meaning: in <b>brass</b>, amber is spent only on the secret and the selected row, so the source badge and the countdown read instantly. In <b>charm</b>, the purple selection and the pink countdown gradient compete with each other and with everything else.</p>
+    <div class="pair">
+
+      <!-- BRASS -->
+      <div class="specimen">
+        <div class="cap"><span class="dot" style="background:var(--brass)"></span><span class="lead">brass</span><span class="sub">— amber reserved for secrets</span></div>
+        <div class="term brass"><div class="scr">
+          <div class="row"><span class="brand">harmos</span><span class="dim">  4 sources</span><span class="grow"></span><span class="strong">work</span><span> </span><span class="ok">●</span><span class="dim"> 2h   </span><span class="strong">client-a</span><span> </span><span class="bad">●</span><span class="dim"> 4d   </span><span class="strong">personal</span><span> </span><span class="ok">●</span><span class="dim">   </span><span class="strong">archive</span><span> </span><span class="ok">●</span></div>
+          <div class="row rule">────────────────────────────────────────────────────────────────────────────────────────</div>
+          <div class="row"><span class="dim">search  </span><span class="strong">admin</span><span class="acc">▏</span><span class="grow"></span><span class="dim">6 matches · 4 sources</span></div>
+          <div class="blank"></div>
+          <div class="row sel"><span> </span><span class="strong">work</span><span>      </span><span class="acc">Infra/db-prod</span><span>     </span><span class="hl">svc_admin</span><span class="grow"></span><span class="dim"> │ </span></div>
+          <div class="row"><span class="dim"> work      Infra/db-staging  </span><span>svc_</span><span class="match">admin</span><span class="grow"></span><span class="dim"> │  </span><span class="strong">db-prod</span></div>
+          <div class="row"><span class="dim"> client-a  Infra/db-prod     svc_</span><span class="match">admin</span><span class="grow"></span><span class="dim"> │  work · Infra</span></div>
+          <div class="row"><span class="dim"> client-a  Infra/db-staging  </span><span class="match">admin</span><span class="grow"></span><span class="dim"> │</span></div>
+          <div class="row"><span class="dim"> personal  Router            </span><span class="match">admin</span><span class="grow"></span><span class="dim"> │  Username  svc_admin</span></div>
+          <div class="row"><span class="dim"> archive   Old/jenkins       </span><span class="match">admin</span><span class="grow"></span><span class="dim"> │  Password  </span><span class="acc">•••••••••••</span><span class="dim">  r reveal</span></div>
+          <div class="row"><span class="grow"></span><span class="dim">│  URL       postgres://db-prod…:5432</span></div>
+          <div class="row"><span class="grow"></span><span class="dim">│  Modified  2026-03-14</span></div>
+          <div class="row rule">────────────────────────────────────────────────────────────────────────────────────────</div>
+          <div class="row bar"><span class="fill">▐████████████</span><span class="empty">░░░░░░░</span><span class="acc"> 22s</span><span class="dim">   copied </span><span class="strong">work · Infra · db-prod</span></div>
+          <div class="row faint">enter copy · tab detail · esc clear · ? more</div>
+        </div></div>
+      </div>
+
+      <!-- CHARM -->
+      <div class="specimen">
+        <div class="cap"><span class="dot" style="background:#7D56F4"></span><span class="lead">charm</span><span class="sub">— stock purple/pink</span></div>
+        <div class="term charm"><div class="scr">
+          <div class="row"><span class="brand">harmos</span><span class="dim">  4 sources</span><span class="grow"></span><span class="strong">work</span><span> </span><span class="ok">●</span><span class="dim"> 2h   </span><span class="strong">client-a</span><span> </span><span class="bad">●</span><span class="dim"> 4d   </span><span class="strong">personal</span><span> </span><span class="ok">●</span><span class="dim">   </span><span class="strong">archive</span><span> </span><span class="ok">●</span></div>
+          <div class="row rule">────────────────────────────────────────────────────────────────────────────────────────</div>
+          <div class="row"><span class="acc">❯ </span><span class="strong">admin</span><span class="acc">▏</span><span class="grow"></span><span class="dim">6 matches</span></div>
+          <div class="blank"></div>
+          <div class="row sel"><span class="acc">❯ </span><span class="strong">work</span><span>     </span><span class="acc">Infra/db-prod</span><span>     </span><span class="hl">svc_admin</span><span class="grow"></span><span class="dim"> │ </span></div>
+          <div class="row"><span class="dim"> work      Infra/db-staging  </span><span>svc_</span><span class="match">admin</span><span class="grow"></span><span class="dim"> │  </span><span class="strong">db-prod</span></div>
+          <div class="row"><span class="dim"> client-a  Infra/db-prod     svc_</span><span class="match">admin</span><span class="grow"></span><span class="dim"> │  work · Infra</span></div>
+          <div class="row"><span class="dim"> client-a  Infra/db-staging  </span><span class="match">admin</span><span class="grow"></span><span class="dim"> │</span></div>
+          <div class="row"><span class="dim"> personal  Router            </span><span class="match">admin</span><span class="grow"></span><span class="dim"> │  Username  svc_admin</span></div>
+          <div class="row"><span class="dim"> archive   Old/jenkins       </span><span class="match">admin</span><span class="grow"></span><span class="dim"> │  Password  </span><span class="acc">•••••••••••</span><span class="dim">  r reveal</span></div>
+          <div class="row"><span class="grow"></span><span class="dim">│  URL       postgres://db-prod…:5432</span></div>
+          <div class="row"><span class="grow"></span><span class="dim">│  Modified  2026-03-14</span></div>
+          <div class="row rule">────────────────────────────────────────────────────────────────────────────────────────</div>
+          <div class="row bar"><span class="fill">▐████████████</span><span class="empty">░░░░░░░</span><span class="acc"> 22s</span><span class="dim">   copied </span><span class="strong">work · Infra · db-prod</span></div>
+          <div class="row faint">enter copy · tab detail · esc clear · ? more</div>
+        </div></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===================== BREAKPOINTS ===================== -->
+  <section>
+    <div class="sechead"><h2>Decision 2 — the breakpoint ladder</h2><span class="tag">brass · same search, four widths</span></div>
+    <p class="note">Narrow isn't a squashed wide — it's a different interaction. At <b>60–99</b> the detail pane leaves and <span style="color:var(--brass)">→</span> navigates <i>into</i> an entry. At <b>40–59</b> columns drop from the right. Under <b>40×10</b> it refuses rather than garbles. The <b>source badge never drops</b> — provenance outranks aesthetics.</p>
+
+    <div class="pair">
+      <div class="specimen">
+        <div class="cap"><span class="lead">≥ 100 cols</span><span class="sub">— two-pane (as above)</span></div>
+        <div class="term brass"><div class="scr">
+          <div class="row"><span class="dim">search  </span><span class="strong">admin</span><span class="grow"></span><span class="dim">6 matches</span></div>
+          <div class="blank"></div>
+          <div class="row sel"><span> </span><span class="strong">work</span><span>      </span><span class="acc">Infra/db-prod</span><span>    </span><span class="hl">svc_admin</span><span class="grow"></span><span class="dim">│ db-prod</span></div>
+          <div class="row"><span class="dim"> client-a  Infra/db-prod    svc_admin</span><span class="grow"></span><span class="dim">│ postgres://…:5432</span></div>
+          <div class="row"><span class="dim"> personal  Router           admin</span><span class="grow"></span><span class="dim">│ r reveal · a attach</span></div>
+        </div></div>
+        <p class="note" style="margin-top:.6rem">Tree/list left, detail right, one vertical rule. Preview alongside.</p>
+      </div>
+
+      <div class="specimen">
+        <div class="cap"><span class="lead">60–99 cols</span><span class="sub">— one pane, navigate into</span></div>
+        <div class="term brass" style="max-width:62ch"><div class="scr">
+          <div class="row"><span class="dim">search  </span><span class="strong">admin</span><span class="grow"></span><span class="dim">6</span></div>
+          <div class="blank"></div>
+          <div class="row sel"><span> </span><span class="strong">work</span><span>      </span><span class="acc">Infra/db-prod</span><span>   </span><span class="hl">svc_admin</span></div>
+          <div class="row"><span class="dim"> client-a  Infra/db-prod   svc_admin</span></div>
+          <div class="row"><span class="dim"> personal  Router          admin</span></div>
+          <div class="row"><span class="dim"> archive   Old/jenkins     admin</span></div>
+          <div class="row faint">enter copy · → detail · esc clear</div>
+        </div></div>
+        <p class="note" style="margin-top:.6rem"><span style="color:var(--brass)">→</span> opens a detail <i>screen</i>; <span style="color:var(--brass)">esc</span> goes back. No preview pane.</p>
+      </div>
+    </div>
+
+    <div class="pair" style="margin-top:1.4rem">
+      <div class="specimen">
+        <div class="cap"><span class="lead">40–59 cols</span><span class="sub">— compact, columns dropped</span></div>
+        <div class="term brass" style="max-width:42ch"><div class="scr">
+          <div class="row"><span class="dim">search </span><span class="strong">admin</span><span class="grow"></span><span class="dim">6</span></div>
+          <div class="blank"></div>
+          <div class="row sel"><span> </span><span class="strong">work</span><span>     </span><span class="acc">db-prod</span></div>
+          <div class="row"><span class="dim"> client-a db-prod</span></div>
+          <div class="row"><span class="dim"> personal Router</span></div>
+          <div class="row"><span class="dim"> archive  jenkins</span></div>
+        </div></div>
+        <p class="note" style="margin-top:.6rem">Only <b>source badge + title</b> survive. URL of a long value truncates in the <i>middle</i> — the ends distinguish.</p>
+      </div>
+
+      <div class="specimen">
+        <div class="cap"><span class="lead">&lt; 40 × 10</span><span class="sub">— refuse, don't garble</span></div>
+        <div class="term brass" style="max-width:36ch"><div class="scr">
+          <div class="blank"></div><div class="blank"></div>
+          <div class="row"><span class="grow"></span><span class="brand">harmos</span><span class="grow"></span></div>
+          <div class="blank"></div>
+          <div class="row"><span class="grow"></span><span class="strong">Terminal too small</span><span class="grow"></span></div>
+          <div class="blank"></div>
+          <div class="row"><span class="grow"></span><span class="bad">34 × 12</span><span class="dim"> — need </span><span class="strong">40 × 10</span><span class="grow"></span></div>
+          <div class="blank"></div>
+          <div class="row"><span class="grow"></span><span class="faint">Widen the window.</span><span class="grow"></span></div>
+          <div class="blank"></div>
+        </div></div>
+        <p class="note" style="margin-top:.6rem">Calm, centered, states the current and required size.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== SIGNATURE ELEMENT ===================== -->
+  <section>
+    <div class="sechead"><h2>The one bold thing — the clipboard countdown</h2><span class="tag">the only place the interface shows a secret's real lifetime</span></div>
+    <p class="note">When you copy, a depleting brass bar shows the seconds before the value is wiped. Spend the boldness here; keep everything else quiet. It takes available width, and degrades to a bare <b>28s</b> when there's no room for a bar.</p>
+    <div class="pair">
+      <div class="specimen">
+        <div class="cap"><span class="lead">wide</span><span class="sub">— full bar</span></div>
+        <div class="term brass"><div class="scr">
+          <div class="row bar"><span class="fill">▐███████████████████</span><span class="empty">░░░░░░░░░░</span><span class="acc">  22s</span><span class="dim">   copied </span><span class="strong">work · Infra · db-prod</span></div>
+        </div></div>
+        <div class="cap" style="margin-top:1rem"><span class="lead">brass, later</span><span class="sub">— almost gone</span></div>
+        <div class="term brass"><div class="scr">
+          <div class="row bar"><span class="fill">▐████</span><span class="empty">█████████████████████████</span><span class="bad">  4s</span><span class="dim">    copied </span><span class="strong">work · Infra · db-prod</span></div>
+        </div></div>
+      </div>
+      <div class="specimen">
+        <div class="cap"><span class="lead">narrow</span><span class="sub">— numeric fallback</span></div>
+        <div class="term brass" style="max-width:34ch"><div class="scr">
+          <div class="row"><span class="acc">28s</span><span class="dim">  copied </span><span class="strong">db-prod</span></div>
+        </div></div>
+        <div class="cap" style="margin-top:1rem"><span class="lead">charm, for contrast</span><span class="sub">— gradient competes</span></div>
+        <div class="term charm"><div class="scr">
+          <div class="row bar"><span class="fill">▐███████████████████</span><span class="empty">░░░░░░░░░░</span><span class="acc">  22s</span><span class="dim">   copied </span><span class="strong">work · Infra · db-prod</span></div>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== TOKENS + COLUMN ORDER ===================== -->
+  <section>
+    <div class="sechead"><h2>Decision 3 &amp; the token set</h2><span class="tag">column-drop order · brass palette (dark)</span></div>
+
+    <p class="note"><b>Column-drop order</b> — from the right, as width shrinks. Title and the source badge are load-bearing and never drop.</p>
+    <div class="colcols">
+      <div class="colcol"><div class="w">≥ 100</div><ol><li class="keep">source badge</li><li class="keep">title</li><li class="keep">path</li><li class="keep">username</li><li class="keep">url</li><li class="keep">tags</li><li class="keep">modified</li></ol></div>
+      <div class="colcol"><div class="w">80–99</div><ol><li class="keep">source badge</li><li class="keep">title</li><li class="keep">path</li><li class="keep">username</li><li class="keep">url</li><li class="keep">tags</li><li class="drop">modified</li></ol></div>
+      <div class="colcol"><div class="w">60–79</div><ol><li class="keep">source badge</li><li class="keep">title</li><li class="keep">path</li><li class="keep">username</li><li class="keep">url</li><li class="drop">tags</li><li class="drop">modified</li></ol></div>
+      <div class="colcol"><div class="w">50–59</div><ol><li class="keep">source badge</li><li class="keep">title</li><li class="keep">path</li><li class="keep">username</li><li class="drop">url</li><li class="drop">tags</li><li class="drop">modified</li></ol></div>
+      <div class="colcol"><div class="w">40–49</div><ol><li class="keep">source badge</li><li class="keep">title</li><li class="drop">path</li><li class="drop">username</li><li class="drop">url</li><li class="drop">tags</li><li class="drop">modified</li></ol></div>
+    </div>
+
+    <p class="note" style="margin-top:1.8rem"><b>The token set</b> — amber is spent only on secrets and the action that touches them; steel greys carry all chrome; teal and rust are status, never accent. Light-terminal and 16-colour fallbacks land in the token table doc; these are the dark anchors.</p>
+    <div class="swatches">
+      <div class="sw"><div class="chip" style="background:#d4a24c"></div><div class="meta"><div class="role">brass / accent</div><div class="hex">#d4a24c · secrets, selection, copy</div></div></div>
+      <div class="sw"><div class="chip" style="background:#e7c988"></div><div class="meta"><div class="role">brass-hi</div><div class="hex">#e7c988 · revealed / matched runes</div></div></div>
+      <div class="sw"><div class="chip" style="background:#c3bdad"></div><div class="meta"><div class="role">steel / text</div><div class="hex">#c3bdad · primary chrome</div></div></div>
+      <div class="sw"><div class="chip" style="background:#837d6d"></div><div class="meta"><div class="role">steel-dim</div><div class="hex">#837d6d · labels, inactive rows</div></div></div>
+      <div class="sw"><div class="chip" style="background:#5fb0a0"></div><div class="meta"><div class="role">patina teal</div><div class="hex">#5fb0a0 · fresh / synced / OK</div></div></div>
+      <div class="sw"><div class="chip" style="background:#c76a52"></div><div class="meta"><div class="role">oxidized red</div><div class="hex">#c76a52 · expired / stale / error</div></div></div>
+      <div class="sw"><div class="chip" style="background:#0e0d0b"></div><div class="meta"><div class="role">ground</div><div class="hex">#0e0d0b · terminal background</div></div></div>
+      <div class="sw"><div class="chip" style="background:#2c2314"></div><div class="meta"><div class="role">selection bg</div><div class="hex">#2c2314 · brass-tinted row</div></div></div>
+    </div>
+  </section>
+
+  <footer>
+    harmos · M4 design phase · paper only, no lipgloss code · data is synthetic but shaped to the real vault ·
+    your three picks (theme · breakpoints · column order) pin the token table and the interaction contract next.
+  </footer>
+</div>

@@ -1,0 +1,240 @@
+<title>harmos — interface concepts</title>
+
+<style>
+  :root{
+    --bg:#0c0b0a; --surface:#141210; --raise:#1b1814; --line:#272320;
+    --ink:#ece7da; --dim:#9d9685; --faint:#6a6455;
+    --brass:#dca545; --brass-hi:#f0d193; --brass-deep:#b9852f;
+    --teal:#5fb0a0; --rust:#cf6f54;
+    --mono:ui-monospace,"SF Mono","Menlo","Consolas",monospace;
+    --sans:system-ui,-apple-system,"Segoe UI","Helvetica Neue",sans-serif;
+    --maxw:1200px;
+  }
+  @media (prefers-color-scheme:light){
+    :root{ --bg:#eae4d6; --surface:#f4efe3; --raise:#fbf7ec; --line:#d8d0bd;
+      --ink:#231f18; --dim:#6a6252; --faint:#948b76;
+      --brass:#9a6a1c; --brass-hi:#7c5416; --brass-deep:#7c5416; --teal:#2c7d6d; --rust:#a8482f; }
+  }
+  :root[data-theme="dark"]{ --bg:#0c0b0a; --surface:#141210; --raise:#1b1814; --line:#272320;
+    --ink:#ece7da; --dim:#9d9685; --faint:#6a6455; --brass:#dca545; --brass-hi:#f0d193; --brass-deep:#b9852f; --teal:#5fb0a0; --rust:#cf6f54; }
+  :root[data-theme="light"]{ --bg:#eae4d6; --surface:#f4efe3; --raise:#fbf7ec; --line:#d8d0bd;
+    --ink:#231f18; --dim:#6a6252; --faint:#948b76; --brass:#9a6a1c; --brass-hi:#7c5416; --brass-deep:#7c5416; --teal:#2c7d6d; --rust:#a8482f; }
+
+  *{ box-sizing:border-box; }
+  body{ background:var(--bg); color:var(--ink); font-family:var(--sans); line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .wrap{ max-width:var(--maxw); margin:0 auto; padding:0 clamp(1rem,4vw,2.4rem) 6rem; }
+
+  /* ---------- hero ---------- */
+  .hero{ padding:clamp(2.4rem,7vw,5.5rem) 0 clamp(1.6rem,4vw,3rem); border-bottom:1px solid var(--line); }
+  .eyebrow{ font-family:var(--mono); font-size:.72rem; letter-spacing:.28em; text-transform:uppercase; color:var(--brass); display:flex; gap:.8rem; align-items:center; }
+  .eyebrow::after{ content:""; flex:1; height:1px; background:linear-gradient(90deg,var(--brass-deep),transparent); opacity:.5; }
+  .hero h1{ font-size:clamp(2.3rem,6.6vw,4.6rem); font-weight:680; line-height:1.02; letter-spacing:-0.025em; margin:1.1rem 0 .2rem; text-wrap:balance; }
+  .hero h1 em{ font-style:normal; color:var(--brass); }
+  .hero .sub{ color:var(--dim); font-size:clamp(1rem,1.7vw,1.2rem); max-width:60ch; margin-top:.9rem; }
+  .hero .sub b{ color:var(--ink); font-weight:600; }
+
+  .legend{ display:flex; flex-wrap:wrap; gap:1.4rem; margin-top:1.8rem; font-family:var(--mono); font-size:.76rem; color:var(--dim); }
+  .legend span{ display:inline-flex; gap:.45rem; align-items:center; }
+  .legend .k{ color:var(--ink); }
+
+  /* ---------- concept plate ---------- */
+  .plate{ padding:clamp(2.2rem,5vw,3.6rem) 0; border-bottom:1px solid var(--line); }
+  .plate-head{ display:grid; gap:.5rem 1.5rem; grid-template-columns:1fr; align-items:end; margin-bottom:1.5rem; }
+  @media(min-width:820px){ .plate-head{ grid-template-columns:auto 1fr auto; } }
+  .plate-name{ font-family:var(--mono); font-size:.72rem; letter-spacing:.22em; text-transform:uppercase; color:var(--brass); }
+  .plate h2{ font-size:clamp(1.5rem,3vw,2.1rem); font-weight:640; letter-spacing:-0.015em; }
+  .plate h2 .thesis{ display:block; font-size:.62em; font-weight:450; color:var(--dim); letter-spacing:-0.005em; margin-top:.15rem; }
+  .plate-theme{ font-family:var(--mono); font-size:.72rem; color:var(--faint); align-self:end; }
+  .plate-theme .dot{ display:inline-block; width:.55rem; height:.55rem; border-radius:50%; margin-right:.35rem; vertical-align:middle; }
+
+  .plate-foot{ display:grid; gap:1rem; grid-template-columns:1fr; margin-top:1.4rem; }
+  @media(min-width:720px){ .plate-foot{ grid-template-columns:1fr 1fr; } }
+  .card{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:1rem 1.15rem; }
+  .card h3{ font-family:var(--mono); font-size:.7rem; letter-spacing:.14em; text-transform:uppercase; margin-bottom:.4rem; }
+  .card.win h3{ color:var(--teal); } .card.catch h3{ color:var(--rust); }
+  .card p{ font-size:.92rem; color:var(--dim); } .card p b{ color:var(--ink); font-weight:600; }
+
+  /* ---------- terminal ---------- */
+  .term{
+    --t-bg:#0e0d0b; --t-line:#2b2820; --fg:#c6c0b0; --t-dim:#847e6d; --t-faint:#544f41;
+    --acc:#dca545; --acc-bg:#2e2413; --hi:#f0d193; --ok:#5fb0a0; --bad:#cf6f54;
+    background:var(--t-bg); color:var(--fg); font-family:var(--mono);
+    font-size:12.5px; line-height:1.55; border:1px solid var(--t-line);
+    border-radius:12px; padding:1rem 1.1rem; overflow-x:auto;
+    box-shadow:0 24px 60px -30px rgba(0,0,0,.7);
+  }
+  .term.charm{ --t-bg:#0f0e17; --t-line:#282540; --fg:#c8c5d7; --t-dim:#7d7a96; --t-faint:#4f4c6c;
+    --acc:#8b6dff; --acc-bg:#211b3c; --hi:#c4b4ff; --ok:#43d69a; --bad:#ff6a94; }
+  .term .scr{ min-width:max-content; }
+  .r{ display:flex; white-space:pre; }
+  .g{ flex:1; } .dim{ color:var(--t-dim); } .fnt{ color:var(--t-faint); }
+  .ac{ color:var(--acc); } .ok{ color:var(--ok); } .bad{ color:var(--bad); } .hi{ color:var(--hi); }
+  .st{ color:#efe9da; font-weight:600; } .term.charm .st{ color:#efedfb; }
+  .brand{ color:var(--acc); font-weight:700; }
+  .sel{ background:var(--acc-bg); }
+  .sel .st{ color:var(--hi); }
+  .mt{ color:var(--acc); }
+  .blank{ height:.42rem; }
+  .fill{ color:var(--acc); } .empty{ color:var(--t-faint); }
+  .term.charm .grad .fill{ background:linear-gradient(90deg,#ff6a94,#8b6dff); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .colhdr{ color:var(--t-faint); border-bottom:1px solid var(--t-line); }
+
+  /* palette floats */
+  .term.palette{ max-width:640px; margin:0 auto; box-shadow:0 30px 80px -24px rgba(0,0,0,.85), 0 0 0 1px rgba(220,165,69,.12); }
+
+  .verdict{ padding:clamp(2.4rem,5vw,3.6rem) 0 0; }
+  .verdict h2{ font-size:clamp(1.6rem,3.4vw,2.3rem); font-weight:640; letter-spacing:-0.02em; margin-bottom:.7rem; }
+  .verdict p{ color:var(--dim); max-width:66ch; }
+  .verdict p b{ color:var(--ink); font-weight:600; }
+  .verdict .pick{ color:var(--brass); font-weight:600; }
+  .rec{ display:grid; gap:.7rem; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); margin-top:1.6rem; }
+  .rec div{ background:var(--surface); border:1px solid var(--line); border-left:2px solid var(--brass); border-radius:0 10px 10px 0; padding:.8rem 1rem; font-size:.9rem; }
+  .rec strong{ display:block; font-family:var(--mono); font-size:.72rem; letter-spacing:.08em; color:var(--brass); margin-bottom:.25rem; }
+
+  footer{ margin-top:3rem; color:var(--faint); font-family:var(--mono); font-size:.78rem; }
+</style>
+
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow">harmos · interface concepts · pick a direction</div>
+    <h1>You don't browse a vault.<br>You <em>raid</em> it.</h1>
+    <p class="sub">Ninety-five percent of sessions are one sentence: <b>get me the X password, into the clipboard, go away.</b> So the real question isn't “how do I show a tree” — it's “how few keystrokes from launch to copied.” Four directions, same data, same job. One is built to win; the others earn their place.</p>
+    <div class="legend">
+      <span><span class="k">●</span> teal = fresh cache</span>
+      <span><span style="color:var(--rust)">●</span> rust = stale / expiring</span>
+      <span><span class="k" style="color:var(--brass)">amber</span> = a secret &amp; the act of copying it</span>
+      <span>steel = everything else</span>
+    </div>
+  </header>
+
+  <!-- ============ PALETTE ============ -->
+  <section class="plate">
+    <div class="plate-head">
+      <div class="plate-name">Concept — Palette</div>
+      <h2>Type first, ask questions never.<span class="thesis">One box. Launch lands you in the search. Enter copies. That's the whole app for most sessions.</span></h2>
+      <div class="plate-theme"><span class="dot" style="background:#dca545"></span>brass</div>
+    </div>
+
+    <div class="term palette brass"><div class="scr">
+      <div class="r"><span class="ac">⌕  </span><span class="st">db-prod admin</span><span class="ac">▏</span><span class="g"></span><span class="dim">6 · 4 sources</span></div>
+      <div class="r fnt">──────────────────────────────────────────────────────────</div>
+      <div class="r sel"><span class="ac">→ </span><span class="st">svc_admin</span><span class="dim">   </span><span class="hi">work</span><span class="dim"> · Infra/</span><span class="hi">db-prod</span><span class="g"></span><span class="ok">● 2h</span></div>
+      <div class="r"><span class="dim">  svc_admin   </span><span class="dim">work · Infra/db-staging</span><span class="g"></span><span class="ok">● 2h</span></div>
+      <div class="r"><span class="dim">  svc_admin   </span><span class="dim">client-a · Infra/db-prod</span><span class="g"></span><span class="bad">● 4d</span></div>
+      <div class="r"><span class="dim">  admin       </span><span class="dim">client-a · Infra/db-staging</span><span class="g"></span><span class="bad">● 4d</span></div>
+      <div class="r"><span class="dim">  admin       personal · Router</span><span class="g"></span><span class="dim">kdbx</span></div>
+      <div class="r fnt">──────────────────────────────────────────────────────────</div>
+      <div class="r grad"><span class="fill">▐███████████████</span><span class="empty">░░░░░░</span><span class="ac"> 24s</span><span class="dim">   copied → </span><span class="st">work · Infra · db-prod</span></div>
+      <div class="r fnt">↵ copy   ⇥ peek   ⌥↵ copy username   esc clear</div>
+    </div></div>
+
+    <div class="plate-foot">
+      <div class="card win"><h3>When it wins</h3><p>The <b>daily driver.</b> Launch → three keystrokes → copied → gone. No panes to orient in, no tree to expand. Source + freshness ride on every row so a <b>wrong-source copy is impossible to miss.</b> This is Raycast/Spotlight muscle memory, applied to secrets.</p></div>
+      <div class="card catch"><h3>The catch</h3><p>Weak at <b>exploring</b> — “what's even in client-a?” means searching blind. Pair it with a one-key <b>⇥ peek</b> (detail) and a <b>tree drop-down</b> for the rare browse, and the gap closes.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ CASCADE ============ -->
+  <section class="plate">
+    <div class="plate-head">
+      <div class="plate-name">Concept — Cascade</div>
+      <h2>Walk it like a shelf.<span class="thesis">Miller columns — source ▸ folder ▸ entry ▸ detail. Provenance is the path you walked. (Charm theme.)</span></h2>
+      <div class="plate-theme"><span class="dot" style="background:#8b6dff"></span>charm</div>
+    </div>
+
+    <div class="term charm"><div class="scr">
+      <div class="r"><span class="brand">harmos</span><span class="dim">   /  type to jump anywhere</span><span class="g"></span><span class="dim">412 entries</span></div>
+      <div class="blank"></div>
+      <div class="r">
+        <span class="colhdr">SOURCES        </span><span class="dim"> │ </span><span class="colhdr">work / INFRA      </span><span class="dim"> │ </span><span class="colhdr">db-prod           </span>
+      </div>
+      <div class="r"><span class="sel"><span class="ac">work</span><span class="dim">     </span><span class="ok">●2h</span></span><span class="dim"> │ </span><span class="dim">Certificates 3   </span><span class="dim"> │ </span><span class="st">svc_admin         </span></div>
+      <div class="r"><span class="dim">client-a  </span><span class="bad">●4d</span><span class="dim"> │ </span><span class="sel"><span class="ac">db-prod</span><span class="dim">     ▸  </span></span><span class="dim"> │ </span><span class="dim">Username  svc_admin</span></div>
+      <div class="r"><span class="dim">personal  kdbx</span><span class="dim"> │ </span><span class="dim">db-staging     </span><span class="dim"> │ </span><span class="dim">Password  </span><span class="ac">•••••••</span><span class="dim"> r</span></div>
+      <div class="r"><span class="dim">archive   kdbx</span><span class="dim"> │ </span><span class="dim">redis-cache    </span><span class="dim"> │ </span><span class="dim">URL   postgres://…</span></div>
+      <div class="r"><span class="dim">              </span><span class="dim"> │ </span><span class="dim">Vendors 18     </span><span class="dim"> │ </span><span class="dim">Tags  infra, prod </span></div>
+      <div class="r fnt">──────────────────────────────────────────────────────────────────────</div>
+      <div class="r fnt">← → columns   ↑ ↓ rows   ↵ copy   / search   space peek</div>
+    </div></div>
+
+    <div class="plate-foot">
+      <div class="card win"><h3>When it wins</h3><p><b>Exploration and trust.</b> When you don't know the exact name, you walk the shelves — and the columns you traversed <b>are</b> the provenance, structurally. Great for auditing “what does this source actually hold,” and it maps cleanly onto the two-producers model.</p></div>
+      <div class="card catch"><h3>The catch</h3><p>Slower for the 95% case — more keystrokes than a search box. And it leans on width; three columns want ≥100 cols. Charm's purple is handsome here but <b>competes</b> with the amber-for-secrets rule.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ CONSOLE ============ -->
+  <section class="plate">
+    <div class="plate-head">
+      <div class="plate-name">Concept — Console</div>
+      <h2>The vault's vital signs.<span class="thesis">A home that answers “am I safe and current?” before you even search: cache age, expiry, staleness — up front.</span></h2>
+      <div class="plate-theme"><span class="dot" style="background:#dca545"></span>brass</div>
+    </div>
+
+    <div class="term brass"><div class="scr">
+      <div class="r"><span class="brand">harmos</span><span class="g"></span><span class="dim">last sync 2h ago · 1 source needs attention</span></div>
+      <div class="blank"></div>
+      <div class="r"><span class="st"> work      </span><span class="dim">pleasant  </span><span class="ok">● synced 2h</span><span class="dim">      412 entries</span></div>
+      <div class="r"><span class="st"> client-a  </span><span class="dim">pleasant  </span><span class="bad">● stale 4d — sync</span><span class="dim">   88 entries</span></div>
+      <div class="r"><span class="st"> personal  </span><span class="dim">kdbx      </span><span class="ok">● file</span><span class="dim">           31 entries</span></div>
+      <div class="r"><span class="st"> archive   </span><span class="dim">kdbx      </span><span class="ok">● file</span><span class="dim">          204 entries</span></div>
+      <div class="r fnt">──────────────────────────────────────────────────────────────────</div>
+      <div class="r"><span class="ac">⌕ </span><span class="dim">search everything…</span><span class="g"></span><span class="fnt">or ↓ to recent</span></div>
+      <div class="blank"></div>
+      <div class="r"><span class="dim">RECENT   </span><span class="st">db-prod</span><span class="dim">  ·  </span><span class="st">grafana</span><span class="dim">  ·  </span><span class="st">vpn</span></div>
+      <div class="r"><span class="bad">EXPIRING </span><span class="dim">2 entries expire &lt; 7d  ·  </span><span class="ac">review</span></div>
+      <div class="r fnt">──────────────────────────────────────────────────────────────────</div>
+      <div class="r fnt">/ search   s sync stale   ↵ open   ? keys</div>
+    </div></div>
+
+    <div class="plate-foot">
+      <div class="card win"><h3>When it wins</h3><p><b>The security story, made visible.</b> Cache age and expiry are the most important facts when you're offline — this puts them first, and turns “is my client-a cache stale?” into a glance. It's the screen you'd show the security team.</p></div>
+      <div class="card catch"><h3>The catch</h3><p>It's a <b>home</b>, not the fast path — an extra hop before the search that most sessions actually want. Best as the <b>landing screen</b> that a keystroke collapses into Palette, not the main event.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ SPLIT ============ -->
+  <section class="plate">
+    <div class="plate-head">
+      <div class="plate-name">Concept — Split</div>
+      <h2>Search left, everything-about-it right.<span class="thesis">The power daily-driver: a live-filtered list and a rich detail that never makes you open a second screen.</span></h2>
+      <div class="plate-theme"><span class="dot" style="background:#dca545"></span>brass</div>
+    </div>
+
+    <div class="term brass"><div class="scr">
+      <div class="r"><span class="dim">⌕ </span><span class="st">admin</span><span class="ac">▏</span><span class="g"></span><span class="dim">6 matches</span><span class="dim">      </span><span class="st">work</span><span class="ok"> ●2h</span><span class="dim">  </span><span class="st">client-a</span><span class="bad"> ●4d</span></div>
+      <div class="r fnt">────────────────────────────────────────────────────────────────────</div>
+      <div class="r sel"><span class="st"> work     </span><span class="ac">Infra/db-prod   </span><span class="hi">svc_admin</span><span class="g"></span><span class="dim">│ </span><span class="st">db-prod</span></div>
+      <div class="r"><span class="dim"> client-a Infra/db-prod   svc_admin</span><span class="g"></span><span class="dim">│ </span><span class="dim">work · Infra</span></div>
+      <div class="r"><span class="dim"> personal Router          admin</span><span class="g"></span><span class="dim">│ </span><span class="dim">svc_admin</span></div>
+      <div class="r"><span class="dim"> archive  Old/jenkins     admin</span><span class="g"></span><span class="dim">│ </span><span class="ac">•••••••••</span><span class="dim"> r reveal</span></div>
+      <div class="r"><span class="g"></span><span class="dim">│ </span><span class="dim">postgres://db-prod…:5432</span></div>
+      <div class="r"><span class="g"></span><span class="dim">│ </span><span class="dim">🔑 otp 418 204  ·  📎 ca.pem</span></div>
+      <div class="r"><span class="g"></span><span class="dim">│ </span><span class="ok">fresh · 2h</span></div>
+      <div class="r fnt">────────────────────────────────────────────────────────────────────</div>
+      <div class="r grad"><span class="fill">▐████████████████████</span><span class="empty">░░░░░</span><span class="ac"> 24s</span><span class="dim">  copied </span><span class="st">work · Infra · db-prod</span></div>
+      <div class="r fnt">↵ copy   ⇥ username   y otp   o url   a attach   r reveal   ? keys</div>
+    </div></div>
+
+    <div class="plate-foot">
+      <div class="card win"><h3>When it wins</h3><p><b>Power users who live in it.</b> Everything about the selected entry — username, url, TOTP, attachments, cache age — is visible without a second screen. One-key copy for <b>each</b> field. This is the k9s/lazygit density that pros love.</p></div>
+      <div class="card catch"><h3>The catch</h3><p>Needs width (≥100 cols) and is <b>busier</b> — more to take in than the calm Palette. It's the “I'm working in here for a while” mode, less the “grab and go.”</p></div>
+    </div>
+  </section>
+
+  <!-- ============ VERDICT ============ -->
+  <section class="verdict">
+    <h2>My read as design lead</h2>
+    <p>Design for the sentence, not the tree. The job is <b>launch → copied → gone</b>, so the default should be <span class="pick">Palette</span> — the fewest keystrokes, the calmest surface, provenance on every row. Then <b>don't make the others separate apps</b> — fold them in as gestures on the one surface:</p>
+    <div class="rec">
+      <div><strong>Default</strong>Palette — the search-first fast path. Launch lands here, always.</div>
+      <div><strong>⇥ peek → Split</strong>Tab expands the selected result into the rich detail. Same screen, more depth.</div>
+      <div><strong>↓ from empty → Console</strong>An empty query reveals the vital-signs home: sources, staleness, expiring.</div>
+      <div><strong>/ tree → Cascade</strong>A modifier drops into column-walking for the rare “what's in here?” browse.</div>
+    </div>
+    <p style="margin-top:1.5rem">One coherent tool with a fast heart and three depths, not four screens. Amber stays reserved for secrets in every mode, so a wrong-source copy always jumps out. Tell me which direction sings to you — or which pieces to splice — and I'll build that one as the working prototype next.</p>
+    <footer>harmos · interface concepts · paper exploration · synthetic data shaped to the real vault · charm shown on Cascade, brass elsewhere</footer>
+  </section>
+
+</div>
