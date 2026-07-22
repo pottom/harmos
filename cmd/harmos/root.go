@@ -13,5 +13,7 @@ func newRootCmd() *cobra.Command {
 		SilenceUsage: true,
 	}
 	root.AddCommand(newSyncCmd())
+	root.AddCommand(newLsCmd())
+	root.AddCommand(newGetCmd())
 	return root
 }
