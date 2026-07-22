@@ -3,17 +3,31 @@
 package clip
 
 /*
-#cgo LDFLAGS: -framework Foundation
-
-// Trivial cgo probe that links a system framework, proving the darwin cgo build
-// path works on a real macOS runner. The actual NSPasteboard write lands with
-// the clipboard milestone.
-const char* harmosConcealedType(void) {
-    return "org.nspasteboard.ConcealedType";
-}
+#cgo LDFLAGS: -framework AppKit
+#include <stdlib.h>
+void harmosClipWrite(const char* s);
+char* harmosClipRead(void);
+void harmosClipClear(void);
 */
 import "C"
 
-func concealedType() string {
-	return C.GoString(C.harmosConcealedType())
+import "unsafe"
+
+func platformWrite(s []byte) error {
+	if s == nil {
+		C.harmosClipClear()
+		return nil
+	}
+	cs := C.CString(string(s))
+	defer C.free(unsafe.Pointer(cs))
+	C.harmosClipWrite(cs)
+	return nil
 }
+
+func platformRead() ([]byte, error) {
+	cs := C.harmosClipRead()
+	defer C.free(unsafe.Pointer(cs))
+	return []byte(C.GoString(cs)), nil
+}
+
+func concealedType() string { return "org.nspasteboard.ConcealedType" }
