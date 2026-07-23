@@ -21,5 +21,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newSyncCmd())
 	root.AddCommand(newLsCmd())
 	root.AddCommand(newGetCmd())
+	root.AddCommand(newAddKdbxCmd())
+	root.AddCommand(newSourcesCmd())
 	return root
 }

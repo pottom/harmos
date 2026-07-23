@@ -24,6 +24,17 @@ func loadConfigAt(path string) (*config.Config, error) {
 
 func onTTY() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
 
+// needsMaster reports whether any source requires the harmos master password
+// (only Pleasant caches do).
+func needsMaster(cfg *config.Config) bool {
+	for _, p := range cfg.Profiles {
+		if p.Type == config.Pleasant {
+			return true
+		}
+	}
+	return false
+}
+
 // resolveMaster gets the harmos master password: from HARMOS_MASTER for scripts
 // (non-TTY), else a prompt on a terminal. It is never read from the config file.
 func resolveMaster() (secret.Secret, error) {
@@ -44,9 +55,13 @@ func openAll(configPath string) (*session.Result, *config.Config, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	master, err := resolveMaster()
-	if err != nil {
-		return nil, nil, err
+	// The master password unlocks Pleasant caches only; a config with just local
+	// kdbx sources never needs it (spec §2a).
+	var master secret.Secret
+	if needsMaster(cfg) {
+		if master, err = resolveMaster(); err != nil {
+			return nil, nil, err
+		}
 	}
 	ask := func(p config.Profile) (secret.Secret, error) {
 		if onTTY() {
