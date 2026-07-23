@@ -7,6 +7,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,6 +17,9 @@ import (
 
 	"github.com/BurntSushi/toml"
 )
+
+// ErrNoProfiles is returned by Load when the config exists but has no sources.
+var ErrNoProfiles = errors.New("no profiles configured")
 
 // Type is the kind of a source.
 type Type string
@@ -112,7 +116,7 @@ func Load(path string) (*Config, error) {
 
 func (c *Config) normalizeAndValidate() error {
 	if len(c.Profiles) == 0 {
-		return fmt.Errorf("no profiles configured")
+		return ErrNoProfiles
 	}
 
 	seen := make(map[string]bool, len(c.Profiles))

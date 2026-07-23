@@ -205,6 +205,22 @@ func TestAddPleasantDefaultCacheNeedsName(t *testing.T) {
 	}
 }
 
+func TestLoadConfigNoSourcesGuidance(t *testing.T) {
+	dir := t.TempDir()
+	// a missing config file
+	if _, err := loadConfigAt(filepath.Join(dir, "nope.toml")); err == nil || !strings.Contains(err.Error(), "add-source") {
+		t.Errorf("missing config should guide to add-source, got %v", err)
+	}
+	// an empty config file (no profiles)
+	empty := filepath.Join(dir, "empty.toml")
+	if err := os.WriteFile(empty, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadConfigAt(empty); err == nil || !strings.Contains(err.Error(), "add-source") {
+		t.Errorf("empty config should guide to add-source, got %v", err)
+	}
+}
+
 func TestAddKdbxRejectsMissingFile(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")

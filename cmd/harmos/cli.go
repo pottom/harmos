@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -12,6 +13,22 @@ import (
 	"github.com/pottom/harmos/internal/session"
 )
 
+// noSourcesError guides a user who has no config yet toward adding a source. It
+// is a type (not errors.New) so the multi-line guidance isn't a lint-flagged
+// error string.
+type noSourcesError struct{}
+
+func (noSourcesError) Error() string {
+	return `no sources configured yet.
+
+Add one:
+  harmos add-source PATH.kdbx                   a local KeePass .kdbx file
+  harmos add-source --type pps --name NAME \    a Pleasant Password Server
+      --url URL --user USER
+
+See 'harmos add-source --help' for the details.`
+}
+
 func loadConfigAt(path string) (*config.Config, error) {
 	if path == "" {
 		p, err := config.DefaultPath()
@@ -20,7 +37,11 @@ func loadConfigAt(path string) (*config.Config, error) {
 		}
 		path = p
 	}
-	return config.Load(path)
+	cfg, err := config.Load(path)
+	if err != nil && (errors.Is(err, config.ErrNoProfiles) || errors.Is(err, os.ErrNotExist)) {
+		return nil, noSourcesError{}
+	}
+	return cfg, err
 }
 
 func onTTY() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
