@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -13,12 +14,19 @@ import (
 	"github.com/pottom/harmos/internal/secret"
 )
 
+// Reporter receives live progress during a Sync. Any field may be nil.
+type Reporter struct {
+	Phase func(name string)      // a new phase begins (downloading, building, writing)
+	Bytes func(downloaded int64) // bytes fetched so far, during the package download
+}
+
 // SyncOptions configures a Sync.
 type SyncOptions struct {
 	Comment   string        // recorded server-side (every fetch is audited)
 	CachePath string        // destination kdbx cache
 	Master    secret.Secret // encrypts the cache
 	Now       time.Time     // provenance + expiry check; defaults to time.Now()
+	Report    *Reporter     // optional live progress; nil is silent
 }
 
 // Sync fetches the OfflinePackage with an already-logged-in client, enforces the
@@ -32,7 +40,17 @@ func Sync(ctx context.Context, c *Client, sourceURL string, opt SyncOptions) (*R
 	if opt.CachePath == "" {
 		return nil, fmt.Errorf("no cache path")
 	}
+	report := opt.Report
+	if report == nil {
+		report = &Reporter{}
+	}
+	phase := func(name string) {
+		if report.Phase != nil {
+			report.Phase(name)
+		}
+	}
 
+	phase("checking server")
 	available, err := c.IsOfflineAvailable(ctx)
 	if err != nil {
 		return nil, err
@@ -47,7 +65,8 @@ func Sync(ctx context.Context, c *Client, sourceURL string, opt SyncOptions) (*R
 	}
 
 	// Fetch to a temp zip in the cache dir (same filesystem, for atomic rename).
-	zipPath, err := fetchPackage(ctx, c, dir, opt.Comment)
+	phase("downloading offline package")
+	zipPath, err := fetchPackage(ctx, c, dir, opt.Comment, report.Bytes)
 	if err != nil {
 		return nil, err
 	}
@@ -59,6 +78,7 @@ func Sync(ctx context.Context, c *Client, sourceURL string, opt SyncOptions) (*R
 	}
 	defer func() { _ = zr.Close() }()
 
+	phase("building cache")
 	res, err := Map(&zr.Reader, Meta{SourceURL: sourceURL, FetchedAt: opt.Now})
 	if err != nil {
 		return nil, err
@@ -67,13 +87,32 @@ func Sync(ctx context.Context, c *Client, sourceURL string, opt SyncOptions) (*R
 		return nil, fmt.Errorf("package is expired (Expiry %s); refusing to write cache", res.Expiry)
 	}
 
+	phase("writing cache")
 	if err := writeAtomic(res.DB, opt.CachePath, opt.Master); err != nil {
 		return nil, err
 	}
 	return res, nil
 }
 
-func fetchPackage(ctx context.Context, c *Client, dir, comment string) (string, error) {
+// countWriter reports total bytes written so far, throttled, to a callback.
+type countWriter struct {
+	w    io.Writer
+	n    int64
+	last int64
+	cb   func(int64)
+}
+
+func (c *countWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	if c.n-c.last >= 512*1024 { // every 512 KiB
+		c.last = c.n
+		c.cb(c.n)
+	}
+	return n, err
+}
+
+func fetchPackage(ctx context.Context, c *Client, dir, comment string, onBytes func(int64)) (string, error) {
 	tmp, err := os.CreateTemp(dir, ".harmos-pkg-*.zip")
 	if err != nil {
 		return "", err
@@ -84,13 +123,20 @@ func fetchPackage(ctx context.Context, c *Client, dir, comment string) (string, 
 		_ = os.Remove(path)
 		return "", err
 	}
-	_, err = c.OfflinePackage(ctx, comment, tmp)
+	var w io.Writer = tmp
+	if onBytes != nil {
+		w = &countWriter{w: tmp, cb: onBytes}
+	}
+	n, err := c.OfflinePackage(ctx, comment, w)
 	if cerr := tmp.Close(); cerr != nil && err == nil {
 		err = cerr
 	}
 	if err != nil {
 		_ = os.Remove(path)
 		return "", err
+	}
+	if onBytes != nil {
+		onBytes(n) // final, exact total
 	}
 	return path, nil
 }

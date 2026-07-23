@@ -106,17 +106,58 @@ func syncOne(ctx context.Context, p config.Profile, master secret.Secret, out io
 		return err
 	}
 
+	rep := &syncReporter{w: out}
 	res, err := pleasant.Sync(ctx, c, p.URL, pleasant.SyncOptions{
 		Comment:   "harmos sync",
 		CachePath: p.Cache,
 		Master:    master,
+		Report:    &pleasant.Reporter{Phase: rep.phase, Bytes: rep.bytes},
 	})
+	rep.endLine() // finish any open progress line before the result/error
 	if err != nil {
 		return err
 	}
 	emitf(out, "  synced %d entries, %d folders, %d attachments → %s (expiry %s)\n",
 		res.Entries, res.Folders, res.Attachments, p.Cache, res.Expiry)
 	return nil
+}
+
+// syncReporter prints live sync progress: a line per phase, with the download
+// phase updating in place as bytes arrive.
+type syncReporter struct {
+	w    io.Writer
+	open bool // the current line has no trailing newline yet
+}
+
+func (r *syncReporter) phase(name string) {
+	r.endLine()
+	emitf(r.w, "  %s…", name)
+	r.open = true
+}
+
+func (r *syncReporter) bytes(done int64) {
+	emitf(r.w, "\r  downloading offline package… %s", humanBytes(done))
+	r.open = true
+}
+
+func (r *syncReporter) endLine() {
+	if r.open {
+		emitf(r.w, "\n")
+		r.open = false
+	}
+}
+
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for x := n / unit; x >= unit; x /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGT"[exp])
 }
 
 // emitf writes progress to the command's output; the error is not actionable.
