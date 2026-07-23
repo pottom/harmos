@@ -15,7 +15,7 @@ func testModel() Model {
 	return New([]vault.Entry{
 		{Source: "work", Path: "Infra", Title: "db-prod", Username: "svc_admin", Password: secret.New("p1")},
 		{Source: "work", Path: "Infra", Title: "db-staging", Username: "svc", Password: secret.New("p2")},
-		{Source: "personal", Path: "Net", Title: "router", Username: "admin", Password: secret.New("p3")},
+		{Source: "personal", Path: "Net", Title: "router", Username: "admin", Password: secret.New("p3"), URL: "https://10.0.0.1"},
 	}, 30*time.Second)
 }
 
@@ -31,10 +31,24 @@ func typeStr(m Model, s string) Model {
 	return m
 }
 
-// Renders at every breakpoint, including a resize sequence, and refuses when tiny
-// (spec §8a).
+// The tree is the base surface: it renders on an empty query with no typing.
+func TestTreeIsTheBase(t *testing.T) {
+	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
+	out := m.View()
+	// both source roots show as folders in the left pane
+	for _, want := range []string{"personal", "work", "sources"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("browse view missing %q", want)
+		}
+	}
+	if m.searching() {
+		t.Error("fresh model must not be searching")
+	}
+}
+
+// Renders at every breakpoint, including a resize sequence, and refuses when tiny.
 func TestRendersAcrossBreakpoints(t *testing.T) {
-	m := typeStr(testModel(), "db") // non-empty so the list renders
+	m := testModel()
 	sizes := [][2]int{{200, 50}, {100, 30}, {80, 24}, {60, 20}, {40, 12}, {30, 8}, {100, 30}}
 	for _, sz := range sizes {
 		m = up(m, tea.WindowSizeMsg{Width: sz[0], Height: sz[1]})
@@ -46,45 +60,102 @@ func TestRendersAcrossBreakpoints(t *testing.T) {
 			t.Errorf("%dx%d should refuse to render", sz[0], sz[1])
 		}
 	}
-	// selection survived the resize sequence
-	if m.sel != 0 {
-		t.Errorf("selection = %d after resizes", m.sel)
-	}
 }
 
-func TestTypingFiltersAndRanks(t *testing.T) {
+// In tree browse, letters are free for future hotkeys — they must not type into
+// the search box. Only "/" opens search.
+func TestLettersAreFreeUntilSlash(t *testing.T) {
 	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
-	m = typeStr(m, "db-prod")
-	if len(m.results) == 0 {
-		t.Fatal("no results for db-prod")
+	m = typeStr(m, "abc")
+	if m.searchMode || m.input.Value() != "" {
+		t.Fatalf("letters must not start a search: mode=%v value=%q", m.searchMode, m.input.Value())
 	}
-	if got := m.results[0].Entry.Title; got != "db-prod" {
-		t.Errorf("top result = %q, want db-prod", got)
-	}
-	// esc clears back to the console home
-	m = up(m, tea.KeyMsg{Type: tea.KeyEsc})
-	if m.input.Value() != "" {
-		t.Error("esc should clear the query")
-	}
-	if !strings.Contains(m.View(), "your sources") {
-		t.Error("empty query should show the console home")
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	if !m.searchMode {
+		t.Fatal("/ should open the search box")
 	}
 }
 
-func TestPeekIsCommandMode(t *testing.T) {
-	m := up(testModel(), tea.WindowSizeMsg{Width: 120, Height: 30})
-	m = typeStr(m, "db")
-	m = up(m, tea.KeyMsg{Type: tea.KeyTab})
-	if !m.peek {
-		t.Fatal("tab should enter peek")
+// / opens search, typing filters, enter leaves the box keeping the filter, and
+// esc clears the filter back to the tree.
+func TestSlashSearchFlow(t *testing.T) {
+	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = typeStr(m, "db-prod")
+	if !m.searchMode {
+		t.Fatal("should be in search mode while typing")
 	}
-	before := m.input.Value()
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
-	if m.input.Value() != before {
-		t.Error("letters must be commands (not typed) while peeking")
+	if len(m.results) == 0 || m.results[0].Entry.Title != "db-prod" {
+		t.Fatalf("top result wrong: %+v", m.results)
 	}
-	// the split shows the detail on the right
+	if !strings.Contains(m.View(), "Search results") {
+		t.Error("search should show the results pane")
+	}
+	// enter leaves the box but keeps the filter/results
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.searchMode {
+		t.Error("enter should leave the search box")
+	}
+	if !m.showResults() || m.input.Value() != "db-prod" {
+		t.Error("enter must keep the filter and results")
+	}
+	// esc clears the filter back to the tree
+	m = up(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.showResults() || m.input.Value() != "" {
+		t.Error("esc should clear the filter back to the tree")
+	}
+}
+
+// Navigating the tree into a folder's table and opening an entry's details.
+func TestBrowseIntoDetails(t *testing.T) {
+	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
+	// visible tree: personal, Net, work, Infra (roots expanded, leaves collapsed)
+	// walk down to a folder that holds entries, then into its table
+	var folder *node
+	for i := 0; i < len(m.visible()); i++ {
+		if f := m.currentFolder(); f != nil && len(f.entries) > 0 {
+			folder = f
+			break
+		}
+		m = up(m, tea.KeyMsg{Type: tea.KeyDown})
+	}
+	if folder == nil {
+		t.Fatal("no folder with entries found in the tree")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the entry table
+	if m.focus != 1 {
+		t.Fatalf("tab should move focus to the table, focus=%d", m.focus)
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter}) // open details
+	if !m.detail {
+		t.Fatal("enter on an entry should open the details screen")
+	}
+	if e := m.selEntry(); e == nil {
+		t.Fatal("details screen has no selected entry")
+	}
 	if !strings.Contains(m.View(), "Username") {
-		t.Error("peek should show the detail")
+		t.Error("details should show the Username field")
+	}
+	// reveal toggles, esc leaves
+	m = up(m, tea.KeyMsg{Type: tea.KeyCtrlR})
+	if !m.reveal {
+		t.Error("ctrl+r should reveal the password")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.detail {
+		t.Error("esc should leave the details screen")
+	}
+}
+
+// Help overlay toggles and any key closes it.
+func TestHelpToggles(t *testing.T) {
+	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	if !m.help || !strings.Contains(m.View(), "keys") {
+		t.Fatal("? should open help")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	if m.help {
+		t.Error("any key should close help")
 	}
 }

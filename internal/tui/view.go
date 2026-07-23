@@ -52,6 +52,10 @@ func (m Model) View() string {
 	if m.help {
 		return m.helpView()
 	}
+	if m.detail {
+		return m.detailView()
+	}
+
 	top := m.searchLine() + "\n" + rule(m.w) + "\n"
 	bottom := "\n" + rule(m.w) + "\n" + m.countdown() + "\n" + m.hints()
 	rows := m.h - 6
@@ -59,25 +63,37 @@ func (m Model) View() string {
 		rows = 1
 	}
 
-	var body string
-	switch {
-	case m.input.Value() == "":
-		body = m.console(rows)
-	case m.peek && m.w >= 100:
-		body = m.split(rows)
-	case m.peek:
-		body = m.detailScreen(rows)
-	default:
-		body = m.list(m.w, rows)
+	leftW := m.w * 2 / 5
+	if leftW > 40 {
+		leftW = 40
 	}
+	if leftW < 16 {
+		leftW = 16
+	}
+	rightW := m.w - leftW - 3
+
+	right := m.tablePane(rightW, rows)
+	if m.showResults() {
+		right = m.resultsPane(rightW, rows)
+	}
+	sep := theme.Rule.Render(" │ ")
+	body := lipgloss.JoinHorizontal(lipgloss.Top,
+		lipgloss.NewStyle().Width(leftW).Height(rows).Render(m.treePane(leftW, rows)),
+		sep,
+		lipgloss.NewStyle().Width(rightW).Height(rows).Render(right),
+	)
 	return top + body + bottom
 }
 
 func (m Model) searchLine() string {
-	left := theme.Acc.Render("⌕  ") + m.input.View()
-	right := theme.Dimmed.Render(fmt.Sprintf("%d matches", len(m.results)))
-	if m.input.Value() == "" {
-		right = theme.Faded.Render(fmt.Sprintf("%d sources", len(m.sources)))
+	glyph := theme.Faded.Render("/  ")
+	if m.searchMode {
+		glyph = theme.Acc.Render("/  ")
+	}
+	left := glyph + m.input.View()
+	right := theme.Faded.Render(fmt.Sprintf("%d sources", m.nSrc))
+	if m.showResults() {
+		right = theme.Dimmed.Render(fmt.Sprintf("%d matches", len(m.results)))
 	}
 	gap := m.w - dw(left) - dw(right)
 	if gap < 1 {
@@ -86,117 +102,170 @@ func (m Model) searchLine() string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-func (m Model) console(rows int) string {
-	b := []string{theme.Dimmed.Render("  your sources"), ""}
-	for _, s := range m.sources {
-		b = append(b, "  "+theme.Strong.Render(pad(s.name, 14))+theme.Dimmed.Render(fmt.Sprintf("%d entries", s.count)))
+func (m Model) treePane(w, rows int) string {
+	flat := m.visible()
+	start := 0
+	if m.tsel >= rows {
+		start = m.tsel - rows + 1
 	}
-	b = append(b, "", "  "+theme.Faded.Render("start typing to search everything"))
+	end := min(start+rows, len(flat))
+
+	var lines []string
+	for i := start; i < end; i++ {
+		n := flat[i].node
+		indent := strings.Repeat("  ", flat[i].depth)
+		caret := "  "
+		if len(n.children) > 0 {
+			if n.expanded {
+				caret = "▾ "
+			} else {
+				caret = "▸ "
+			}
+		}
+		if i == m.tsel {
+			st := theme.Hi
+			if m.focus == 0 {
+				st = theme.SelRow.Width(w)
+			}
+			lines = append(lines, st.Render(trunc(indent+caret+n.name, w)))
+			continue
+		}
+		lines = append(lines, theme.Acc.Render(indent+caret)+theme.Strong.Render(trunc(n.name, max(1, w-dw(indent)-2))))
+	}
+	for len(lines) < rows {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) tablePane(w, rows int) string {
+	folder := m.currentFolder()
+	if folder == nil {
+		return ""
+	}
+	titleW := w * 4 / 10
+	userW := w * 3 / 10
+	if titleW < 8 {
+		titleW = 8
+	}
+	if userW < 6 {
+		userW = 6
+	}
+	lines := []string{
+		theme.Strong.Render(trunc(folder.name, max(4, w-14))) + theme.Dimmed.Render(fmt.Sprintf("  %d entries", len(folder.entries))),
+		theme.Dimmed.Render(pad("Title", titleW)) + " " + theme.Dimmed.Render(pad("Username", userW)) + " " + theme.Dimmed.Render("Password"),
+		rule(w),
+	}
+	if len(folder.entries) == 0 {
+		lines = append(lines, theme.Faded.Render("  (no entries here — open a sub-folder)"))
+	}
+	avail := max(1, rows-3)
+	start := 0
+	if m.esel >= avail {
+		start = m.esel - avail + 1
+	}
+	end := min(start+avail, len(folder.entries))
+	for i := start; i < end; i++ {
+		e := folder.entries[i]
+		if i == m.esel && m.focus == 1 {
+			plain := pad("• "+e.Title, titleW+2) + " " + pad(e.Username, userW) + " " + "••••••••"
+			lines = append(lines, theme.SelRow.Width(w).Render(trunc(plain, w)))
+			continue
+		}
+		lines = append(lines, theme.Faded.Render("• ")+theme.Strong.Render(pad(trunc(e.Title, titleW-2), titleW))+" "+theme.Dimmed.Render(pad(e.Username, userW))+" "+theme.Acc.Render("••••••••"))
+	}
+	for len(lines) < rows {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// resultsPane replaces the folder table while a search is active.
+func (m Model) resultsPane(w, rows int) string {
+	titleW := w * 4 / 10
+	if titleW < 8 {
+		titleW = 8
+	}
+	lines := []string{
+		theme.Strong.Render("Search results") + theme.Dimmed.Render(fmt.Sprintf("  %d matches", len(m.results))),
+		theme.Dimmed.Render(pad("Title", titleW)) + " " + theme.Dimmed.Render("Location"),
+		rule(w),
+	}
+	if len(m.results) == 0 {
+		lines = append(lines, theme.Dimmed.Render("  nothing matches — esc clears"))
+	}
+	avail := max(1, rows-3)
+	start := 0
+	if m.sel >= avail {
+		start = m.sel - avail + 1
+	}
+	end := min(start+avail, len(m.results))
+	q := m.input.Value()
+	for i := start; i < end; i++ {
+		e := m.results[i].Entry
+		loc := e.Source
+		if e.Path != "" {
+			loc += " · " + e.Path
+		}
+		if i == m.sel {
+			plain := pad("• "+e.Title, titleW+2) + " " + loc
+			lines = append(lines, theme.SelRow.Width(w).Render(trunc(plain, w)))
+			continue
+		}
+		lines = append(lines, theme.Faded.Render("• ")+highlight(pad(e.Title, titleW), q, theme.Strong)+" "+theme.Dimmed.Render(trunc(loc, max(4, w-titleW-3))))
+	}
+	for len(lines) < rows {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// detailView is the full-screen entry details (Pleasant's "Entry Details").
+func (m Model) detailView() string {
+	top := m.searchLine() + "\n" + rule(m.w) + "\n"
+	hint := theme.Faded.Render(trunc("↵ copy pw · ctrl+r reveal · ctrl+u user · ctrl+o url · esc back", m.w))
+	bottom := "\n" + rule(m.w) + "\n" + m.countdown() + "\n" + hint
+	rows := m.h - 6
+	if rows < 1 {
+		rows = 1
+	}
+
+	e := m.selEntry()
+	if e == nil {
+		return top + strings.Repeat("\n", max(0, rows-1)) + bottom
+	}
+	w := m.w
+	field := func(l, v string, st lipgloss.Style) string {
+		return theme.Dimmed.Render(pad(l, 12)) + st.Render(trunc(v, max(4, w-14)))
+	}
+	pw := theme.Acc.Render(strings.Repeat("•", 12)) + theme.Dimmed.Render("   ctrl+r reveal")
+	if m.reveal {
+		pw = theme.Hi.Render(trunc(e.Password.Reveal(), max(4, w-18))) + theme.Dimmed.Render("   ctrl+r hide")
+	}
+	loc := e.Source
+	if e.Path != "" {
+		loc += " · " + e.Path
+	}
+	b := []string{
+		theme.Brand.Render(trunc(e.Title, w)),
+		theme.Dimmed.Render(trunc(loc, w)),
+		"",
+		field("Username", e.Username, theme.Strong),
+		theme.Dimmed.Render(pad("Password", 12)) + pw,
+	}
+	if e.URL != "" {
+		b = append(b, field("URL", e.URL, theme.Dimmed))
+	}
+	if len(e.Tags) > 0 {
+		b = append(b, field("Tags", strings.Join(e.Tags, ", "), theme.Dimmed))
+	}
 	for len(b) < rows {
 		b = append(b, "")
 	}
 	if len(b) > rows {
 		b = b[:rows]
 	}
-	return strings.Join(b, "\n")
-}
-
-func (m Model) list(w, rows int) string {
-	if len(m.results) == 0 {
-		return theme.Dimmed.Render(pad("  nothing matches — esc clears", w))
-	}
-	start := 0
-	if m.sel >= rows {
-		start = m.sel - rows + 1
-	}
-	end := start + rows
-	if end > len(m.results) {
-		end = len(m.results)
-	}
-	q := m.input.Value()
-	titleW, userW := 22, 14
-	if w < 70 {
-		userW = 0
-	}
-
-	var lines []string
-	for i := start; i < end; i++ {
-		e := m.results[i].Entry
-		prov := e.Source + " · " + e.Path
-		provW := w - 3 - titleW - userW
-		if userW > 0 {
-			provW--
-		}
-		if provW < 6 {
-			provW = 6
-		}
-		if i == m.sel {
-			line := " → " + pad(e.Title, titleW) + " " + pad(prov, provW)
-			if userW > 0 {
-				line += " " + pad(e.Username, userW)
-			}
-			lines = append(lines, theme.SelRow.Width(w).Render(trunc(line, w)))
-			continue
-		}
-		seg := "   " + highlight(pad(e.Title, titleW), q, theme.Strong) + " " + theme.Dimmed.Render(pad(prov, provW))
-		if userW > 0 {
-			seg += " " + theme.Acc.Render(pad(e.Username, userW))
-		}
-		lines = append(lines, seg)
-	}
-	for len(lines) < rows {
-		lines = append(lines, "")
-	}
-	return strings.Join(lines, "\n")
-}
-
-func (m Model) detail(w int) string {
-	if len(m.results) == 0 {
-		return ""
-	}
-	e := m.results[m.sel].Entry
-	field := func(l, v string, st lipgloss.Style) string {
-		return theme.Dimmed.Render(pad(l, 10)) + st.Render(trunc(v, max(4, w-10)))
-	}
-	pw := theme.Acc.Render(strings.Repeat("•", 11)) + theme.Dimmed.Render("   ctrl+r reveal")
-	if m.reveal {
-		pw = theme.Hi.Render(trunc(e.Password.Reveal(), max(4, w-16))) + theme.Dimmed.Render("  ctrl+r hide")
-	}
-	lines := []string{
-		theme.Strong.Render(trunc(e.Title, w)),
-		theme.Dimmed.Render(trunc(e.Source+" · "+e.Path, w)),
-		"",
-		field("Username", e.Username, theme.Strong),
-		theme.Dimmed.Render(pad("Password", 10)) + pw,
-	}
-	if e.URL != "" {
-		lines = append(lines, field("URL", e.URL, theme.Dimmed))
-	}
-	if len(e.Tags) > 0 {
-		lines = append(lines, field("Tags", strings.Join(e.Tags, ", "), theme.Dimmed))
-	}
-	lines = append(lines, "",
-		theme.Dimmed.Render(pad("copy", 10))+theme.Dimmed.Render("↵ pw · ")+theme.Acc.Render("ctrl+u")+theme.Dimmed.Render(" user · ")+theme.Acc.Render("ctrl+o")+theme.Dimmed.Render(" url"))
-	return strings.Join(lines, "\n")
-}
-
-func (m Model) split(rows int) string {
-	leftW := m.w*3/5 - 2
-	rightW := m.w - leftW - 3
-	sep := theme.Rule.Render(" │ ")
-	return lipgloss.JoinHorizontal(lipgloss.Top,
-		lipgloss.NewStyle().Width(leftW).Height(rows).Render(m.list(leftW, rows)),
-		sep,
-		lipgloss.NewStyle().Width(rightW).Height(rows).Render(m.detail(rightW)),
-	)
-}
-
-func (m Model) detailScreen(rows int) string {
-	lines := strings.Split(m.detail(m.w), "\n")
-	for len(lines) < rows {
-		lines = append(lines, "")
-	}
-	return strings.Join(lines, "\n")
+	return top + strings.Join(b, "\n") + bottom
 }
 
 func (m Model) countdown() string {
@@ -227,12 +296,12 @@ func (m Model) countdown() string {
 func (m Model) hints() string {
 	var full string
 	switch {
-	case m.input.Value() == "":
-		full = "type to search · ? keys · ctrl+c quit"
-	case m.peek:
-		full = "↵ copy · ctrl+r reveal · ctrl+u user · ctrl+o url · esc back"
+	case m.searchMode:
+		full = "type to filter · ↑↓ pick · ↵ apply · esc cancel"
+	case m.showResults():
+		full = "↑↓ results · ↵ details · / edit · ctrl+y copy · esc clear"
 	default:
-		full = "↵ copy · ⇥ peek · esc clear · ? keys"
+		full = "↑↓ move · →/⇥ into · ← back · ↵ open · / search · ? keys"
 	}
 	return theme.Faded.Render(trunc(full, m.w))
 }
@@ -247,23 +316,56 @@ func (m Model) tooSmall() string {
 	return lipgloss.Place(max(1, m.w), max(1, m.h), lipgloss.Center, lipgloss.Center, msg)
 }
 
+// padLeft right-aligns s within width w (display-width aware).
+func padLeft(s string, w int) string {
+	if d := dw(s); d < w {
+		return strings.Repeat(" ", w-d) + s
+	}
+	return trunc(s, w)
+}
+
 func (m Model) helpView() string {
-	rows := [][2]string{
-		{"type", "search everything, live"},
-		{"↑ / ↓", "move selection"},
-		{"enter", "copy password + start countdown"},
-		{"tab / →", "peek: expand into detail"},
-		{"esc", "back from peek · clear search"},
-		{"ctrl+r", "reveal password (in peek)"},
-		{"ctrl+u / o", "copy username / url"},
-		{"?", "toggle this help"},
-		{"ctrl+c", "quit (clears the clipboard)"},
+	groups := []struct {
+		title string
+		rows  [][2]string
+	}{
+		{"Navigate", [][2]string{
+			{"↑ / ↓", "Move up / down — tree, table, results"},
+			{"→ / tab", "Enter folder · move to the entry table"},
+			{"←", "Collapse folder · back to the tree"},
+			{"enter", "Expand folder · open entry details"},
+		}},
+		{"Search", [][2]string{
+			{"/", "Search every source"},
+			{"enter", "Apply the filter, leave the search box"},
+			{"esc", "Cancel search · clear the filter"},
+		}},
+		{"Entry under cursor", [][2]string{
+			{"ctrl+r", "Reveal the password (in details)"},
+			{"ctrl+y", "Copy password"},
+			{"ctrl+u", "Copy username"},
+			{"ctrl+o", "Copy URL"},
+		}},
+		{"General", [][2]string{
+			{"?", "Toggle this help"},
+			{"ctrl+c", "Quit — clears the clipboard"},
+		}},
 	}
+
+	const keyW = 9
 	var b strings.Builder
-	b.WriteString(theme.Brand.Render("harmos") + theme.Dimmed.Render("  keys") + "\n\n")
-	for _, r := range rows {
-		b.WriteString("  " + theme.Acc.Render(pad(r[0], 12)) + theme.Dimmed.Render(r[1]) + "\n")
+	fmt.Fprint(&b, theme.Brand.Render("harmos")+theme.Dimmed.Render("  ·  keys"))
+	for _, g := range groups {
+		fmt.Fprint(&b, "\n\n"+theme.Acc.Render(g.title))
+		for _, r := range g.rows {
+			fmt.Fprint(&b, "\n"+theme.Strong.Render(padLeft(r[0], keyW))+"    "+theme.Dimmed.Render(r[1]))
+		}
 	}
-	b.WriteString("\n" + theme.Faded.Render("  any key closes this"))
-	return lipgloss.Place(max(1, m.w), max(1, m.h), lipgloss.Center, lipgloss.Center, b.String())
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(theme.Faint).
+		Padding(1, 3).
+		Render(b.String())
+	return lipgloss.Place(max(1, m.w), max(1, m.h), lipgloss.Center, lipgloss.Center, box)
 }

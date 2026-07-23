@@ -1,21 +1,22 @@
 // Package theme is the harmos color set — the executable form of the M4 token
-// table (docs/design/harmos-tui-tokens.md). Brass is the default. Colors are
-// AdaptiveColor so the set survives light terminals; amber is spent only on
-// secrets and the act of copying them, teal/rust are status, steel is chrome.
+// table (docs/design/harmos-tui-tokens.md). Charm (violet) is the default.
+// Colors are AdaptiveColor so the set survives light terminals; the accent is
+// spent only on secrets and the act of copying them, teal/rust are status,
+// steel is chrome.
 package theme
 
 import "github.com/charmbracelet/lipgloss"
 
-// Tokens (brass · light/dark).
+// Tokens (charm · light/dark).
 var (
-	Accent   = lipgloss.AdaptiveColor{Light: "#9a6f22", Dark: "#dca545"}
-	AccentHi = lipgloss.AdaptiveColor{Light: "#7c5416", Dark: "#f0d193"}
-	Steel    = lipgloss.AdaptiveColor{Light: "#2a271f", Dark: "#c6c0b0"}
-	Dim      = lipgloss.AdaptiveColor{Light: "#6a6252", Dark: "#847e6d"}
-	Faint    = lipgloss.AdaptiveColor{Light: "#948b76", Dark: "#544f41"}
-	OK       = lipgloss.AdaptiveColor{Light: "#2c7d6e", Dark: "#5fb0a0"}
-	Warn     = lipgloss.AdaptiveColor{Light: "#a8482f", Dark: "#cf6f54"}
-	SelBg    = lipgloss.AdaptiveColor{Light: "#f0e6cf", Dark: "#2e2413"}
+	Accent   = lipgloss.AdaptiveColor{Light: "#6a48d0", Dark: "#8b6dff"}
+	AccentHi = lipgloss.AdaptiveColor{Light: "#4a2ea8", Dark: "#c4b4ff"}
+	Steel    = lipgloss.AdaptiveColor{Light: "#2b2740", Dark: "#c8c5d7"}
+	Dim      = lipgloss.AdaptiveColor{Light: "#6b6884", Dark: "#7d7a96"}
+	Faint    = lipgloss.AdaptiveColor{Light: "#a29fb8", Dark: "#4f4c6c"}
+	OK       = lipgloss.AdaptiveColor{Light: "#1f9b70", Dark: "#43d69a"}
+	Warn     = lipgloss.AdaptiveColor{Light: "#cc3b62", Dark: "#ff6a94"}
+	SelBg    = lipgloss.AdaptiveColor{Light: "#ebe6fb", Dark: "#241d3f"}
 )
 
 // Styles built from the tokens.
