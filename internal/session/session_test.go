@@ -67,8 +67,13 @@ func TestOpenAllSources(t *testing.T) {
 	makeKDBX(t, filepath.Join(dir, "personal.kdbx"), "personalpw", "router")
 	cfg := writeConfig(t, dir)
 
-	ask := func(p config.Profile) (secret.Secret, error) { return secret.New("personalpw"), nil }
-	res := Open(cfg, secret.New("master"), ask)
+	ask := func(p config.Profile, retry bool) (secret.Secret, error) {
+		if p.Type == config.Pleasant {
+			return secret.New("master"), nil
+		}
+		return secret.New("personalpw"), nil
+	}
+	res := Open(cfg, ask)
 
 	if len(res.Excluded) != 0 {
 		t.Fatalf("unexpected excluded: %+v", res.Excluded)
@@ -91,14 +96,49 @@ func TestPartialFailureIsNotFatal(t *testing.T) {
 	makeKDBX(t, filepath.Join(dir, "personal.kdbx"), "personalpw", "router")
 	cfg := writeConfig(t, dir)
 
-	// wrong master → the Pleasant cache fails, but personal still opens
-	ask := func(p config.Profile) (secret.Secret, error) { return secret.New("personalpw"), nil }
-	res := Open(cfg, secret.New("WRONG"), ask)
+	// wrong master (returned again on retry) → the Pleasant cache is excluded,
+	// but personal still opens
+	ask := func(p config.Profile, retry bool) (secret.Secret, error) {
+		if p.Type == config.Pleasant {
+			return secret.New("WRONG"), nil
+		}
+		return secret.New("personalpw"), nil
+	}
+	res := Open(cfg, ask)
 
 	if len(res.Excluded) != 1 || res.Excluded[0].Source != "work" {
 		t.Fatalf("expected 'work' excluded, got %+v", res.Excluded)
 	}
 	if len(res.Entries) != 1 || res.Entries[0].Title != "router" {
 		t.Fatalf("expected only router to open, got %+v", res.Entries)
+	}
+}
+
+// A wrong password on the first try is re-prompted and unlocks on the retry —
+// caught immediately, not deferred to an excluded-source warning.
+func TestRetryUnlocksOnSecondTry(t *testing.T) {
+	dir := t.TempDir()
+	makeKDBX(t, filepath.Join(dir, "work.kdbx"), "master", "db-prod")
+	makeKDBX(t, filepath.Join(dir, "personal.kdbx"), "personalpw", "router")
+	cfg := writeConfig(t, dir)
+
+	tries := map[string]int{}
+	ask := func(p config.Profile, retry bool) (secret.Secret, error) {
+		tries[p.Name]++
+		if p.Type == config.Pleasant {
+			if !retry {
+				return secret.New("WRONG"), nil
+			}
+			return secret.New("master"), nil
+		}
+		return secret.New("personalpw"), nil
+	}
+	res := Open(cfg, ask)
+
+	if len(res.Excluded) != 0 {
+		t.Fatalf("nothing should be excluded, got %+v", res.Excluded)
+	}
+	if tries["work"] < 2 {
+		t.Errorf("work should have been re-prompted, got %d attempt(s)", tries["work"])
 	}
 }

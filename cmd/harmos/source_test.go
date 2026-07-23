@@ -26,7 +26,7 @@ func TestAddKdbxWritesLoadableProfile(t *testing.T) {
 	kdbx := writeDummyKdbx(t, dir, "vault.kdbx")
 
 	var out bytes.Buffer
-	if err := runAddKdbx(cfgPath, kdbx, "", "", false, &out); err != nil {
+	if err := runAddSource(cfgPath, kdbx, "", "", false, &out); err != nil {
 		t.Fatalf("add: %v", err)
 	}
 	cfg, err := config.Load(cfgPath)
@@ -50,12 +50,12 @@ func TestAddKdbxRejectsDuplicate(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.toml")
 	kdbx := writeDummyKdbx(t, dir, "v.kdbx")
 	var out bytes.Buffer
-	if err := runAddKdbx(cfgPath, kdbx, "mine", "", false, &out); err != nil {
+	if err := runAddSource(cfgPath, kdbx, "mine", "", false, &out); err != nil {
 		t.Fatal(err)
 	}
 	// Without --force and no TTY, a duplicate name is an error (never a silent
 	// overwrite).
-	if err := runAddKdbx(cfgPath, kdbx, "mine", "", false, &out); err == nil {
+	if err := runAddSource(cfgPath, kdbx, "mine", "", false, &out); err == nil {
 		t.Fatal("adding a duplicate name should fail without --force")
 	}
 }
@@ -66,10 +66,10 @@ func TestAddKdbxForceOverwrites(t *testing.T) {
 	first := writeDummyKdbx(t, dir, "a.kdbx")
 	second := writeDummyKdbx(t, dir, "b.kdbx")
 	var out bytes.Buffer
-	if err := runAddKdbx(cfgPath, first, "own", "", false, &out); err != nil {
+	if err := runAddSource(cfgPath, first, "own", "", false, &out); err != nil {
 		t.Fatal(err)
 	}
-	if err := runAddKdbx(cfgPath, second, "own", "", true, &out); err != nil {
+	if err := runAddSource(cfgPath, second, "own", "", true, &out); err != nil {
 		t.Fatalf("force overwrite: %v", err)
 	}
 	cfg, err := config.Load(cfgPath)
@@ -110,7 +110,7 @@ func TestAddKdbxOverwritePreservesRest(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runAddKdbx(cfgPath, newKdbx, "own", "", true, &out); err != nil {
+	if err := runAddSource(cfgPath, newKdbx, "own", "", true, &out); err != nil {
 		t.Fatalf("overwrite: %v", err)
 	}
 	got, err := os.ReadFile(cfgPath)
@@ -149,7 +149,7 @@ func TestAddKdbxRejectsMissingFile(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
 	var out bytes.Buffer
-	if err := runAddKdbx(cfgPath, filepath.Join(dir, "nope.kdbx"), "x", "", false, &out); err == nil {
+	if err := runAddSource(cfgPath, filepath.Join(dir, "nope.kdbx"), "x", "", false, &out); err == nil {
 		t.Fatal("adding a non-existent file should fail")
 	}
 }
@@ -169,7 +169,7 @@ func TestAddKdbxAppendsAndMasterGating(t *testing.T) {
 	kdbx := writeDummyKdbx(t, dir, "personal.kdbx")
 
 	var out bytes.Buffer
-	if err := runAddKdbx(cfgPath, kdbx, "personal", "", false, &out); err != nil {
+	if err := runAddSource(cfgPath, kdbx, "personal", "", false, &out); err != nil {
 		t.Fatalf("add: %v", err)
 	}
 	cfg, err := config.Load(cfgPath)
@@ -179,24 +179,7 @@ func TestAddKdbxAppendsAndMasterGating(t *testing.T) {
 	if len(cfg.Profiles) != 2 {
 		t.Fatalf("want 2 profiles, got %d", len(cfg.Profiles))
 	}
-	if !needsMaster(cfg) {
-		t.Error("a config with a pleasant profile must require the master")
-	}
-}
-
-func TestNeedsMasterKdbxOnly(t *testing.T) {
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "config.toml")
-	kdbx := writeDummyKdbx(t, dir, "only.kdbx")
-	var out bytes.Buffer
-	if err := runAddKdbx(cfgPath, kdbx, "only", "", false, &out); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := config.Load(cfgPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if needsMaster(cfg) {
-		t.Error("a kdbx-only config must not require the master password")
+	if cfg.Profile("work") == nil || cfg.Profile("personal") == nil {
+		t.Error("both the seeded pleasant and the added kdbx profile must be present")
 	}
 }

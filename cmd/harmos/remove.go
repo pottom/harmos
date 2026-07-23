@@ -12,12 +12,13 @@ import (
 	"github.com/pottom/harmos/internal/keyring"
 )
 
-func newRemoveKdbxCmd() *cobra.Command {
+func newRemoveSourceCmd() *cobra.Command {
 	var configPath string
 	var deleteFile, forgetPassword bool
 	cmd := &cobra.Command{
-		Use:   "remove-kdbx <name>",
-		Short: "Remove a local kdbx source from the config",
+		Use:     "remove-source <name>",
+		Aliases: []string{"remove-kdbx"},
+		Short:   "Remove a local kdbx source from the config",
 		Long: "Remove a local kdbx source from the config. On a terminal you are asked " +
 			"whether to also delete the kdbx file itself (off by default — harmos is " +
 			"otherwise read-only) and whether to remove its saved keyring password. Use " +
@@ -34,7 +35,7 @@ func newRemoveKdbxCmd() *cobra.Command {
 				return fmt.Errorf("no profile named %q", name)
 			}
 			if p.Type != config.Kdbx {
-				return fmt.Errorf("%q is a %s source; remove-kdbx only removes local kdbx sources", name, p.Type)
+				return fmt.Errorf("%q is a %s source; remove-source removes only local kdbx sources", name, p.Type)
 			}
 
 			if !cmd.Flags().Changed("delete-file") && onTTY() {
@@ -51,7 +52,7 @@ func newRemoveKdbxCmd() *cobra.Command {
 				}
 				forgetPassword = ok
 			}
-			return runRemoveKdbx(configPath, name, deleteFile, forgetPassword, cmd.OutOrStdout())
+			return runRemoveSource(configPath, name, deleteFile, forgetPassword, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().BoolVar(&deleteFile, "delete-file", false, "also delete the kdbx file from disk")
@@ -60,7 +61,7 @@ func newRemoveKdbxCmd() *cobra.Command {
 	return cmd
 }
 
-func runRemoveKdbx(configPath, name string, deleteFile, forgetPassword bool, out io.Writer) error {
+func runRemoveSource(configPath, name string, deleteFile, forgetPassword bool, out io.Writer) error {
 	if configPath == "" {
 		p, err := config.DefaultPath()
 		if err != nil {
@@ -77,7 +78,7 @@ func runRemoveKdbx(configPath, name string, deleteFile, forgetPassword bool, out
 		return fmt.Errorf("no profile named %q", name)
 	}
 	if p.Type != config.Kdbx {
-		return fmt.Errorf("%q is a %s source; remove-kdbx only removes local kdbx sources", name, p.Type)
+		return fmt.Errorf("%q is a %s source; remove-source removes only local kdbx sources", name, p.Type)
 	}
 	kdbxPath := p.Path
 	remaining := len(cfg.Profiles) - 1

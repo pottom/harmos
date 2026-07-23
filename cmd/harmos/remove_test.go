@@ -33,7 +33,7 @@ func TestRemoveKdbxPreservesRest(t *testing.T) {
 	cfgPath, aPath := seedTwoKdbx(t, dir)
 
 	var out bytes.Buffer
-	if err := runRemoveKdbx(cfgPath, "a", false, false, &out); err != nil {
+	if err := runRemoveSource(cfgPath, "a", false, false, &out); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
 	if _, err := os.Stat(aPath); err != nil {
@@ -61,7 +61,7 @@ func TestRemoveKdbxDeletesFile(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath, aPath := seedTwoKdbx(t, dir)
 	var out bytes.Buffer
-	if err := runRemoveKdbx(cfgPath, "a", true, false, &out); err != nil {
+	if err := runRemoveSource(cfgPath, "a", true, false, &out); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(aPath); !os.IsNotExist(err) {
@@ -78,7 +78,7 @@ func TestRemoveKdbxRejectsPleasant(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := runRemoveKdbx(cfgPath, "work", false, false, &out); err == nil {
+	if err := runRemoveSource(cfgPath, "work", false, false, &out); err == nil {
 		t.Fatal("remove-kdbx must refuse a Pleasant source")
 	}
 }
@@ -88,10 +88,10 @@ func TestRemoveKdbxLastProfile(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.toml")
 	kdbx := writeDummyKdbx(t, dir, "only.kdbx")
 	var out bytes.Buffer
-	if err := runAddKdbx(cfgPath, kdbx, "only", "", false, &out); err != nil {
+	if err := runAddSource(cfgPath, kdbx, "only", "", false, &out); err != nil {
 		t.Fatal(err)
 	}
-	if err := runRemoveKdbx(cfgPath, "only", false, false, &out); err != nil {
+	if err := runRemoveSource(cfgPath, "only", false, false, &out); err != nil {
 		t.Fatalf("removing last profile: %v", err)
 	}
 	if !strings.Contains(out.String(), "no sources") {

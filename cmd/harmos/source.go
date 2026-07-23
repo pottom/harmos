@@ -63,12 +63,13 @@ func runSources(configPath string, showHeaders bool, out io.Writer) error {
 	return nil
 }
 
-func newAddKdbxCmd() *cobra.Command {
+func newAddSourceCmd() *cobra.Command {
 	var name, keyfile, configPath string
 	var force, savePassword bool
 	cmd := &cobra.Command{
-		Use:   "add-kdbx <path>",
-		Short: "Register a local .kdbx file as a read-only source",
+		Use:     "add-source <path>",
+		Aliases: []string{"add-kdbx"},
+		Short:   "Register a local .kdbx file as a read-only source",
 		Long: "Add a local KeePass .kdbx file to the config as a read-only source. " +
 			"harmos never writes to the file; you are prompted for its password when " +
 			"you open it (or point at a key file with --keyfile). With --save-password " +
@@ -79,7 +80,7 @@ func newAddKdbxCmd() *cobra.Command {
 			if derived == "" {
 				derived = deriveProfileName(args[0])
 			}
-			if err := runAddKdbx(configPath, args[0], name, keyfile, force, cmd.OutOrStdout()); err != nil {
+			if err := runAddSource(configPath, args[0], name, keyfile, force, cmd.OutOrStdout()); err != nil {
 				return err
 			}
 			if savePassword {
@@ -96,7 +97,7 @@ func newAddKdbxCmd() *cobra.Command {
 	return cmd
 }
 
-func runAddKdbx(configPath, path, name, keyfile string, force bool, out io.Writer) error {
+func runAddSource(configPath, path, name, keyfile string, force bool, out io.Writer) error {
 	if configPath == "" {
 		p, err := config.DefaultPath()
 		if err != nil {
