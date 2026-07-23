@@ -133,7 +133,30 @@ func (c *Client) IsOfflineAvailable(ctx context.Context) (bool, error) {
 // OfflinePackage fetches the whole vault as a ZIP and streams it to w. comment
 // is recorded server-side (every fetch is audited); send a truthful one. Returns
 // the number of bytes written.
-func (c *Client) OfflinePackage(ctx context.Context, comment string, w io.Writer) (int64, error) {
+// progressWriter reports (bytes so far, total) to a callback as it is written,
+// throttled. total is resp.ContentLength, which is -1 when the server does not
+// send a length (so no percentage can be shown).
+type progressWriter struct {
+	w     io.Writer
+	total int64
+	n     int64
+	last  int64
+	cb    func(done, total int64)
+}
+
+func (p *progressWriter) Write(b []byte) (int, error) {
+	n, err := p.w.Write(b)
+	p.n += int64(n)
+	if p.n-p.last >= 512*1024 { // every 512 KiB
+		p.last = p.n
+		p.cb(p.n, p.total)
+	}
+	return n, err
+}
+
+// OfflinePackage streams the package to w. If onProgress is non-nil it is called
+// with (bytes so far, total) during and once at the end; total is -1 if unknown.
+func (c *Client) OfflinePackage(ctx context.Context, comment string, w io.Writer, onProgress func(done, total int64)) (int64, error) {
 	if c.token.IsZero() {
 		return 0, fmt.Errorf("not logged in")
 	}
@@ -155,7 +178,15 @@ func (c *Client) OfflinePackage(ctx context.Context, comment string, w io.Writer
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("offline package failed: %s", statusError(resp))
 	}
-	return io.Copy(w, resp.Body)
+	dst := w
+	if onProgress != nil {
+		dst = &progressWriter{w: w, total: resp.ContentLength, cb: onProgress}
+	}
+	n, err := io.Copy(dst, resp.Body)
+	if onProgress != nil && err == nil {
+		onProgress(n, resp.ContentLength) // final, exact
+	}
+	return n, err
 }
 
 // getJSON does an authenticated GET on an API path and decodes JSON into out.

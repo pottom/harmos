@@ -135,8 +135,13 @@ func (r *syncReporter) phase(name string) {
 	r.open = true
 }
 
-func (r *syncReporter) bytes(done int64) {
-	emitf(r.w, "\r  downloading offline package… %s", humanBytes(done))
+func (r *syncReporter) bytes(done, total int64) {
+	if total > 0 {
+		pct := min(done*100/total, 100)
+		emitf(r.w, "\r  downloading offline package… %s / %s (%d%%)  ", humanBytes(done), humanBytes(total), pct)
+	} else {
+		emitf(r.w, "\r  downloading offline package… %s  ", humanBytes(done))
+	}
 	r.open = true
 }
 

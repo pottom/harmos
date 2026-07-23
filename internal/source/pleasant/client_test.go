@@ -50,7 +50,7 @@ func TestCallsRequireLogin(t *testing.T) {
 	if _, err := c.IsOfflineAvailable(t.Context()); err == nil {
 		t.Error("IsOfflineAvailable without login should error")
 	}
-	if _, err := c.OfflinePackage(t.Context(), "test", &bytes.Buffer{}); err == nil {
+	if _, err := c.OfflinePackage(t.Context(), "test", &bytes.Buffer{}, nil); err == nil {
 		t.Error("OfflinePackage without login should error")
 	}
 }
@@ -60,7 +60,7 @@ func TestOfflinePackageStreamsValidZip(t *testing.T) {
 	c := loggedInClient(t, srv)
 
 	var buf bytes.Buffer
-	n, err := c.OfflinePackage(t.Context(), "harmos test", &buf)
+	n, err := c.OfflinePackage(t.Context(), "harmos test", &buf, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

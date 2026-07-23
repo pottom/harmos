@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -16,8 +15,8 @@ import (
 
 // Reporter receives live progress during a Sync. Any field may be nil.
 type Reporter struct {
-	Phase func(name string)      // a new phase begins (downloading, building, writing)
-	Bytes func(downloaded int64) // bytes fetched so far, during the package download
+	Phase func(name string)       // a new phase begins (downloading, building, writing)
+	Bytes func(done, total int64) // download progress; total is -1 when unknown
 }
 
 // SyncOptions configures a Sync.
@@ -94,25 +93,7 @@ func Sync(ctx context.Context, c *Client, sourceURL string, opt SyncOptions) (*R
 	return res, nil
 }
 
-// countWriter reports total bytes written so far, throttled, to a callback.
-type countWriter struct {
-	w    io.Writer
-	n    int64
-	last int64
-	cb   func(int64)
-}
-
-func (c *countWriter) Write(p []byte) (int, error) {
-	n, err := c.w.Write(p)
-	c.n += int64(n)
-	if c.n-c.last >= 512*1024 { // every 512 KiB
-		c.last = c.n
-		c.cb(c.n)
-	}
-	return n, err
-}
-
-func fetchPackage(ctx context.Context, c *Client, dir, comment string, onBytes func(int64)) (string, error) {
+func fetchPackage(ctx context.Context, c *Client, dir, comment string, onBytes func(done, total int64)) (string, error) {
 	tmp, err := os.CreateTemp(dir, ".harmos-pkg-*.zip")
 	if err != nil {
 		return "", err
@@ -123,20 +104,13 @@ func fetchPackage(ctx context.Context, c *Client, dir, comment string, onBytes f
 		_ = os.Remove(path)
 		return "", err
 	}
-	var w io.Writer = tmp
-	if onBytes != nil {
-		w = &countWriter{w: tmp, cb: onBytes}
-	}
-	n, err := c.OfflinePackage(ctx, comment, w)
+	_, err = c.OfflinePackage(ctx, comment, tmp, onBytes)
 	if cerr := tmp.Close(); cerr != nil && err == nil {
 		err = cerr
 	}
 	if err != nil {
 		_ = os.Remove(path)
 		return "", err
-	}
-	if onBytes != nil {
-		onBytes(n) // final, exact total
 	}
 	return path, nil
 }

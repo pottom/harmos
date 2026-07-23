@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"bytes"
+	"strings"
+	"testing"
+)
 
 func TestHumanBytes(t *testing.T) {
 	cases := map[int64]string{
@@ -14,5 +18,21 @@ func TestHumanBytes(t *testing.T) {
 		if got := humanBytes(n); got != want {
 			t.Errorf("humanBytes(%d) = %q, want %q", n, got, want)
 		}
+	}
+}
+
+func TestSyncReporterPercent(t *testing.T) {
+	var buf bytes.Buffer
+	r := &syncReporter{w: &buf}
+
+	r.bytes(50, 100)
+	if !strings.Contains(buf.String(), "50%") {
+		t.Errorf("expected a percentage when total is known, got %q", buf.String())
+	}
+
+	buf.Reset()
+	r.bytes(50, -1) // server gave no length
+	if strings.Contains(buf.String(), "%") {
+		t.Errorf("no percentage when total is unknown, got %q", buf.String())
 	}
 }
