@@ -45,3 +45,29 @@ func TestStoreFetchForget(t *testing.T) {
 		t.Errorf("forget missing: %v", err)
 	}
 }
+
+func TestMasterStoreFetchForget(t *testing.T) {
+	gokeyring.MockInit()
+
+	if _, ok, err := FetchMaster(); err != nil || ok {
+		t.Fatalf("empty master: ok=%v err=%v", ok, err)
+	}
+	if err := StoreMaster(secret.New("m4ster")); err != nil {
+		t.Fatalf("store master: %v", err)
+	}
+	pw, ok, err := FetchMaster()
+	if err != nil || !ok || pw.Reveal() != "m4ster" {
+		t.Fatalf("fetch master: ok=%v err=%v pw=%q", ok, err, pw.Reveal())
+	}
+	// the master is separate from per-source entries: a source named "work" is
+	// untouched by StoreMaster
+	if _, ok, _ := Fetch("work"); ok {
+		t.Error("storing the master must not create a per-source entry")
+	}
+	if err := ForgetMaster(); err != nil {
+		t.Fatalf("forget master: %v", err)
+	}
+	if _, ok, _ := FetchMaster(); ok {
+		t.Error("master still present after forget")
+	}
+}

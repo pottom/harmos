@@ -13,18 +13,39 @@ import (
 )
 
 // service is the keyring "service" every harmos entry is filed under; the
-// profile name is the "account".
-const service = "harmos"
+// profile name is the "account". The shared harmos master password (which
+// unlocks every Pleasant cache — spec §2a) lives under a reserved account.
+const (
+	service       = "harmos"
+	masterAccount = "__harmos_master__"
+)
 
 // Store saves a profile's password in the OS keyring, replacing any existing one.
-func Store(profile string, pw secret.Secret) error {
-	return gokeyring.Set(service, profile, pw.Reveal())
-}
+func Store(profile string, pw secret.Secret) error { return set(profile, pw) }
 
 // Fetch returns a profile's stored password. ok is false (with a nil error) when
 // nothing is stored for that profile.
-func Fetch(profile string) (pw secret.Secret, ok bool, err error) {
-	v, err := gokeyring.Get(service, profile)
+func Fetch(profile string) (pw secret.Secret, ok bool, err error) { return get(profile) }
+
+// Forget deletes a profile's stored password. It is not an error if there was
+// nothing to delete.
+func Forget(profile string) error { return del(profile) }
+
+// StoreMaster saves the shared harmos master password.
+func StoreMaster(pw secret.Secret) error { return set(masterAccount, pw) }
+
+// FetchMaster returns the shared harmos master password, if one is stored.
+func FetchMaster() (secret.Secret, bool, error) { return get(masterAccount) }
+
+// ForgetMaster deletes the shared harmos master password.
+func ForgetMaster() error { return del(masterAccount) }
+
+func set(account string, pw secret.Secret) error {
+	return gokeyring.Set(service, account, pw.Reveal())
+}
+
+func get(account string) (secret.Secret, bool, error) {
+	v, err := gokeyring.Get(service, account)
 	if errors.Is(err, gokeyring.ErrNotFound) {
 		return secret.Secret{}, false, nil
 	}
@@ -34,10 +55,8 @@ func Fetch(profile string) (pw secret.Secret, ok bool, err error) {
 	return secret.New(v), true, nil
 }
 
-// Forget deletes a profile's stored password. It is not an error if there was
-// nothing to delete.
-func Forget(profile string) error {
-	err := gokeyring.Delete(service, profile)
+func del(account string) error {
+	err := gokeyring.Delete(service, account)
 	if errors.Is(err, gokeyring.ErrNotFound) {
 		return nil
 	}

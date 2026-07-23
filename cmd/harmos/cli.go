@@ -42,10 +42,13 @@ func resolveMaster() (secret.Secret, error) {
 	if v, ok := os.LookupEnv("HARMOS_MASTER"); ok {
 		return secret.New(v), nil
 	}
+	if pw, ok, err := keyring.FetchMaster(); err == nil && ok {
+		return pw, nil
+	}
 	if onTTY() {
 		return promptPassword("harmos master password: ")
 	}
-	return secret.Secret{}, fmt.Errorf("no terminal to prompt for the master password; set HARMOS_MASTER for scripting")
+	return secret.Secret{}, fmt.Errorf("no terminal to prompt for the master password; set HARMOS_MASTER or save it with `harmos save-password <pleasant-source>`")
 }
 
 // openAll loads the config, resolves the master, and opens every source. A kdbx
