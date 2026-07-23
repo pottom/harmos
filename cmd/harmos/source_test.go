@@ -145,6 +145,36 @@ func TestAddKdbxOverwritePreservesRest(t *testing.T) {
 	}
 }
 
+func TestAddPleasantSource(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cache := filepath.Join(dir, "work.kdbx")
+	var out bytes.Buffer
+	if err := runAddPleasant(cfgPath, "work", "https://pps.invalid:10001", "svc", cache, "", false, &out); err != nil {
+		t.Fatalf("add pleasant: %v", err)
+	}
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := cfg.Profile("work")
+	if p == nil || p.Type != config.Pleasant {
+		t.Fatalf("pleasant profile missing: %+v", p)
+	}
+	if p.URL != "https://pps.invalid:10001" || p.User != "svc" || p.Cache != cache {
+		t.Errorf("pleasant fields wrong: %+v", p)
+	}
+}
+
+func TestAddPleasantRequiresFields(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	var out bytes.Buffer
+	if err := runAddPleasant(cfgPath, "work", "", "svc", "/x", "", false, &out); err == nil {
+		t.Fatal("a Pleasant add must require --url/--user/--cache")
+	}
+}
+
 func TestAddKdbxRejectsMissingFile(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")

@@ -64,33 +64,60 @@ func runSources(configPath string, showHeaders bool, out io.Writer) error {
 }
 
 func newAddSourceCmd() *cobra.Command {
-	var name, keyfile, configPath string
+	var srcType, name, keyfile, configPath string
+	var url, user, cache, caBundle string
 	var force, savePassword bool
 	cmd := &cobra.Command{
-		Use:     "add-source <path>",
+		Use:     "add-source [path]",
 		Aliases: []string{"add-kdbx"},
-		Short:   "Register a local .kdbx file as a read-only source",
-		Long: "Add a local KeePass .kdbx file to the config as a read-only source. " +
-			"harmos never writes to the file; you are prompted for its password when " +
-			"you open it (or point at a key file with --keyfile). With --save-password " +
-			"the password is stored in the OS keyring so you are not asked again.",
-		Args: cobra.ExactArgs(1),
+		Short:   "Register a source (local kdbx by default, or --type pleasant)",
+		Long: "Add a source to the config. By default it is a local KeePass .kdbx file — " +
+			"pass its path; harmos never writes to that file. With --type pleasant it is " +
+			"a Pleasant Password Server (--url, --user, --cache); run `harmos sync` " +
+			"afterwards to populate its cache. --save-password stores the password (for " +
+			"Pleasant, the shared master) in the OS keyring.",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			derived := name
-			if derived == "" {
-				derived = deriveProfileName(args[0])
+			out := cmd.OutOrStdout()
+			switch srcType {
+			case "", string(config.Kdbx):
+				if len(args) != 1 {
+					return fmt.Errorf("add-source needs the path to a .kdbx file")
+				}
+				derived := name
+				if derived == "" {
+					derived = deriveProfileName(args[0])
+				}
+				if err := runAddSource(configPath, args[0], name, keyfile, force, out); err != nil {
+					return err
+				}
+				if savePassword {
+					return savePasswordFor(derived, out)
+				}
+				return nil
+			case string(config.Pleasant):
+				if len(args) != 0 {
+					return fmt.Errorf("a Pleasant source takes no path; use --url/--user/--cache")
+				}
+				if err := runAddPleasant(configPath, name, url, user, cache, caBundle, force, out); err != nil {
+					return err
+				}
+				if savePassword {
+					return saveMaster(out)
+				}
+				return nil
+			default:
+				return fmt.Errorf("unknown --type %q (want kdbx or pleasant)", srcType)
 			}
-			if err := runAddSource(configPath, args[0], name, keyfile, force, cmd.OutOrStdout()); err != nil {
-				return err
-			}
-			if savePassword {
-				return savePasswordFor(derived, cmd.OutOrStdout())
-			}
-			return nil
 		},
 	}
-	cmd.Flags().StringVar(&name, "name", "", "profile name (default: the file name without its extension)")
-	cmd.Flags().StringVar(&keyfile, "keyfile", "", "key file, if the kdbx uses one")
+	cmd.Flags().StringVar(&srcType, "type", "", "source type: kdbx (default) or pleasant")
+	cmd.Flags().StringVar(&name, "name", "", "profile name (default: derived from the path or cache)")
+	cmd.Flags().StringVar(&keyfile, "keyfile", "", "kdbx: key file, if the file uses one")
+	cmd.Flags().StringVar(&url, "url", "", "pleasant: server URL")
+	cmd.Flags().StringVar(&user, "user", "", "pleasant: server username")
+	cmd.Flags().StringVar(&cache, "cache", "", "pleasant: local cache kdbx path")
+	cmd.Flags().StringVar(&caBundle, "ca-bundle", "", "pleasant: CA bundle for a private CA")
 	cmd.Flags().BoolVar(&force, "force", false, "overwrite an existing profile of the same name without asking")
 	cmd.Flags().BoolVar(&savePassword, "save-password", false, "prompt for the password and store it in the OS keyring")
 	cmd.Flags().StringVar(&configPath, "config", "", "config file (default: $XDG_CONFIG_HOME/harmos/config.toml)")
@@ -98,14 +125,6 @@ func newAddSourceCmd() *cobra.Command {
 }
 
 func runAddSource(configPath, path, name, keyfile string, force bool, out io.Writer) error {
-	if configPath == "" {
-		p, err := config.DefaultPath()
-		if err != nil {
-			return err
-		}
-		configPath = p
-	}
-
 	kdbxPath, err := absPath(path)
 	if err != nil {
 		return err
@@ -134,6 +153,49 @@ func runAddSource(configPath, path, name, keyfile string, force bool, out io.Wri
 	}
 
 	block := buildKdbxBlock(name, kdbxPath, keyfile)
+	return upsertProfile(configPath, name, block, "kdbx", kdbxPath,
+		"run `harmos` to browse it (you'll be asked for its password)", force, out)
+}
+
+func runAddPleasant(configPath, name, url, user, cache, caBundle string, force bool, out io.Writer) error {
+	if url == "" || user == "" || cache == "" {
+		return fmt.Errorf("a Pleasant source needs --url, --user, and --cache")
+	}
+	cachePath, err := absPath(cache)
+	if err != nil {
+		return err
+	}
+	if caBundle != "" {
+		if caBundle, err = absPath(caBundle); err != nil {
+			return err
+		}
+		if _, err := os.Stat(caBundle); err != nil {
+			return fmt.Errorf("ca-bundle: %w", err)
+		}
+	}
+	if name == "" {
+		name = deriveProfileName(cachePath)
+	}
+	if name == "" {
+		return fmt.Errorf("could not derive a profile name; pass --name")
+	}
+
+	block := buildPleasantBlock(name, url, user, cachePath, caBundle)
+	return upsertProfile(configPath, name, block, "pleasant", url,
+		"run `harmos sync` to populate its cache", force, out)
+}
+
+// upsertProfile inserts block into the config as a new profile, or — if a profile
+// of that name exists — rewrites just that block (leaving the rest of the file
+// verbatim), after confirming the overwrite. kind/loc/hint shape the message.
+func upsertProfile(configPath, name, block, kind, loc, hint string, force bool, out io.Writer) error {
+	if configPath == "" {
+		p, err := config.DefaultPath()
+		if err != nil {
+			return err
+		}
+		configPath = p
+	}
 
 	// No config yet: write a fresh file with just this source.
 	if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
@@ -143,7 +205,7 @@ func runAddSource(configPath, path, name, keyfile string, force bool, out io.Wri
 		if err := writeFileAtomic(configPath, []byte(block)); err != nil {
 			return err
 		}
-		return reportAdd(out, "added", name, kdbxPath)
+		return reportUpsert(out, "added", kind, name, loc, hint)
 	} else if statErr != nil {
 		return statErr
 	}
@@ -196,12 +258,12 @@ func runAddSource(configPath, path, name, keyfile string, force bool, out io.Wri
 	if _, err := config.Load(configPath); err != nil {
 		return fmt.Errorf("config is invalid after %s %q: %w", verb, name, err)
 	}
-	return reportAdd(out, verb, name, kdbxPath)
+	return reportUpsert(out, verb, kind, name, loc, hint)
 }
 
-func reportAdd(out io.Writer, verb, name, path string) error {
-	emitf(out, "%s kdbx source %q → %s\n", verb, name, path)
-	emitf(out, "run `harmos` to browse it (you'll be asked for its password)\n")
+func reportUpsert(out io.Writer, verb, kind, name, loc, hint string) error {
+	emitf(out, "%s %s source %q → %s\n", verb, kind, name, loc)
+	emitf(out, "%s\n", hint)
 	return nil
 }
 
@@ -213,6 +275,20 @@ func buildKdbxBlock(name, path, keyfile string) string {
 	fmt.Fprintf(&b, "path = %q\n", path)
 	if keyfile != "" {
 		fmt.Fprintf(&b, "keyfile = %q\n", keyfile)
+	}
+	return b.String()
+}
+
+func buildPleasantBlock(name, url, user, cache, caBundle string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "[[profile]]\n")
+	fmt.Fprintf(&b, "name = %q\n", name)
+	fmt.Fprintf(&b, "type = %q\n", string(config.Pleasant))
+	fmt.Fprintf(&b, "url = %q\n", url)
+	fmt.Fprintf(&b, "user = %q\n", user)
+	fmt.Fprintf(&b, "cache = %q\n", cache)
+	if caBundle != "" {
+		fmt.Fprintf(&b, "ca_bundle = %q\n", caBundle)
 	}
 	return b.String()
 }

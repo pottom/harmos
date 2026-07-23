@@ -69,17 +69,59 @@ func TestRemoveKdbxDeletesFile(t *testing.T) {
 	}
 }
 
-func TestRemoveKdbxRejectsPleasant(t *testing.T) {
+func TestRemoveSourcePleasantForgetsMasterWhenLast(t *testing.T) {
+	gokeyring.MockInit()
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
+	own := writeDummyKdbx(t, dir, "own.kdbx")
 	seed := "[[profile]]\nname = \"work\"\ntype = \"pleasant\"\n" +
-		"url = \"https://x.invalid\"\nuser = \"u\"\ncache = \"" + filepath.Join(dir, "w.kdbx") + "\"\n"
+		"url = \"https://x.invalid\"\nuser = \"u\"\ncache = \"" + filepath.Join(dir, "w.kdbx") + "\"\n" +
+		"\n[[profile]]\nname = \"own\"\ntype = \"kdbx\"\npath = \"" + own + "\"\n"
 	if err := os.WriteFile(cfgPath, []byte(seed), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := keyring.StoreMaster(secret.New("m")); err != nil {
+		t.Fatal(err)
+	}
+
 	var out bytes.Buffer
-	if err := runRemoveSource(cfgPath, "work", false, false, &out); err == nil {
-		t.Fatal("remove-kdbx must refuse a Pleasant source")
+	// removing the only Pleasant source, asking to forget the password → master gone
+	if err := runRemoveSource(cfgPath, "work", false, true, &out); err != nil {
+		t.Fatalf("remove pleasant: %v", err)
+	}
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Profile("work") != nil {
+		t.Error("pleasant source should be gone")
+	}
+	if cfg.Profile("own") == nil {
+		t.Error("the kdbx source should remain")
+	}
+	if _, ok, _ := keyring.FetchMaster(); ok {
+		t.Error("the shared master should be forgotten when the last Pleasant source is removed")
+	}
+}
+
+func TestRemoveSourcePleasantKeepsMasterWhenOthersRemain(t *testing.T) {
+	gokeyring.MockInit()
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	seed := "[[profile]]\nname = \"a\"\ntype = \"pleasant\"\nurl = \"https://a.invalid\"\nuser = \"u\"\ncache = \"" + filepath.Join(dir, "a.kdbx") + "\"\n" +
+		"\n[[profile]]\nname = \"b\"\ntype = \"pleasant\"\nurl = \"https://b.invalid\"\nuser = \"u\"\ncache = \"" + filepath.Join(dir, "b.kdbx") + "\"\n"
+	if err := os.WriteFile(cfgPath, []byte(seed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := keyring.StoreMaster(secret.New("m")); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := runRemoveSource(cfgPath, "a", false, true, &out); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := keyring.FetchMaster(); !ok {
+		t.Error("the master must be kept while another Pleasant source remains")
 	}
 }
 
