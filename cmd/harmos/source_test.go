@@ -145,6 +145,27 @@ func TestAddKdbxOverwritePreservesRest(t *testing.T) {
 	}
 }
 
+func TestAddSourceToEmptyConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	// an existing but profile-less config (e.g. after removing the last source)
+	if err := os.WriteFile(cfgPath, []byte("# only a comment\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	kdbx := writeDummyKdbx(t, dir, "own.kdbx")
+	var out bytes.Buffer
+	if err := runAddSource(cfgPath, kdbx, "own", "", false, &out); err != nil {
+		t.Fatalf("add to empty config: %v", err)
+	}
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Profile("own") == nil {
+		t.Error("own not added to the empty config")
+	}
+}
+
 func TestAddPleasantSource(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")

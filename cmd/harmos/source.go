@@ -267,9 +267,13 @@ func upsertProfile(configPath, name, block string, force bool, out io.Writer) (s
 	}
 
 	// The file exists: Load validates it and tells us whether the name is taken.
+	// A file that parses but has no profiles yet is fine — we append to it.
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		return "", err
+		if !errors.Is(err, config.ErrNoProfiles) {
+			return "", err
+		}
+		cfg = &config.Config{}
 	}
 	content, err := os.ReadFile(configPath)
 	if err != nil {
