@@ -171,7 +171,37 @@ func TestAddPleasantRequiresFields(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.toml")
 	var out bytes.Buffer
 	if err := runAddPleasant(cfgPath, "work", "", "svc", "/x", "", false, &out); err == nil {
-		t.Fatal("a Pleasant add must require --url/--user/--cache")
+		t.Fatal("a Pleasant add must require --url")
+	}
+}
+
+func TestAddPleasantDefaultCache(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", filepath.Join(dir, "data"))
+	cfgPath := filepath.Join(dir, "config.toml")
+	var out bytes.Buffer
+	if err := runAddPleasant(cfgPath, "work", "https://x.invalid", "u", "", "", false, &out); err != nil {
+		t.Fatalf("add pleasant: %v", err)
+	}
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(dir, "data", "harmos", "work.kdbx")
+	if p := cfg.Profile("work"); p == nil || p.Cache != want {
+		t.Fatalf("cache = %+v, want %s", p, want)
+	}
+	if _, err := os.Stat(filepath.Dir(want)); err != nil {
+		t.Errorf("cache directory not created: %v", err)
+	}
+}
+
+func TestAddPleasantDefaultCacheNeedsName(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	var out bytes.Buffer
+	if err := runAddPleasant(cfgPath, "", "https://x.invalid", "u", "", "", false, &out); err == nil {
+		t.Fatal("defaulting the cache requires a --name")
 	}
 }
 
