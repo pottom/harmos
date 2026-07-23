@@ -147,6 +147,23 @@ func TestBrowseIntoDetails(t *testing.T) {
 	}
 }
 
+// q quits from browse but is an ordinary character while typing a search.
+func TestQuitAndSearchQ(t *testing.T) {
+	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	// q in browse returns a (quit) command
+	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}); cmd == nil {
+		t.Error("q should quit from browse mode")
+	}
+
+	// q while searching is typed, not a quit
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if m.input.Value() != "q" {
+		t.Errorf("q should be typed in search mode, got %q", m.input.Value())
+	}
+}
+
 // Help overlay toggles and any key closes it.
 func TestHelpToggles(t *testing.T) {
 	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})

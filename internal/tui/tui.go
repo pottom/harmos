@@ -180,6 +180,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.help = false
 			return m, nil
 		}
+		// q quits everywhere except while typing a search (where it's a character).
+		if key == "q" && !m.searchMode {
+			return m, tea.Sequence(clearClip, tea.Quit)
+		}
 
 		// SEARCH MODE — the "/" box is capturing keystrokes.
 		if m.searchMode {

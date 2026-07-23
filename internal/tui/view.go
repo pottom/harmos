@@ -301,7 +301,7 @@ func (m Model) hints() string {
 	case m.showResults():
 		full = "↑↓ results · ↵ details · / edit · ctrl+y copy · esc clear"
 	default:
-		full = "↑↓ move · →/⇥ into · ← back · ↵ open · / search · ? keys"
+		full = "↑↓ move · →/⇥ into · ← back · ↵ open · / search · q quit · ?"
 	}
 	return theme.Faded.Render(trunc(full, m.w))
 }
@@ -348,7 +348,7 @@ func (m Model) helpView() string {
 		}},
 		{"General", [][2]string{
 			{"?", "Toggle this help"},
-			{"ctrl+c", "Quit — clears the clipboard"},
+			{"q / ctrl+c", "Quit — clears the clipboard"},
 		}},
 	}
 
