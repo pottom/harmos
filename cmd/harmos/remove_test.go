@@ -125,6 +125,34 @@ func TestRemoveSourcePleasantKeepsMasterWhenOthersRemain(t *testing.T) {
 	}
 }
 
+func TestRemoveSourceCleansDefault(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	own := writeDummyKdbx(t, dir, "own.kdbx")
+	work := writeDummyKdbx(t, dir, "work.kdbx")
+	seed := "default = \"work\"\n\n" +
+		"[[profile]]\nname = \"work\"\ntype = \"kdbx\"\npath = \"" + work + "\"\n\n" +
+		"[[profile]]\nname = \"own\"\ntype = \"kdbx\"\npath = \"" + own + "\"\n"
+	if err := os.WriteFile(cfgPath, []byte(seed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := runRemoveSource(cfgPath, "work", false, false, &out); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(cfgPath)
+	if strings.Contains(string(got), "default =") {
+		t.Errorf("the dangling default line should be removed with its profile:\n%s", got)
+	}
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("config should load after removal: %v", err)
+	}
+	if cfg.Profile("own") == nil {
+		t.Error("own should remain")
+	}
+}
+
 func TestRemoveKdbxLastProfile(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")

@@ -99,6 +99,10 @@ func runRemoveSource(configPath, name string, deleteFile, forgetPassword bool, o
 	if !ok {
 		return fmt.Errorf("could not locate the %q profile block in %s", name, configPath)
 	}
+	// Drop a top-level `default = name` so it doesn't dangle after removal.
+	if cfg.Default == name {
+		next = removeTopLevelKey(next, "default")
+	}
 	if err := writeFileAtomic(configPath, []byte(next)); err != nil {
 		return err
 	}

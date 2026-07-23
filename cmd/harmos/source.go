@@ -420,6 +420,26 @@ func removeProfileBlock(content, name string) (string, bool) {
 	return content, false
 }
 
+// removeTopLevelKey drops a top-level `key = ...` line (the region before the
+// first table header), leaving everything else verbatim.
+func removeTopLevelKey(content, key string) string {
+	lines := strings.Split(content, "\n")
+	out := make([]string, 0, len(lines))
+	inTop := true
+	for _, l := range lines {
+		if inTop {
+			t := strings.TrimSpace(l)
+			if strings.HasPrefix(t, "[") {
+				inTop = false
+			} else if k, _, ok := parseKV(t); ok && k == key {
+				continue
+			}
+		}
+		out = append(out, l)
+	}
+	return strings.Join(out, "\n")
+}
+
 // parseKV splits a `key = value` line, unquoting a string value. It ignores
 // comment lines.
 func parseKV(line string) (key, val string, ok bool) {

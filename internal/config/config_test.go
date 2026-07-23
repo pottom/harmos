@@ -117,13 +117,6 @@ url  = "https://h:10001"
 name = "x"
 type = "kdbx"
 `,
-		"unknown default": `
-default = "ghost"
-[[profile]]
-name = "x"
-type = "kdbx"
-path = "/a.kdbx"
-`,
 		"no profiles": `
 default = "x"
 `,
@@ -132,5 +125,16 @@ default = "x"
 		if _, err := Load(writeConfig(t, body)); err == nil {
 			t.Errorf("%s: expected a validation error, got nil", name)
 		}
+	}
+}
+
+func TestDanglingDefaultIsIgnored(t *testing.T) {
+	path := writeConfig(t, "default = \"work\"\n[[profile]]\nname = \"own\"\ntype = \"kdbx\"\npath = \"/x.kdbx\"\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("a dangling default should not fail load: %v", err)
+	}
+	if cfg.Default != "" {
+		t.Errorf("dangling default should be cleared, got %q", cfg.Default)
 	}
 }
