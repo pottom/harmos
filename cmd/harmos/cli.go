@@ -40,52 +40,56 @@ func openAll(configPath string) (*session.Result, *config.Config, error) {
 	// on retry so a wrong master is caught on the spot.
 	var master secret.Secret
 	var masterSet bool
-	masterOnce := func(retry bool) (secret.Secret, error) {
+	masterOnce := func(retry bool) (secret.Secret, bool, error) {
 		if masterSet && !retry {
-			return master, nil
+			return master, false, nil
 		}
 		if !masterSet && !retry {
 			if v, ok := os.LookupEnv("HARMOS_MASTER"); ok {
 				master, masterSet = secret.New(v), true
-				return master, nil
+				return master, false, nil
 			}
 			if pw, ok, ferr := keyring.FetchMaster(); ferr == nil && ok {
 				master, masterSet = pw, true
-				return master, nil
+				return master, false, nil
 			}
 		}
 		if !onTTY() {
-			return master, nil
+			return master, false, nil
 		}
 		if retry {
 			fmt.Fprintln(os.Stderr, "wrong master password — try again")
 		}
 		pw, perr := promptPassword("harmos master password: ")
 		if perr != nil {
-			return secret.Secret{}, perr
+			return secret.Secret{}, false, perr
 		}
 		master, masterSet = pw, true
-		return master, nil
+		return master, true, nil
 	}
 
 	// Per source: a saved keyring password unlocks without asking; otherwise a
 	// prompt, re-prompting on a wrong password.
-	ask := func(p config.Profile, retry bool) (secret.Secret, error) {
+	ask := func(p config.Profile, retry bool) (secret.Secret, bool, error) {
 		if p.Type == config.Pleasant {
 			return masterOnce(retry)
 		}
 		if !retry {
 			if pw, ok, ferr := keyring.Fetch(p.Name); ferr == nil && ok {
-				return pw, nil
+				return pw, false, nil
 			}
 		}
 		if !onTTY() {
-			return secret.Secret{}, nil
+			return secret.Secret{}, false, nil
 		}
 		if retry {
 			fmt.Fprintf(os.Stderr, "wrong password for %s — try again\n", p.Name)
 		}
-		return promptPassword(fmt.Sprintf("password for %s: ", p.Name))
+		pw, perr := promptPassword(fmt.Sprintf("password for %s: ", p.Name))
+		if perr != nil {
+			return secret.Secret{}, false, perr
+		}
+		return pw, true, nil
 	}
 	return session.Open(cfg, ask), cfg, nil
 }

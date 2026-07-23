@@ -28,9 +28,11 @@ type Result struct {
 }
 
 // AskFunc supplies a source's password. retry is true when the previous password
-// was rejected, so the caller can re-prompt (and say so). It may return a zero
-// Secret for keyfile-only or unprotected files.
-type AskFunc func(p config.Profile, retry bool) (secret.Secret, error)
+// was rejected, so the caller can re-prompt (and say so). interactive reports
+// whether the password came from a live prompt: if it did, a wrong password is
+// worth re-prompting; if it came from env/keyring/non-TTY, retrying can't help.
+// The returned Secret may be zero for keyfile-only or unprotected files.
+type AskFunc func(p config.Profile, retry bool) (pw secret.Secret, interactive bool, err error)
 
 // maxUnlockAttempts bounds the wrong-password re-prompts per source.
 const maxUnlockAttempts = 3
@@ -61,18 +63,11 @@ func openOne(p config.Profile, ask AskFunc) (*vault.Vault, error) {
 		return nil, fmt.Errorf("no way to obtain a password for %q", p.Name)
 	}
 	var last error
-	var prev secret.Secret
-	var havePrev bool
 	for attempt := range maxUnlockAttempts {
-		pw, err := ask(p, attempt > 0)
+		pw, interactive, err := ask(p, attempt > 0)
 		if err != nil {
 			return nil, err
 		}
-		if havePrev && pw.Reveal() == prev.Reveal() {
-			break
-		}
-		prev, havePrev = pw, true
-
 		v, oerr := openWith(p, pw)
 		if oerr == nil {
 			return v, nil
@@ -81,6 +76,9 @@ func openOne(p config.Profile, ask AskFunc) (*vault.Vault, error) {
 			return nil, oerr // missing or corrupt file — a new password won't help
 		}
 		last = oerr
+		if !interactive {
+			break // env/keyring/non-TTY gave a fixed value — retrying can't help
+		}
 	}
 	return nil, last
 }

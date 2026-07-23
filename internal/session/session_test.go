@@ -67,11 +67,11 @@ func TestOpenAllSources(t *testing.T) {
 	makeKDBX(t, filepath.Join(dir, "personal.kdbx"), "personalpw", "router")
 	cfg := writeConfig(t, dir)
 
-	ask := func(p config.Profile, retry bool) (secret.Secret, error) {
+	ask := func(p config.Profile, retry bool) (secret.Secret, bool, error) {
 		if p.Type == config.Pleasant {
-			return secret.New("master"), nil
+			return secret.New("master"), false, nil
 		}
-		return secret.New("personalpw"), nil
+		return secret.New("personalpw"), false, nil
 	}
 	res := Open(cfg, ask)
 
@@ -98,11 +98,11 @@ func TestPartialFailureIsNotFatal(t *testing.T) {
 
 	// wrong master (returned again on retry) → the Pleasant cache is excluded,
 	// but personal still opens
-	ask := func(p config.Profile, retry bool) (secret.Secret, error) {
+	ask := func(p config.Profile, retry bool) (secret.Secret, bool, error) {
 		if p.Type == config.Pleasant {
-			return secret.New("WRONG"), nil
+			return secret.New("WRONG"), false, nil
 		}
-		return secret.New("personalpw"), nil
+		return secret.New("personalpw"), false, nil
 	}
 	res := Open(cfg, ask)
 
@@ -123,15 +123,15 @@ func TestRetryUnlocksOnSecondTry(t *testing.T) {
 	cfg := writeConfig(t, dir)
 
 	tries := map[string]int{}
-	ask := func(p config.Profile, retry bool) (secret.Secret, error) {
+	ask := func(p config.Profile, retry bool) (secret.Secret, bool, error) {
 		tries[p.Name]++
 		if p.Type == config.Pleasant {
 			if !retry {
-				return secret.New("WRONG"), nil
+				return secret.New("WRONG"), true, nil // interactive → retry allowed
 			}
-			return secret.New("master"), nil
+			return secret.New("master"), true, nil
 		}
-		return secret.New("personalpw"), nil
+		return secret.New("personalpw"), false, nil
 	}
 	res := Open(cfg, ask)
 
@@ -140,5 +140,30 @@ func TestRetryUnlocksOnSecondTry(t *testing.T) {
 	}
 	if tries["work"] < 2 {
 		t.Errorf("work should have been re-prompted, got %d attempt(s)", tries["work"])
+	}
+}
+
+// A non-interactive wrong password (keyring/env) is tried once, not retried.
+func TestNonInteractiveWrongPasswordNotRetried(t *testing.T) {
+	dir := t.TempDir()
+	makeKDBX(t, filepath.Join(dir, "work.kdbx"), "master", "db-prod")
+	makeKDBX(t, filepath.Join(dir, "personal.kdbx"), "personalpw", "router")
+	cfg := writeConfig(t, dir)
+
+	tries := 0
+	ask := func(p config.Profile, retry bool) (secret.Secret, bool, error) {
+		if p.Type == config.Pleasant {
+			tries++
+			return secret.New("WRONG"), false, nil // not interactive
+		}
+		return secret.New("personalpw"), false, nil
+	}
+	res := Open(cfg, ask)
+
+	if tries != 1 {
+		t.Errorf("a non-interactive wrong password should be tried once, got %d", tries)
+	}
+	if len(res.Excluded) != 1 || res.Excluded[0].Source != "work" {
+		t.Fatalf("expected 'work' excluded, got %+v", res.Excluded)
 	}
 }
