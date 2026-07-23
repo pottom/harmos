@@ -7,6 +7,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/pottom/harmos/internal/config"
+	"github.com/pottom/harmos/internal/keyring"
 	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/session"
 )
@@ -64,6 +65,11 @@ func openAll(configPath string) (*session.Result, *config.Config, error) {
 		}
 	}
 	ask := func(p config.Profile) (secret.Secret, error) {
+		// A saved keyring password unlocks the source without prompting; on any
+		// keyring miss or error we fall back to a terminal prompt.
+		if pw, ok, err := keyring.Fetch(p.Name); err == nil && ok {
+			return pw, nil
+		}
 		if onTTY() {
 			return promptPassword(fmt.Sprintf("password for %s: ", p.Name))
 		}

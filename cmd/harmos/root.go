@@ -23,5 +23,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newGetCmd())
 	root.AddCommand(newAddKdbxCmd())
 	root.AddCommand(newSourcesCmd())
+	root.AddCommand(newSavePasswordCmd())
+	root.AddCommand(newForgetCmd())
 	return root
 }

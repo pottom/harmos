@@ -61,21 +61,33 @@ func runSources(configPath string, out io.Writer) error {
 
 func newAddKdbxCmd() *cobra.Command {
 	var name, keyfile, configPath string
-	var force bool
+	var force, savePassword bool
 	cmd := &cobra.Command{
 		Use:   "add-kdbx <path>",
 		Short: "Register a local .kdbx file as a read-only source",
 		Long: "Add a local KeePass .kdbx file to the config as a read-only source. " +
 			"harmos never writes to the file; you are prompted for its password when " +
-			"you open it (or point at a key file with --keyfile).",
+			"you open it (or point at a key file with --keyfile). With --save-password " +
+			"the password is stored in the OS keyring so you are not asked again.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAddKdbx(configPath, args[0], name, keyfile, force, cmd.OutOrStdout())
+			derived := name
+			if derived == "" {
+				derived = deriveProfileName(args[0])
+			}
+			if err := runAddKdbx(configPath, args[0], name, keyfile, force, cmd.OutOrStdout()); err != nil {
+				return err
+			}
+			if savePassword {
+				return savePasswordFor(derived, cmd.OutOrStdout())
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "profile name (default: the file name without its extension)")
 	cmd.Flags().StringVar(&keyfile, "keyfile", "", "key file, if the kdbx uses one")
 	cmd.Flags().BoolVar(&force, "force", false, "overwrite an existing profile of the same name without asking")
+	cmd.Flags().BoolVar(&savePassword, "save-password", false, "prompt for the password and store it in the OS keyring")
 	cmd.Flags().StringVar(&configPath, "config", "", "config file (default: $XDG_CONFIG_HOME/harmos/config.toml)")
 	return cmd
 }
@@ -110,8 +122,7 @@ func runAddKdbx(configPath, path, name, keyfile string, force bool, out io.Write
 	}
 
 	if name == "" {
-		base := filepath.Base(kdbxPath)
-		name = strings.TrimSuffix(base, filepath.Ext(base))
+		name = deriveProfileName(kdbxPath)
 	}
 	if name == "" {
 		return fmt.Errorf("could not derive a profile name from %q; pass --name", path)
@@ -280,6 +291,13 @@ func writeFileAtomic(path string, data []byte) error {
 		return err
 	}
 	return os.Rename(tmpName, path)
+}
+
+// deriveProfileName is the default profile name for a kdbx path: the file name
+// without its extension.
+func deriveProfileName(path string) string {
+	base := filepath.Base(path)
+	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
 // absPath expands a leading ~ and makes the path absolute.
