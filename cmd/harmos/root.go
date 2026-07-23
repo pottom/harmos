@@ -22,8 +22,9 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newLsCmd())
 	root.AddCommand(newGetCmd())
 	root.AddCommand(newAddKdbxCmd())
+	root.AddCommand(newRemoveKdbxCmd())
 	root.AddCommand(newSourcesCmd())
 	root.AddCommand(newSavePasswordCmd())
-	root.AddCommand(newForgetCmd())
+	root.AddCommand(newRemovePasswordCmd())
 	return root
 }

@@ -73,33 +73,3 @@ func saveMaster(out io.Writer) error {
 	emitf(out, "saved the harmos master password in the keyring (unlocks all Pleasant sources)\n")
 	return nil
 }
-
-func newForgetCmd() *cobra.Command {
-	var configPath string
-	cmd := &cobra.Command{
-		Use:   "forget <name>",
-		Short: "Remove a source's password from the OS keyring",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			name := args[0]
-			// If we can see the config and the source is Pleasant, forget the shared
-			// master; otherwise forget the per-source entry.
-			if cfg, err := loadConfigAt(configPath); err == nil {
-				if p := cfg.Profile(name); p != nil && p.Type == config.Pleasant {
-					if err := keyring.ForgetMaster(); err != nil {
-						return err
-					}
-					emitf(cmd.OutOrStdout(), "forgot the harmos master password from the keyring (if any)\n")
-					return nil
-				}
-			}
-			if err := keyring.Forget(name); err != nil {
-				return err
-			}
-			emitf(cmd.OutOrStdout(), "forgot the keyring password for %q (if any)\n", name)
-			return nil
-		},
-	}
-	cmd.Flags().StringVar(&configPath, "config", "", "config file (default: $XDG_CONFIG_HOME/harmos/config.toml)")
-	return cmd
-}

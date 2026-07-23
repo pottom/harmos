@@ -248,6 +248,43 @@ func replaceProfileBlock(content, name, newBlock string) (string, bool) {
 	return content, false
 }
 
+// removeProfileBlock deletes the [[profile]] block whose name matches (plus one
+// trailing blank line so no double gap is left), leaving everything else — other
+// profiles, comments, top-level keys — exactly as it was.
+func removeProfileBlock(content, name string) (string, bool) {
+	lines := strings.Split(content, "\n")
+	isTableHeader := func(s string) bool { return strings.HasPrefix(strings.TrimSpace(s), "[") }
+
+	for i := range lines {
+		if strings.TrimSpace(lines[i]) != "[[profile]]" {
+			continue
+		}
+		j := i + 1
+		blockName := ""
+		for j < len(lines) {
+			t := strings.TrimSpace(lines[j])
+			if t == "" || isTableHeader(lines[j]) {
+				break
+			}
+			if k, v, ok := parseKV(t); ok && k == "name" {
+				blockName = v
+			}
+			j++
+		}
+		if blockName != name {
+			continue
+		}
+		if j < len(lines) && strings.TrimSpace(lines[j]) == "" {
+			j++ // swallow the separating blank line
+		}
+		out := make([]string, 0, len(lines))
+		out = append(out, lines[:i]...)
+		out = append(out, lines[j:]...)
+		return strings.Join(out, "\n"), true
+	}
+	return content, false
+}
+
 // parseKV splits a `key = value` line, unquoting a string value. It ignores
 // comment lines.
 func parseKV(line string) (key, val string, ok bool) {
