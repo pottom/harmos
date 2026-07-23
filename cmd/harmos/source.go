@@ -32,30 +32,34 @@ func confirm(label string) (bool, error) {
 
 func newSourcesCmd() *cobra.Command {
 	var configPath string
+	var noHeaders bool
 	cmd := &cobra.Command{
 		Use:   "sources",
 		Short: "List configured sources (no unlock needed)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSources(configPath, cmd.OutOrStdout())
+			return runSources(configPath, !noHeaders, cmd.OutOrStdout())
 		},
 	}
+	cmd.Flags().BoolVar(&noHeaders, "no-headers", false, "omit the header row")
 	cmd.Flags().StringVar(&configPath, "config", "", "config file (default: $XDG_CONFIG_HOME/harmos/config.toml)")
 	return cmd
 }
 
-func runSources(configPath string, out io.Writer) error {
+func runSources(configPath string, showHeaders bool, out io.Writer) error {
 	cfg, err := loadConfigAt(configPath)
 	if err != nil {
 		return err
 	}
+	rows := make([][]string, 0, len(cfg.Profiles))
 	for _, p := range cfg.Profiles {
 		loc := p.Path
 		if p.Type == config.Pleasant {
 			loc = p.URL
 		}
-		emitf(out, "%s\t%s\t%s\n", p.Name, p.Type, loc)
+		rows = append(rows, []string{p.Name, string(p.Type), loc})
 	}
+	printTable(out, []string{"NAME", "TYPE", "LOCATION"}, rows, showHeaders)
 	return nil
 }
 
