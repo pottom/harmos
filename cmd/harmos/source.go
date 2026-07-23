@@ -51,15 +51,36 @@ func runSources(configPath string, showHeaders bool, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+
+	anyKeyfile := false
+	for _, p := range cfg.Profiles {
+		if p.Keyfile != "" {
+			anyKeyfile = true
+			break
+		}
+	}
+	headers := []string{"NAME", "TYPE", "LOCATION"}
+	if anyKeyfile {
+		headers = append(headers, "KEYFILE")
+	}
+
 	rows := make([][]string, 0, len(cfg.Profiles))
 	for _, p := range cfg.Profiles {
 		loc := p.Path
 		if p.Type == config.Pleasant {
 			loc = p.URL
 		}
-		rows = append(rows, []string{p.Name, string(p.Type), loc})
+		row := []string{p.Name, string(p.Type), loc}
+		if anyKeyfile {
+			kf := p.Keyfile
+			if kf == "" {
+				kf = "-"
+			}
+			row = append(row, kf)
+		}
+		rows = append(rows, row)
 	}
-	printTable(out, []string{"NAME", "TYPE", "LOCATION"}, rows, showHeaders)
+	printTable(out, headers, rows, showHeaders)
 	return nil
 }
 

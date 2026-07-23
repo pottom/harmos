@@ -145,6 +145,42 @@ func TestAddKdbxOverwritePreservesRest(t *testing.T) {
 	}
 }
 
+func TestSourcesShowsKeyfileWhenPresent(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	kdbx := writeDummyKdbx(t, dir, "own.kdbx")
+	key := writeDummyKdbx(t, dir, "id.key")
+	var out bytes.Buffer
+	if err := runAddSource(cfgPath, kdbx, "own", key, false, &out); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := runSources(cfgPath, true, &out); err != nil {
+		t.Fatal(err)
+	}
+	s := out.String()
+	if !strings.Contains(s, "KEYFILE") || !strings.Contains(s, key) {
+		t.Errorf("sources should show the keyfile:\n%s", s)
+	}
+}
+
+func TestSourcesOmitsKeyfileColumnWhenNone(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	kdbx := writeDummyKdbx(t, dir, "own.kdbx")
+	var out bytes.Buffer
+	if err := runAddSource(cfgPath, kdbx, "own", "", false, &out); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := runSources(cfgPath, true, &out); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "KEYFILE") {
+		t.Errorf("no keyfile anywhere → no KEYFILE column:\n%s", out.String())
+	}
+}
+
 func TestAddSourceToEmptyConfig(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
