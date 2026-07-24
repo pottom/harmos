@@ -61,6 +61,12 @@ type Model struct {
 	promptQueue []promptStep    // remaining password prompts
 	promptName  string          // profile the prompt(s) are for
 
+	syncCh    chan syncProgressMsg // live sync progress
+	syncName  string               // source being synced
+	syncPhase string               // current phase
+	syncDone  int64                // bytes downloaded
+	syncTotal int64                // total bytes (-1 unknown)
+
 	timeout    time.Duration
 	copied     string
 	copiedWhat string
@@ -219,6 +225,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case clearedMsg:
+		return m, nil
+
+	case syncProgressMsg:
+		m.syncPhase = msg.phase
+		if msg.done > 0 || msg.total > 0 {
+			m.syncDone, m.syncTotal = msg.done, msg.total
+		}
+		return m, listenSync(m.syncCh)
+
+	case syncDoneMsg:
+		if msg.err != nil {
+			m.setStatus = "sync failed: " + msg.err.Error()
+		} else {
+			m.setStatus = msg.summary
+		}
+		m.setMode = setList
+		m.syncCh = nil
+		m.setKeyring = keyringStatus(m.sources())
 		return m, nil
 
 	case tea.KeyMsg:

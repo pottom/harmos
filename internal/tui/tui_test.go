@@ -38,6 +38,25 @@ func TestSettingsSavePassword(t *testing.T) {
 	}
 }
 
+func TestSettingsSyncNeedsCredentials(t *testing.T) {
+	gokeyring.MockInit() // empty keyring
+	t.Setenv("HARMOS_MASTER", "")
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	if _, err := config.WritePleasantProfile(cfgPath, "work", "https://x.invalid", "u", filepath.Join(dir, "w.kdbx"), "", false); err != nil {
+		t.Fatal(err)
+	}
+	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 18})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	if m.setMode == setSyncing {
+		t.Fatal("sync should not start without saved credentials")
+	}
+	if !strings.Contains(m.setStatus, "master") {
+		t.Errorf("expected a 'save the master' hint, got %q", m.setStatus)
+	}
+}
+
 func TestSettingsAddForm(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
