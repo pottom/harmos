@@ -89,27 +89,10 @@ func runRemoveSource(configPath, name string, deleteFile, forgetPassword bool, o
 			otherPleasant++
 		}
 	}
-	remaining := len(cfg.Profiles) - 1
 
-	content, err := os.ReadFile(configPath)
+	remaining, err := config.RemoveProfile(configPath, name)
 	if err != nil {
 		return err
-	}
-	next, ok := removeProfileBlock(string(content), name)
-	if !ok {
-		return fmt.Errorf("could not locate the %q profile block in %s", name, configPath)
-	}
-	// Drop a top-level `default = name` so it doesn't dangle after removal.
-	if cfg.Default == name {
-		next = removeTopLevelKey(next, "default")
-	}
-	if err := writeFileAtomic(configPath, []byte(next)); err != nil {
-		return err
-	}
-	if remaining >= 1 {
-		if _, err := config.Load(configPath); err != nil {
-			return fmt.Errorf("config is invalid after removing %q: %w", name, err)
-		}
 	}
 	emitf(out, "removed source %q from %s\n", name, configPath)
 	if remaining == 0 {
