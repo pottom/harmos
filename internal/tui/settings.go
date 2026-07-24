@@ -17,6 +17,7 @@ const (
 	setList   = iota // browsing the sources table
 	setRemove        // the remove-source confirmation overlay
 	setForm          // the add/edit form overlay
+	setPrompt        // the save-password prompt overlay
 )
 
 // updateSettings handles keys while the Settings tab is active. It takes the raw
@@ -28,6 +29,8 @@ func (m Model) updateSettings(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateRemove(key, profs)
 	case setForm:
 		return m.updateForm(key, msg)
+	case setPrompt:
+		return m.updatePrompt(key, msg)
 	}
 
 	switch key {
@@ -46,6 +49,10 @@ func (m Model) updateSettings(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "e":
 		if m.setSel < len(profs) {
 			return m.openEditForm(profs[m.setSel]), nil
+		}
+	case "p":
+		if m.setSel < len(profs) {
+			return m.openSavePassword(profs[m.setSel]), nil
 		}
 	case "d":
 		if m.setSel < len(profs) {

@@ -7,11 +7,36 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	gokeyring "github.com/zalando/go-keyring"
 
 	"github.com/pottom/harmos/internal/config"
+	"github.com/pottom/harmos/internal/keyring"
 	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/vault"
 )
+
+func TestSettingsSavePassword(t *testing.T) {
+	gokeyring.MockInit()
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	if _, err := config.WriteKdbxProfile(cfgPath, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
+		t.Fatal(err)
+	}
+	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 18})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	if m.setMode != setPrompt {
+		t.Fatal("p should open the save-password prompt")
+	}
+	m = typeStr(m, "secret")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.setMode != setList {
+		t.Fatalf("enter should store and return to the list (status %q)", m.setStatus)
+	}
+	if pw, ok, _ := keyring.Fetch("own"); !ok || pw.Reveal() != "secret" {
+		t.Errorf("kdbx password not saved: ok=%v pw=%q", ok, pw.Reveal())
+	}
+}
 
 func TestSettingsAddForm(t *testing.T) {
 	dir := t.TempDir()

@@ -129,6 +129,8 @@ func (m Model) settingsView() string {
 		return m.removeConfirmView()
 	case setForm:
 		return m.formView()
+	case setPrompt:
+		return m.promptView()
 	}
 	profs := m.sources()
 	title := theme.Strong.Render("Sources") + theme.Dimmed.Render(fmt.Sprintf("  %d configured", len(profs)))

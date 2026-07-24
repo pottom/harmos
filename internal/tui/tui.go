@@ -57,6 +57,10 @@ type Model struct {
 	formOrig    string      // the profile name being edited (for rename)
 	formPps     bool        // form type: Pleasant vs kdbx
 
+	promptInput textinput.Model // save-password prompt
+	promptQueue []promptStep    // remaining password prompts
+	promptName  string          // profile the prompt(s) are for
+
 	timeout    time.Duration
 	copied     string
 	copiedWhat string
