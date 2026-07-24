@@ -424,37 +424,52 @@ func padLeft(s string, w int) string {
 	return trunc(s, w)
 }
 
-func (m Model) helpView() string {
-	groups := []struct {
-		title string
-		rows  [][2]string
-	}{
-		{"Navigate", [][2]string{
-			{"↑ / ↓", "Move up / down — tree, table, results"},
-			{"→ / tab", "Enter folder · move to the entry table"},
-			{"←", "Collapse folder · back to the tree"},
-			{"enter", "Expand folder · open entry details"},
-		}},
-		{"Search", [][2]string{
-			{"/", "Search every source"},
-			{"enter", "Apply the filter, leave the search box"},
-			{"esc", "Cancel search · clear the filter"},
-		}},
-		{"Entry under cursor", [][2]string{
-			{"ctrl+r", "Reveal the password (in details)"},
-			{"ctrl+y", "Copy password"},
-			{"ctrl+u", "Copy username"},
-			{"ctrl+o", "Copy URL"},
-		}},
-		{"General", [][2]string{
-			{"?", "Toggle this help"},
-			{"q / ctrl+c", "Quit — clears the clipboard"},
-		}},
-	}
+type helpGroup struct {
+	title string
+	rows  [][2]string
+}
 
-	const keyW = 9
+func (m Model) helpView() string {
+	var groups []helpGroup
+	if m.tab == 1 {
+		groups = []helpGroup{
+			{"Settings", [][2]string{
+				{"↑ / ↓", "Move in the sources list"},
+				{"a / e", "Add / edit a source"},
+				{"s", "Sync a Pleasant source"},
+				{"p / x", "Save / clear a keyring password"},
+				{"d", "Remove a source"},
+				{"t", "Change the color theme (live)"},
+			}},
+		}
+	} else {
+		groups = []helpGroup{
+			{"Navigate", [][2]string{
+				{"↑ / ↓", "Move — tree, table, results"},
+				{"→ / tab", "Enter folder · move to the table"},
+				{"←", "Collapse folder · back to the tree"},
+				{"enter", "Expand folder · open entry details"},
+			}},
+			{"Search", [][2]string{
+				{"/", "Search every source"},
+				{"enter", "Apply the filter, leave the box"},
+				{"esc", "Cancel search · clear the filter"},
+			}},
+			{"Entry under cursor", [][2]string{
+				{"ctrl+r", "Reveal the password (in details)"},
+				{"ctrl+y / u / o", "Copy password / username / URL"},
+			}},
+		}
+	}
+	groups = append(groups, helpGroup{"General", [][2]string{
+		{"1 / 2", "Switch tab — Vault / Settings"},
+		{"?", "Toggle this help"},
+		{"q / ctrl+c", "Quit — clears the clipboard"},
+	}})
+
+	const keyW = 14
 	var b strings.Builder
-	fmt.Fprint(&b, theme.Brand.Render("harmos")+theme.Dimmed.Render("  ·  keys"))
+	fmt.Fprint(&b, brand()+theme.Dimmed.Render("  ·  keys"))
 	for _, g := range groups {
 		fmt.Fprint(&b, "\n\n"+theme.Acc.Render(g.title))
 		for _, r := range g.rows {
@@ -462,10 +477,10 @@ func (m Model) helpView() string {
 		}
 	}
 
-	box := lipgloss.NewStyle().
+	panel := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(theme.Faint).
+		BorderForeground(theme.Accent).
 		Padding(1, 3).
 		Render(b.String())
-	return lipgloss.Place(max(1, m.w), max(1, m.h), lipgloss.Center, lipgloss.Center, box)
+	return lipgloss.Place(max(1, m.w), max(1, m.h), lipgloss.Center, lipgloss.Center, panel)
 }
