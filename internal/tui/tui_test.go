@@ -1,15 +1,39 @@
 package tui
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/vault"
 )
+
+func TestSettingsRemove(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	if _, err := config.WriteKdbxProfile(cfgPath, "a", filepath.Join(dir, "a.kdbx"), "", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := config.WriteKdbxProfile(cfgPath, "b", filepath.Join(dir, "b.kdbx"), "", false); err != nil {
+		t.Fatal(err)
+	}
+
+	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}}) // Settings
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}) // remove the selected (a)
+	if m.setMode != setRemove {
+		t.Fatal("d should open the remove confirmation")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter}) // confirm (no toggles)
+	if got := m.sources(); len(got) != 1 || got[0].Name != "b" {
+		t.Fatalf("after removing a, want [b], got %+v", got)
+	}
+}
 
 func testModel() Model {
 	return New([]vault.Entry{

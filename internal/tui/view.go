@@ -113,11 +113,18 @@ func (m Model) vaultBody() string {
 }
 
 func (m Model) settingsView() string {
+	if m.setMode == setRemove {
+		return m.removeConfirmView()
+	}
 	profs := m.sources()
 	title := theme.Strong.Render("Sources") + theme.Dimmed.Render(fmt.Sprintf("  %d configured", len(profs)))
 	top := title + "\n" + rule(m.w) + "\n"
-	footer := "\n" + rule(m.w) + "\n" + theme.Faded.Render(trunc(
-		"↑↓ select · a add · e edit · s sync · p save-pw · x clear-pw · d remove", m.w))
+	hint := "↑↓ select · a add · e edit · s sync · p save-pw · x clear-pw · d remove"
+	status := theme.Ok.Render(trunc(m.setStatus, m.w))
+	if m.setStatus == "" {
+		status = theme.Faded.Render(trunc(hint, m.w))
+	}
+	footer := "\n" + rule(m.w) + "\n" + status
 
 	rowsArea := m.h - 6 // tab bar + title + 2 rules + footer hint
 	if rowsArea < 1 {

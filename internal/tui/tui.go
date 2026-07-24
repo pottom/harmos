@@ -45,6 +45,11 @@ type Model struct {
 	configPath string          // for the Settings tab
 	setSel     int             // selected row in the Settings sources table
 	setKeyring map[string]bool // profile name → has a saved keyring password
+	setMode    int             // setList / setRemove / …
+	setStatus  string          // last action result, shown in the Settings footer
+	rmToggle   int             // remove overlay: 0 delete-file, 1 forget-pw, 2 confirm
+	rmFile     bool            // remove overlay: also delete the local file
+	rmPw       bool            // remove overlay: also forget the keyring password
 
 	timeout    time.Duration
 	copied     string
@@ -119,22 +124,6 @@ func keyringStatus(profs []config.Profile) map[string]bool {
 		st[p.Name] = ok
 	}
 	return st
-}
-
-// updateSettings handles keys while the Settings tab is active.
-func (m Model) updateSettings(key string) (tea.Model, tea.Cmd) {
-	n := len(m.sources())
-	switch key {
-	case "up", "ctrl+p":
-		if m.setSel > 0 {
-			m.setSel--
-		}
-	case "down", "ctrl+n":
-		if m.setSel < n-1 {
-			m.setSel++
-		}
-	}
-	return m, nil
 }
 
 func (m Model) searching() bool { return m.input.Value() != "" }
