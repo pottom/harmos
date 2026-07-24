@@ -25,16 +25,16 @@ func TestSettingsThemePicker(t *testing.T) {
 	}
 	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 16})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
-	if m.setMode != setTheme {
-		t.Fatal("t should open the theme picker")
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}}) // jump into the Theme pane
+	if m.setCat != catTheme || m.focus != 1 {
+		t.Fatalf("t should open the Theme pane (cat=%d focus=%d)", m.setCat, m.focus)
 	}
 	before := m.themeName
 	m = up(m, tea.KeyMsg{Type: tea.KeyDown}) // preview the next theme
 	if m.themeName == before {
 		t.Error("moving should preview a different theme")
 	}
-	m = up(m, tea.KeyMsg{Type: tea.KeyEnter}) // apply & save
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter}) // save
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		t.Fatal(err)
@@ -53,6 +53,7 @@ func TestSettingsSavePassword(t *testing.T) {
 	}
 	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 18})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the Sources pane
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
 	if m.setMode != setPrompt {
 		t.Fatal("p should open the save-password prompt")
@@ -77,6 +78,7 @@ func TestSettingsSyncNeedsCredentials(t *testing.T) {
 	}
 	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 18})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the Sources pane
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	if m.setMode == setSyncing {
 		t.Fatal("sync should not start without saved credentials")
@@ -91,6 +93,7 @@ func TestSettingsAddForm(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.toml")
 	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 20})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}}) // Settings
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab})                       // into the Sources pane
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}) // add form
 	if m.setMode != setForm {
 		t.Fatal("a should open the add form")
@@ -124,6 +127,7 @@ func TestSettingsRemove(t *testing.T) {
 
 	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}}) // Settings
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab})                       // into the Sources pane
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}) // remove the selected (a)
 	if m.setMode != setRemove {
 		t.Fatal("d should open the remove confirmation")

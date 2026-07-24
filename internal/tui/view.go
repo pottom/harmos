@@ -138,25 +138,53 @@ func (m Model) settingsView() string {
 		return m.promptView()
 	case setSyncing:
 		return m.syncView()
-	case setTheme:
-		return m.themePickerView()
 	}
-	profs := m.sources()
+
+	panelsH := max(3, m.h-1)
+	leftW := 22
+	rightW := m.w - leftW - 1
+
+	left := box("Settings", "", m.catLines(leftW-2), leftW, panelsH, m.focus == 0)
+
+	var right string
+	switch m.setCat {
+	case catTheme:
+		right = box("Theme  ·  live preview", m.themeName, m.themeLines(rightW-2), rightW, panelsH, m.focus == 1)
+	default:
+		profs := m.sources()
+		right = box("Sources", fmt.Sprintf("%d", len(profs)), m.sourceLines(rightW-2, profs), rightW, panelsH, m.focus == 1)
+	}
+
+	panels := lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
+	return panels + "\n" + m.footer(m.settingsHint())
+}
+
+// catLines renders the Settings category list (left pane).
+func (m Model) catLines(w int) []string {
+	var out []string
+	for k, name := range settingsCats {
+		if k == m.setCat {
+			st := theme.Hi
+			if m.focus == 0 {
+				st = theme.SelRow.Width(w)
+			}
+			out = append(out, st.Render(trunc("▸ "+name, w)))
+			continue
+		}
+		out = append(out, "  "+theme.Strong.Render(name))
+	}
+	return out
+}
+
+// sourceLines renders the Sources table (right pane).
+func (m Model) sourceLines(w int, profs []config.Profile) []string {
 	i := ic()
-
-	hint := theme.Faded.Render("↑↓ select · a add · e edit · s sync · p save-pw · x clear-pw · d remove · t theme")
-	if m.setStatus != "" {
-		hint = theme.Ok.Render(m.setStatus)
-	}
-
-	inW := m.w - 2 // inside the box border
-	nameW, typeW, kfW, krW := 20, 9, 16, 7
-	locW := max(12, inW-nameW-typeW-kfW-krW-4)
-
-	header := pad("NAME", nameW) + " " + pad("TYPE", typeW) + " " + pad("LOCATION", locW) + " " + pad("KEYFILE", kfW) + " KEYRING"
-	lines := []string{theme.Dimmed.Render(header)}
+	nameW, typeW, kfW := 18, 9, 14
+	locW := max(10, w-nameW-typeW-kfW-8-3)
+	out := []string{theme.Dimmed.Render(pad("NAME", nameW) + " " + pad("TYPE", typeW) + " " + pad("LOCATION", locW) + " " + pad("KEYFILE", kfW) + " KEYRING")}
 	if len(profs) == 0 {
-		lines = append(lines, "", theme.Faded.Render("  no sources yet — press 'a' to add one"))
+		out = append(out, "", theme.Faded.Render("  no sources yet — press 'a' to add one"))
+		return out
 	}
 	for k, p := range profs {
 		sicon := i.kdbx
@@ -168,25 +196,38 @@ func (m Model) settingsView() string {
 		if p.Keyfile != "" {
 			kf = filepath.Base(p.Keyfile)
 		}
-		if k == m.setSel {
+		if k == m.setSel && m.focus == 1 {
 			kr := "—"
 			if m.setKeyring[p.Name] {
 				kr = "saved"
 			}
-			plain := pad(sicon+" "+p.Name, nameW) + " " + pad(string(p.Type), typeW) + " " + pad(trunc(loc, locW), locW) + " " + pad(trunc(kf, kfW), kfW) + " " + kr
-			lines = append(lines, theme.SelRow.Width(inW).Render(trunc(plain, inW)))
+			plain := pad("▸ "+p.Name, nameW) + " " + pad(string(p.Type), typeW) + " " + pad(trunc(loc, locW), locW) + " " + pad(trunc(kf, kfW), kfW) + " " + kr
+			out = append(out, theme.SelRow.Width(w).Render(trunc(plain, w)))
 			continue
 		}
-		lines = append(lines,
+		out = append(out,
 			theme.Acc.Render(sicon)+" "+theme.Strong.Render(pad(trunc(p.Name, nameW-2), nameW-2))+" "+
 				theme.Dimmed.Render(pad(string(p.Type), typeW))+" "+
 				theme.Dimmed.Render(pad(trunc(loc, locW), locW))+" "+
 				theme.Faded.Render(pad(trunc(kf, kfW), kfW))+" "+
 				krCell(m.setKeyring[p.Name]))
 	}
+	return out
+}
 
-	body := box("Sources", fmt.Sprintf("%d configured", len(profs)), lines, m.w, max(3, m.h-1), true)
-	return body + "\n" + m.footer(hint)
+// settingsHint is the footer for the Settings tab, contextual to focus/category.
+func (m Model) settingsHint() string {
+	if m.setStatus != "" {
+		return theme.Ok.Render(m.setStatus)
+	}
+	switch {
+	case m.focus == 0:
+		return theme.Faded.Render("↑↓ pick · →/↵ open · 1 Vault")
+	case m.setCat == catTheme:
+		return theme.Faded.Render("↑↓ preview · ↵ save · ← back")
+	default:
+		return theme.Faded.Render("↑↓ select · a add · e edit · s sync · p save-pw · x clear-pw · d remove · ← back")
+	}
 }
 
 // krCell renders the KEYRING cell: a green "saved" or a muted dash.

@@ -7,20 +7,6 @@ import (
 	"github.com/pottom/harmos/internal/theme"
 )
 
-func (m Model) openThemePicker() Model {
-	m.setMode = setTheme
-	m.setStatus = ""
-	m.themeOrig = m.themeName
-	m.themeSel = 0
-	for i, n := range theme.Names() {
-		if n == m.themeName {
-			m.themeSel = i
-			break
-		}
-	}
-	return m
-}
-
 // applyThemeAt previews the theme at idx by making it active immediately.
 func (m Model) applyThemeAt(idx int) Model {
 	names := theme.Names()
@@ -35,15 +21,17 @@ func (m Model) applyThemeAt(idx int) Model {
 	return m
 }
 
-func (m Model) updateThemePicker(key string) (tea.Model, tea.Cmd) {
+// updateThemePane is the right pane for the Theme category: ↑↓ previews live,
+// enter saves to the config, left/esc reverts to the theme in effect on entry.
+func (m Model) updateThemePane(key string) (tea.Model, tea.Cmd) {
 	names := theme.Names()
 	switch key {
-	case "esc":
+	case "left", "esc":
 		if t, ok := theme.Builtin(m.themeOrig); ok {
 			theme.Apply(t)
 		}
 		m.themeName = m.themeOrig
-		m.setMode = setList
+		m.focus = 0
 	case "up", "ctrl+p":
 		if m.themeSel > 0 {
 			m = m.applyThemeAt(m.themeSel - 1)
@@ -56,22 +44,33 @@ func (m Model) updateThemePicker(key string) (tea.Model, tea.Cmd) {
 		if err := config.SetTopLevelKey(m.configPath, "theme", m.themeName); err != nil {
 			m.setStatus = "could not save theme: " + err.Error()
 		} else {
-			m.setStatus = "theme set to " + m.themeName
+			m.setStatus = "theme saved: " + m.themeName
+			m.themeOrig = m.themeName
 		}
-		m.setMode = setList
 	}
 	return m, nil
 }
 
-func (m Model) themePickerView() string {
-	var lines []string
+func (m Model) themeLines(w int) []string {
+	var out []string
 	for i, n := range theme.Names() {
 		if i == m.themeSel {
-			lines = append(lines, theme.SelRow.Render(" "+n+" "))
+			cur := "  "
+			if n == m.themeOrig {
+				cur = theme.Ok.Render("● ")
+			}
+			if m.focus == 1 {
+				out = append(out, theme.SelRow.Width(w).Render(trunc("▸ "+n, w)))
+				continue
+			}
+			out = append(out, cur+theme.Hi.Render(n))
 			continue
 		}
-		lines = append(lines, "  "+theme.Strong.Render(n))
+		mark := "  "
+		if n == m.themeOrig {
+			mark = theme.Ok.Render("● ")
+		}
+		out = append(out, mark+theme.Strong.Render(n))
 	}
-	body := box("Theme  ·  live preview", m.themeName, lines, m.w, max(3, m.h-1), true)
-	return body + "\n" + m.footer(theme.Faded.Render("↑↓ preview · ↵ apply & save · esc cancel"))
+	return out
 }

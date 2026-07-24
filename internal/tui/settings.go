@@ -11,34 +11,91 @@ import (
 	"github.com/pottom/harmos/internal/theme"
 )
 
-// Settings sub-modes.
+// Settings sub-modes (modal overlays on top of the two-pane list).
 const (
-	setList    = iota // browsing the sources table
+	setList    = iota // the two-pane category selector + content
 	setRemove         // the remove-source confirmation overlay
 	setForm           // the add/edit form overlay
 	setPrompt         // the save-password prompt overlay
 	setSyncing        // a sync is running
-	setTheme          // the theme picker overlay
 )
 
-// updateSettings handles keys while the Settings tab is active. It takes the raw
-// message too so overlays with text inputs can forward keystrokes.
+// Settings categories (left pane).
+const (
+	catSources = iota
+	catTheme
+)
+
+var settingsCats = []string{"Sources", "Theme"}
+
+// updateSettings handles keys while the Settings tab is active: modal overlays
+// first, then the two-pane list (left = category, right = its content).
 func (m Model) updateSettings(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	profs := m.sources()
 	switch m.setMode {
 	case setRemove:
-		return m.updateRemove(key, profs)
+		return m.updateRemove(key, m.sources())
 	case setForm:
 		return m.updateForm(key, msg)
 	case setPrompt:
 		return m.updatePrompt(key, msg)
 	case setSyncing:
 		return m, nil // keys ignored while a sync runs
-	case setTheme:
-		return m.updateThemePicker(key)
 	}
+	if m.focus == 0 {
+		return m.updateSettingsNav(key)
+	}
+	if m.setCat == catTheme {
+		return m.updateThemePane(key)
+	}
+	return m.updateSourcesPane(key)
+}
 
+// updateSettingsNav is the left pane: pick a category.
+func (m Model) updateSettingsNav(key string) (tea.Model, tea.Cmd) {
 	switch key {
+	case "up", "ctrl+p":
+		if m.setCat > 0 {
+			m.setCat--
+			m.setStatus = ""
+		}
+	case "down", "ctrl+n":
+		if m.setCat < len(settingsCats)-1 {
+			m.setCat++
+			m.setStatus = ""
+		}
+	case "right", "tab", "enter":
+		return m.enterCategory(), nil
+	case "t":
+		m.setCat = catTheme
+		return m.enterCategory(), nil
+	}
+	return m, nil
+}
+
+// enterCategory moves focus into the right (content) pane, snapshotting the theme
+// so the picker can revert on cancel.
+func (m Model) enterCategory() Model {
+	m.focus = 1
+	m.setStatus = ""
+	if m.setCat == catTheme {
+		m.themeOrig = m.themeName
+		m.themeSel = 0
+		for i, n := range theme.Names() {
+			if n == m.themeName {
+				m.themeSel = i
+				break
+			}
+		}
+	}
+	return m
+}
+
+// updateSourcesPane is the right pane for the Sources category.
+func (m Model) updateSourcesPane(key string) (tea.Model, tea.Cmd) {
+	profs := m.sources()
+	switch key {
+	case "left", "esc":
+		m.focus = 0
 	case "up", "ctrl+p":
 		if m.setSel > 0 {
 			m.setSel--
@@ -72,8 +129,6 @@ func (m Model) updateSettings(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.setSel < len(profs) {
 			m = m.clearPassword(profs[m.setSel])
 		}
-	case "t":
-		return m.openThemePicker(), nil
 	}
 	return m, nil
 }

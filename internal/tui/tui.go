@@ -46,6 +46,7 @@ type Model struct {
 	setSel     int             // selected row in the Settings sources table
 	setKeyring map[string]bool // profile name → has a saved keyring password
 	setMode    int             // setList / setRemove / …
+	setCat     int             // selected Settings category (left pane): catSources / catTheme
 	setStatus  string          // last action result, shown in the Settings footer
 	rmToggle   int             // remove overlay: 0 delete-file, 1 forget-pw, 2 confirm
 	rmFile     bool            // remove overlay: also delete the local file
@@ -292,10 +293,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !inOverlay {
 			switch key {
 			case "1":
-				m.tab, m.detail = 0, false
+				m.tab, m.detail, m.focus = 0, false, 0
 				return m, nil
 			case "2":
-				m.tab, m.detail = 1, false
+				m.tab, m.detail, m.focus = 1, false, 0
 				m.setKeyring = keyringStatus(m.sources())
 				return m, nil
 			}
