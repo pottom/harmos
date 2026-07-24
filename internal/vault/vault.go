@@ -75,6 +75,29 @@ func Open(path, source string, creds Credentials) (*Vault, error) {
 	return v, nil
 }
 
+// IsBadCredential reports whether err from Open looks like a wrong password (or
+// wrong keyfile) rather than a missing or corrupt file. gokeepasslib's credential
+// errors are unexported, so this matches on their messages — enough to decide
+// whether re-prompting for the password is worth it.
+func IsBadCredential(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	for _, marker := range []string{
+		"Wrong password?",        // KDBX4 HMAC / integrity
+		"failed to verify HMAC",  // KDBX4 block HMAC
+		"Sha256 of header",       // KDBX3.1 header hash
+		"HMAC-SHA256 of header",  // KDBX4 header HMAC
+		"integrity check failed", // KDBX4 database integrity
+	} {
+		if strings.Contains(s, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func (v *Vault) walk(g gokeepasslib.Group, prefix string) {
 	for i := range g.Entries {
 		e := &g.Entries[i]

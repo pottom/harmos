@@ -11,23 +11,25 @@ import (
 
 func newLsCmd() *cobra.Command {
 	var configPath string
+	var noHeaders bool
 	cmd := &cobra.Command{
 		Use:   "ls [profile]",
-		Short: "List entries as tab-separated columns (scriptable, no TTY needed)",
+		Short: "List entries in an aligned table (no TTY needed)",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			profile := ""
 			if len(args) == 1 {
 				profile = args[0]
 			}
-			return runLs(configPath, profile, cmd.OutOrStdout())
+			return runLs(configPath, profile, !noHeaders, cmd.OutOrStdout())
 		},
 	}
+	cmd.Flags().BoolVar(&noHeaders, "no-headers", false, "omit the header row (for scripting)")
 	cmd.Flags().StringVar(&configPath, "config", "", "config file (default: $XDG_CONFIG_HOME/harmos/config.toml)")
 	return cmd
 }
 
-func runLs(configPath, profile string, out io.Writer) error {
+func runLs(configPath, profile string, showHeaders bool, out io.Writer) error {
 	res, _, err := openAll(configPath)
 	if err != nil {
 		return err
@@ -54,9 +56,11 @@ func runLs(configPath, profile string, out io.Writer) error {
 		return a.Title < b.Title
 	})
 
+	rows := make([][]string, 0, len(entries))
 	for _, e := range entries {
-		emitf(out, "%s\t%s\t%s\t%s\n", e.Source, e.Path, e.Title, e.Username)
+		rows = append(rows, []string{e.Source, e.Path, e.Title, e.Username})
 	}
+	printTable(out, []string{"SOURCE", "PATH", "TITLE", "USERNAME"}, rows, showHeaders)
 	warnExcluded(res)
 	return nil
 }

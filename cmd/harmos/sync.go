@@ -10,29 +10,35 @@ import (
 	"golang.org/x/term"
 
 	"github.com/pottom/harmos/internal/config"
+	"github.com/pottom/harmos/internal/keyring"
 	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/source/pleasant"
 )
 
 func newSyncCmd() *cobra.Command {
 	var configPath string
+	var savePassword bool
 	cmd := &cobra.Command{
 		Use:   "sync [profile]",
 		Short: "Pull each Pleasant source's OfflinePackage into its local kdbx cache",
 		Long: "Pull the OfflinePackage from each Pleasant source and write it to that " +
 			"source's encrypted kdbx cache. With no argument, syncs every Pleasant " +
-			"source; kdbx sources are skipped. This is an explicit, audited action.",
+			"source; kdbx sources are skipped. This is an explicit, audited action. " +
+			"Passwords come from the keyring when saved (else a prompt); --save-password " +
+			"stores the master and each server password after a successful sync.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSync(cmd.Context(), configPath, args, cmd.OutOrStdout())
+			return runSync(cmd.Context(), configPath, args, savePassword, cmd.OutOrStdout())
 		},
 	}
+	cmd.Flags().BoolVar(&savePassword, "save-password", false,
+		"store the master and server passwords in the OS keyring after syncing")
 	cmd.Flags().StringVar(&configPath, "config", "",
 		"config file (default: $XDG_CONFIG_HOME/harmos/config.toml)")
 	return cmd
 }
 
-func runSync(ctx context.Context, configPath string, args []string, out io.Writer) error {
+func runSync(ctx context.Context, configPath string, args []string, savePassword bool, out io.Writer) error {
 	if configPath == "" {
 		p, err := config.DefaultPath()
 		if err != nil {
@@ -69,17 +75,14 @@ func runSync(ctx context.Context, configPath string, args []string, out io.Write
 		return nil
 	}
 
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return fmt.Errorf("sync needs a terminal to prompt for the master and server passwords")
-	}
-	master, err := promptPassword("harmos master password: ")
+	master, err := resolveSyncMaster()
 	if err != nil {
 		return err
 	}
 
 	failures := 0
 	for _, p := range pleasantTargets {
-		if err := syncOne(ctx, p, master, out); err != nil {
+		if err := syncOne(ctx, p, master, savePassword, out); err != nil {
 			emitf(out, "  %s: FAILED — %v\n", p.Name, err)
 			failures++
 		}
@@ -90,9 +93,38 @@ func runSync(ctx context.Context, configPath string, args []string, out io.Write
 	return nil
 }
 
-func syncOne(ctx context.Context, p config.Profile, master secret.Secret, out io.Writer) error {
+// resolveSyncMaster gets the master for encrypting the cache: HARMOS_MASTER, then
+// the keyring, then a prompt.
+func resolveSyncMaster() (secret.Secret, error) {
+	if v, ok := os.LookupEnv("HARMOS_MASTER"); ok {
+		return secret.New(v), nil
+	}
+	if pw, ok, _ := keyring.FetchMaster(); ok {
+		return pw, nil
+	}
+	if !onTTY() {
+		return secret.Secret{}, fmt.Errorf("no master password: set HARMOS_MASTER, or save it with `harmos save-password <pleasant-source>`")
+	}
+	return promptPassword("harmos master password: ")
+}
+
+// resolveServerPass gets a Pleasant source's server login password from the
+// keyring, else a prompt. The bool reports whether it came from the keyring.
+func resolveServerPass(p config.Profile) (secret.Secret, bool, error) {
+	if pw, ok, _ := keyring.FetchServer(p.Name); ok {
+		return pw, true, nil
+	}
+	if !onTTY() {
+		return secret.Secret{}, false, fmt.Errorf("no saved password for %q; run `harmos sync --save-password` on a terminal first", p.Name)
+	}
+	pw, err := promptPassword(fmt.Sprintf("  password for %s: ", p.User))
+	return pw, false, err
+}
+
+func syncOne(ctx context.Context, p config.Profile, master secret.Secret, savePassword bool, out io.Writer) error {
 	emitf(out, "%s (%s):\n", p.Name, p.URL)
-	serverPass, err := promptPassword(fmt.Sprintf("  password for %s: ", p.User))
+
+	serverPass, fromKeyring, err := resolveServerPass(p)
 	if err != nil {
 		return err
 	}
@@ -102,21 +134,90 @@ func syncOne(ctx context.Context, p config.Profile, master secret.Secret, out io
 		return err
 	}
 	c := pleasant.New(p.URL, pleasant.WithHTTPClient(hc))
+
 	if err := c.Login(ctx, p.User, serverPass); err != nil {
-		return err
+		// A stale saved password shouldn't wedge sync — re-prompt once on a terminal.
+		if !fromKeyring || !onTTY() {
+			return err
+		}
+		emitf(out, "  saved password rejected — try again\n")
+		if serverPass, err = promptPassword(fmt.Sprintf("  password for %s: ", p.User)); err != nil {
+			return err
+		}
+		if err := c.Login(ctx, p.User, serverPass); err != nil {
+			return err
+		}
 	}
 
+	rep := &syncReporter{w: out}
 	res, err := pleasant.Sync(ctx, c, p.URL, pleasant.SyncOptions{
 		Comment:   "harmos sync",
 		CachePath: p.Cache,
 		Master:    master,
+		Report:    &pleasant.Reporter{Phase: rep.phase, Bytes: rep.bytes},
 	})
+	rep.endLine() // finish any open progress line before the result/error
 	if err != nil {
 		return err
 	}
+
+	if savePassword {
+		if err := keyring.StoreMaster(master); err != nil {
+			emitf(out, "  warning: could not save the master to the keyring: %v\n", err)
+		}
+		if err := keyring.StoreServer(p.Name, serverPass); err != nil {
+			emitf(out, "  warning: could not save the server password: %v\n", err)
+		} else {
+			emitf(out, "  saved passwords to the keyring\n")
+		}
+	}
+
 	emitf(out, "  synced %d entries, %d folders, %d attachments → %s (expiry %s)\n",
 		res.Entries, res.Folders, res.Attachments, p.Cache, res.Expiry)
 	return nil
+}
+
+// syncReporter prints live sync progress: a line per phase, with the download
+// phase updating in place as bytes arrive.
+type syncReporter struct {
+	w    io.Writer
+	open bool // the current line has no trailing newline yet
+}
+
+func (r *syncReporter) phase(name string) {
+	r.endLine()
+	emitf(r.w, "  %s…", name)
+	r.open = true
+}
+
+func (r *syncReporter) bytes(done, total int64) {
+	if total > 0 {
+		pct := min(done*100/total, 100)
+		emitf(r.w, "\r  downloading offline package… %s / %s (%d%%)  ", humanBytes(done), humanBytes(total), pct)
+	} else {
+		emitf(r.w, "\r  downloading offline package… %s  ", humanBytes(done))
+	}
+	r.open = true
+}
+
+func (r *syncReporter) endLine() {
+	if r.open {
+		emitf(r.w, "\n")
+		r.open = false
+	}
+}
+
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for x := n / unit; x >= unit; x /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGT"[exp])
 }
 
 // emitf writes progress to the command's output; the error is not actionable.
