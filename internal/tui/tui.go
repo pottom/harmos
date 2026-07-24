@@ -14,6 +14,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/pottom/harmos/internal/clip"
+	"github.com/pottom/harmos/internal/config"
+	"github.com/pottom/harmos/internal/keyring"
 	"github.com/pottom/harmos/internal/search"
 	"github.com/pottom/harmos/internal/vault"
 )
@@ -29,6 +31,7 @@ type Model struct {
 	input   textinput.Model
 	results []search.Result
 
+	tab        int  // 0 = Vault, 1 = Settings
 	tsel       int  // selected folder (index into the flattened visible tree)
 	focus      int  // 0 = tree (left), 1 = entry table (right)
 	esel       int  // selected entry within the folder's table
@@ -39,14 +42,40 @@ type Model struct {
 	help       bool
 	w, h       int
 
+	configPath string          // for the Settings tab
+	setSel     int             // selected row in the Settings sources table
+	setKeyring map[string]bool // profile name → has a saved keyring password
+	setMode    int             // setList / setRemove / …
+	setStatus  string          // last action result, shown in the Settings footer
+	rmToggle   int             // remove overlay: 0 delete-file, 1 forget-pw, 2 confirm
+	rmFile     bool            // remove overlay: also delete the local file
+	rmPw       bool            // remove overlay: also forget the keyring password
+
+	form        []formField // add/edit form fields
+	formFocus   int         // focused form row (len(form) = the Save button)
+	formEditing bool        // editing an existing source vs adding
+	formOrig    string      // the profile name being edited (for rename)
+	formPps     bool        // form type: Pleasant vs kdbx
+
+	promptInput textinput.Model // save-password prompt
+	promptQueue []promptStep    // remaining password prompts
+	promptName  string          // profile the prompt(s) are for
+
+	syncCh    chan syncProgressMsg // live sync progress
+	syncName  string               // source being synced
+	syncPhase string               // current phase
+	syncDone  int64                // bytes downloaded
+	syncTotal int64                // total bytes (-1 unknown)
+
 	timeout    time.Duration
 	copied     string
 	copiedWhat string
 	remaining  int
 }
 
-// New builds the model over the given entries.
-func New(entries []vault.Entry, timeout time.Duration) Model {
+// New builds the model over the given entries. configPath is the config file the
+// Settings tab reads and edits (may be "" when there is no Settings work).
+func New(entries []vault.Entry, configPath string, timeout time.Duration) Model {
 	ti := textinput.New()
 	ti.Prompt = ""
 	ti.Placeholder = "press / to search every source…"
@@ -55,17 +84,18 @@ func New(entries []vault.Entry, timeout time.Duration) Model {
 	}
 	roots := buildTree(entries)
 	return Model{
-		matcher: search.New(entries),
-		roots:   roots,
-		nSrc:    len(roots),
-		input:   ti,
-		timeout: timeout,
+		matcher:    search.New(entries),
+		roots:      roots,
+		nSrc:       len(roots),
+		input:      ti,
+		configPath: configPath,
+		timeout:    timeout,
 	}
 }
 
 // Run launches the TUI in the alt screen.
-func Run(entries []vault.Entry, timeout time.Duration) error {
-	_, err := tea.NewProgram(New(entries, timeout), tea.WithAltScreen()).Run()
+func Run(entries []vault.Entry, configPath string, timeout time.Duration) error {
+	_, err := tea.NewProgram(New(entries, configPath, timeout), tea.WithAltScreen()).Run()
 	return err
 }
 
@@ -80,6 +110,36 @@ func tick() tea.Cmd {
 func clearClip() tea.Msg {
 	_ = clip.ClearIfUnchanged()
 	return clearedMsg{}
+}
+
+// sources reads the configured profiles fresh from disk (so the Settings tab
+// reflects edits); an unreadable or empty config yields no rows.
+func (m Model) sources() []config.Profile {
+	if m.configPath == "" {
+		return nil
+	}
+	cfg, err := config.Load(m.configPath)
+	if err != nil {
+		return nil
+	}
+	return cfg.Profiles
+}
+
+// keyringStatus probes the OS keyring for each profile's saved password (the
+// server password for Pleasant, the per-file password for kdbx). Computed once
+// on entering Settings, not per render, to avoid repeated keychain access.
+func keyringStatus(profs []config.Profile) map[string]bool {
+	st := make(map[string]bool, len(profs))
+	for _, p := range profs {
+		var ok bool
+		if p.Type == config.Pleasant {
+			_, ok, _ = keyring.FetchServer(p.Name)
+		} else {
+			_, ok, _ = keyring.Fetch(p.Name)
+		}
+		st[p.Name] = ok
+	}
+	return st
 }
 
 func (m Model) searching() bool { return m.input.Value() != "" }
@@ -167,6 +227,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clearedMsg:
 		return m, nil
 
+	case syncProgressMsg:
+		m.syncPhase = msg.phase
+		if msg.done > 0 || msg.total > 0 {
+			m.syncDone, m.syncTotal = msg.done, msg.total
+		}
+		return m, listenSync(m.syncCh)
+
+	case syncDoneMsg:
+		if msg.err != nil {
+			m.setStatus = "sync failed: " + msg.err.Error()
+		} else {
+			m.setStatus = msg.summary
+		}
+		m.setMode = setList
+		m.syncCh = nil
+		m.setKeyring = keyringStatus(m.sources())
+		return m, nil
+
 	case tea.KeyMsg:
 		key := msg.String()
 		if key == "ctrl+c" {
@@ -183,6 +261,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// q quits everywhere except while typing a search (where it's a character).
 		if key == "q" && !m.searchMode {
 			return m, tea.Sequence(clearClip, tea.Quit)
+		}
+
+		// Tab switching (1 = Vault, 2 = Settings) — not while typing a search, and
+		// not while a Settings overlay (form/remove) is capturing keys.
+		inOverlay := m.searchMode || (m.tab == 1 && m.setMode != setList)
+		if !inOverlay {
+			switch key {
+			case "1":
+				m.tab, m.detail = 0, false
+				return m, nil
+			case "2":
+				m.tab, m.detail = 1, false
+				m.setKeyring = keyringStatus(m.sources())
+				return m, nil
+			}
+		}
+
+		// The Settings tab handles its own keys.
+		if m.tab == 1 {
+			return m.updateSettings(key, msg)
 		}
 
 		// SEARCH MODE — the "/" box is capturing keystrokes.

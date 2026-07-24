@@ -1,22 +1,116 @@
 package tui
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	gokeyring "github.com/zalando/go-keyring"
 
+	"github.com/pottom/harmos/internal/config"
+	"github.com/pottom/harmos/internal/keyring"
 	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/vault"
 )
+
+func TestSettingsSavePassword(t *testing.T) {
+	gokeyring.MockInit()
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	if _, err := config.WriteKdbxProfile(cfgPath, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
+		t.Fatal(err)
+	}
+	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 18})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	if m.setMode != setPrompt {
+		t.Fatal("p should open the save-password prompt")
+	}
+	m = typeStr(m, "secret")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.setMode != setList {
+		t.Fatalf("enter should store and return to the list (status %q)", m.setStatus)
+	}
+	if pw, ok, _ := keyring.Fetch("own"); !ok || pw.Reveal() != "secret" {
+		t.Errorf("kdbx password not saved: ok=%v pw=%q", ok, pw.Reveal())
+	}
+}
+
+func TestSettingsSyncNeedsCredentials(t *testing.T) {
+	gokeyring.MockInit() // empty keyring
+	t.Setenv("HARMOS_MASTER", "")
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	if _, err := config.WritePleasantProfile(cfgPath, "work", "https://x.invalid", "u", filepath.Join(dir, "w.kdbx"), "", false); err != nil {
+		t.Fatal(err)
+	}
+	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 18})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	if m.setMode == setSyncing {
+		t.Fatal("sync should not start without saved credentials")
+	}
+	if !strings.Contains(m.setStatus, "master") {
+		t.Errorf("expected a 'save the master' hint, got %q", m.setStatus)
+	}
+}
+
+func TestSettingsAddForm(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 20})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}}) // Settings
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}) // add form
+	if m.setMode != setForm {
+		t.Fatal("a should open the add form")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // Type toggle → Name
+	m = typeStr(m, "own")
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // Name → Path
+	m = typeStr(m, "/vault/own.kdbx")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter}) // submit
+	if m.setMode != setList {
+		t.Fatalf("submit should return to the list (mode=%d, status=%q)", m.setMode, m.setStatus)
+	}
+	profs := m.sources()
+	if len(profs) != 1 || profs[0].Name != "own" {
+		t.Fatalf("form add failed: %+v (status %q)", profs, m.setStatus)
+	}
+	if !strings.HasSuffix(profs[0].Path, "own.kdbx") {
+		t.Errorf("path = %q, want …/own.kdbx", profs[0].Path)
+	}
+}
+
+func TestSettingsRemove(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	if _, err := config.WriteKdbxProfile(cfgPath, "a", filepath.Join(dir, "a.kdbx"), "", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := config.WriteKdbxProfile(cfgPath, "b", filepath.Join(dir, "b.kdbx"), "", false); err != nil {
+		t.Fatal(err)
+	}
+
+	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}}) // Settings
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}) // remove the selected (a)
+	if m.setMode != setRemove {
+		t.Fatal("d should open the remove confirmation")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter}) // confirm (no toggles)
+	if got := m.sources(); len(got) != 1 || got[0].Name != "b" {
+		t.Fatalf("after removing a, want [b], got %+v", got)
+	}
+}
 
 func testModel() Model {
 	return New([]vault.Entry{
 		{Source: "work", Path: "Infra", Title: "db-prod", Username: "svc_admin", Password: secret.New("p1")},
 		{Source: "work", Path: "Infra", Title: "db-staging", Username: "svc", Password: secret.New("p2")},
 		{Source: "personal", Path: "Net", Title: "router", Username: "admin", Password: secret.New("p3"), URL: "https://10.0.0.1"},
-	}, 30*time.Second)
+	}, "", 30*time.Second)
 }
 
 func up(m Model, msg tea.Msg) Model {
@@ -161,6 +255,28 @@ func TestQuitAndSearchQ(t *testing.T) {
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 	if m.input.Value() != "q" {
 		t.Errorf("q should be typed in search mode, got %q", m.input.Value())
+	}
+}
+
+// 1/2 switch tabs, but digits type while searching.
+func TestTabsSwitch(t *testing.T) {
+	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
+	if m.tab != 0 {
+		t.Fatal("default tab should be Vault")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	if m.tab != 1 || !strings.Contains(m.View(), "Sources") {
+		t.Error("2 should switch to the Settings tab")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+	if m.tab != 0 {
+		t.Error("1 should switch back to Vault")
+	}
+	// while searching, digits are typed, not tab switches
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	if m.tab != 0 || m.input.Value() != "2" {
+		t.Errorf("digits should type in search, not switch tabs: tab=%d value=%q", m.tab, m.input.Value())
 	}
 }
 

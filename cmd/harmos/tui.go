@@ -12,7 +12,11 @@ func runTUI(configPath string) error {
 	if !onTTY() {
 		return fmt.Errorf("the TUI needs a terminal; use `harmos ls` or `harmos get` for scripts")
 	}
-	res, cfg, err := openAll(configPath)
+	cfgPath, err := configPathOrDefault(configPath)
+	if err != nil {
+		return err
+	}
+	res, cfg, err := openAll(cfgPath)
 	if err != nil {
 		return err
 	}
@@ -20,5 +24,5 @@ func runTUI(configPath string) error {
 	if len(res.Entries) == 0 {
 		return fmt.Errorf("no entries — run `harmos sync` first, or check your config")
 	}
-	return tui.Run(res.Entries, cfg.ClipboardTimeout.Duration)
+	return tui.Run(res.Entries, cfgPath, cfg.ClipboardTimeout.Duration)
 }

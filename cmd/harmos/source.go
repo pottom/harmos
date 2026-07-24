@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -108,7 +107,7 @@ func newAddSourceCmd() *cobra.Command {
 				}
 				derived := name
 				if derived == "" {
-					derived = deriveProfileName(args[0])
+					derived = config.DeriveProfileName(args[0])
 				}
 				if err := runAddSource(configPath, args[0], name, keyfile, force, out); err != nil {
 					return err
@@ -147,7 +146,11 @@ func newAddSourceCmd() *cobra.Command {
 }
 
 func runAddSource(configPath, path, name, keyfile string, force bool, out io.Writer) error {
-	kdbxPath, err := absPath(path)
+	cfgPath, err := configPathOrDefault(configPath)
+	if err != nil {
+		return err
+	}
+	kdbxPath, err := config.AbsPath(path)
 	if err != nil {
 		return err
 	}
@@ -159,7 +162,7 @@ func runAddSource(configPath, path, name, keyfile string, force bool, out io.Wri
 		return fmt.Errorf("%s is a directory, not a .kdbx file", kdbxPath)
 	}
 	if keyfile != "" {
-		if keyfile, err = absPath(keyfile); err != nil {
+		if keyfile, err = config.AbsPath(keyfile); err != nil {
 			return err
 		}
 		if _, err := os.Stat(keyfile); err != nil {
@@ -168,15 +171,18 @@ func runAddSource(configPath, path, name, keyfile string, force bool, out io.Wri
 	}
 
 	if name == "" {
-		name = deriveProfileName(kdbxPath)
+		name = config.DeriveProfileName(kdbxPath)
 	}
 	if name == "" {
 		return fmt.Errorf("could not derive a profile name from %q; pass --name", path)
 	}
 
-	block := buildKdbxBlock(name, kdbxPath, keyfile)
-	verb, err := upsertProfile(configPath, name, block, force, out)
-	if err != nil || verb == "" {
+	proceed, overwrite, err := confirmOverwrite(cfgPath, name, force, out)
+	if err != nil || !proceed {
+		return err
+	}
+	verb, err := config.WriteKdbxProfile(cfgPath, name, kdbxPath, keyfile, overwrite)
+	if err != nil {
 		return err
 	}
 	emitf(out, "%s kdbx source %q\n", verb, name)
@@ -189,6 +195,10 @@ func runAddSource(configPath, path, name, keyfile string, force bool, out io.Wri
 }
 
 func runAddPleasant(configPath, name, url, user, cache, caBundle string, force bool, out io.Writer) error {
+	cfgPath, err := configPathOrDefault(configPath)
+	if err != nil {
+		return err
+	}
 	if url == "" || user == "" {
 		return fmt.Errorf("a Pleasant source needs --url and --user")
 	}
@@ -197,18 +207,18 @@ func runAddPleasant(configPath, name, url, user, cache, caBundle string, force b
 		if name == "" {
 			return fmt.Errorf("a Pleasant source needs --name (or --cache) so its cache can be named")
 		}
-		p, err := defaultCachePath(name)
-		if err != nil {
-			return err
+		p, derr := config.DefaultCachePath(name)
+		if derr != nil {
+			return derr
 		}
 		cache = p
 	}
-	cachePath, err := absPath(cache)
+	cachePath, err := config.AbsPath(cache)
 	if err != nil {
 		return err
 	}
 	if caBundle != "" {
-		if caBundle, err = absPath(caBundle); err != nil {
+		if caBundle, err = config.AbsPath(caBundle); err != nil {
 			return err
 		}
 		if _, err := os.Stat(caBundle); err != nil {
@@ -216,7 +226,7 @@ func runAddPleasant(configPath, name, url, user, cache, caBundle string, force b
 		}
 	}
 	if name == "" {
-		name = deriveProfileName(cachePath)
+		name = config.DeriveProfileName(cachePath)
 	}
 	if name == "" {
 		return fmt.Errorf("could not derive a profile name; pass --name")
@@ -227,9 +237,12 @@ func runAddPleasant(configPath, name, url, user, cache, caBundle string, force b
 		return fmt.Errorf("create cache directory: %w", err)
 	}
 
-	block := buildPleasantBlock(name, url, user, cachePath, caBundle)
-	verb, err := upsertProfile(configPath, name, block, force, out)
-	if err != nil || verb == "" {
+	proceed, overwrite, err := confirmOverwrite(cfgPath, name, force, out)
+	if err != nil || !proceed {
+		return err
+	}
+	verb, err := config.WritePleasantProfile(cfgPath, name, url, user, cachePath, caBundle, overwrite)
+	if err != nil {
 		return err
 	}
 	emitf(out, "%s pps source %q\n", verb, name)
@@ -247,285 +260,37 @@ func runAddPleasant(configPath, name, url, user, cache, caBundle string, force b
 	return nil
 }
 
-// defaultCachePath is where a Pleasant source's cache lives when --cache is
-// omitted: $XDG_DATA_HOME/harmos/<name>.kdbx, falling back to ~/.local/share.
-func defaultCachePath(name string) (string, error) {
-	dir := os.Getenv("XDG_DATA_HOME")
-	if dir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		dir = filepath.Join(home, ".local", "share")
+func configPathOrDefault(p string) (string, error) {
+	if p != "" {
+		return p, nil
 	}
-	return filepath.Join(dir, "harmos", name+".kdbx"), nil
+	return config.DefaultPath()
 }
 
-// upsertProfile inserts block into the config as a new profile, or — if a profile
-// of that name exists — rewrites just that block (leaving the rest of the file
-// verbatim), after confirming the overwrite. It returns "added" or "updated", or
-// "" when an overwrite was declined (nothing changed).
-func upsertProfile(configPath, name, block string, force bool, out io.Writer) (string, error) {
-	if configPath == "" {
-		p, err := config.DefaultPath()
-		if err != nil {
-			return "", err
-		}
-		configPath = p
-	}
-
-	// No config yet: write a fresh file with just this source.
-	if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
-		if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
-			return "", err
-		}
-		if err := writeFileAtomic(configPath, []byte(block)); err != nil {
-			return "", err
-		}
-		return "added", nil
-	} else if statErr != nil {
-		return "", statErr
-	}
-
-	// The file exists: Load validates it and tells us whether the name is taken.
-	// A file that parses but has no profiles yet is fine — we append to it.
-	cfg, err := config.Load(configPath)
+// confirmOverwrite decides whether to write a profile named name. proceed is
+// false (with a nil error) when the user declined an overwrite; overwrite tells
+// the config writer whether to replace an existing block.
+func confirmOverwrite(cfgPath, name string, force bool, out io.Writer) (proceed, overwrite bool, err error) {
+	exists, err := config.ProfileExists(cfgPath, name)
 	if err != nil {
-		if !errors.Is(err, config.ErrNoProfiles) {
-			return "", err
-		}
-		cfg = &config.Config{}
+		return false, false, err
 	}
-	content, err := os.ReadFile(configPath)
+	if !exists {
+		return true, false, nil
+	}
+	if force {
+		return true, true, nil
+	}
+	if !onTTY() {
+		return false, false, fmt.Errorf("a profile named %q already exists in %s; pass --force to overwrite", name, cfgPath)
+	}
+	ok, err := confirm(fmt.Sprintf("profile %q already exists — overwrite? [y/N] ", name))
 	if err != nil {
-		return "", err
+		return false, false, err
 	}
-
-	verb := "added"
-	var next string
-	if cfg.Profile(name) != nil {
-		if !force {
-			if !onTTY() {
-				return "", fmt.Errorf("a profile named %q already exists in %s; pass --force to overwrite", name, configPath)
-			}
-			ok, err := confirm(fmt.Sprintf("profile %q already exists — overwrite? [y/N] ", name))
-			if err != nil {
-				return "", err
-			}
-			if !ok {
-				emitf(out, "kept the existing %q; nothing changed\n", name)
-				return "", nil
-			}
-		}
-		// Surgery: rewrite only this profile's block, leaving the rest verbatim.
-		replaced, ok := replaceProfileBlock(string(content), name, strings.TrimRight(block, "\n"))
-		if !ok {
-			return "", fmt.Errorf("could not locate the %q profile block to overwrite in %s", name, configPath)
-		}
-		next, verb = replaced, "updated"
-	} else {
-		// Append the new block, leaving everything already there untouched.
-		base := string(content)
-		if !strings.HasSuffix(base, "\n") {
-			base += "\n"
-		}
-		next = base + "\n" + block
+	if !ok {
+		emitf(out, "kept the existing %q; nothing changed\n", name)
+		return false, false, nil
 	}
-
-	if err := writeFileAtomic(configPath, []byte(next)); err != nil {
-		return "", err
-	}
-	// A round-trip parse guards against writing a file that no longer loads.
-	if _, err := config.Load(configPath); err != nil {
-		return "", fmt.Errorf("config is invalid after %s %q: %w", verb, name, err)
-	}
-	return verb, nil
-}
-
-func buildKdbxBlock(name, path, keyfile string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "[[profile]]\n")
-	fmt.Fprintf(&b, "name = %q\n", name)
-	fmt.Fprintf(&b, "type = %q\n", string(config.Kdbx))
-	fmt.Fprintf(&b, "path = %q\n", path)
-	if keyfile != "" {
-		fmt.Fprintf(&b, "keyfile = %q\n", keyfile)
-	}
-	return b.String()
-}
-
-func buildPleasantBlock(name, url, user, cache, caBundle string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "[[profile]]\n")
-	fmt.Fprintf(&b, "name = %q\n", name)
-	fmt.Fprintf(&b, "type = %q\n", string(config.Pleasant))
-	fmt.Fprintf(&b, "url = %q\n", url)
-	fmt.Fprintf(&b, "user = %q\n", user)
-	fmt.Fprintf(&b, "cache = %q\n", cache)
-	if caBundle != "" {
-		fmt.Fprintf(&b, "ca_bundle = %q\n", caBundle)
-	}
-	return b.String()
-}
-
-// replaceProfileBlock rewrites the [[profile]] block whose name matches, leaving
-// every other line — comments, blank lines, other profiles, top-level keys —
-// exactly as it was. A block is the header line plus the contiguous run of key
-// lines under it, up to the first blank line or the next table header.
-func replaceProfileBlock(content, name, newBlock string) (string, bool) {
-	lines := strings.Split(content, "\n")
-	isTableHeader := func(s string) bool { return strings.HasPrefix(strings.TrimSpace(s), "[") }
-
-	for i := range lines {
-		if strings.TrimSpace(lines[i]) != "[[profile]]" {
-			continue
-		}
-		j := i + 1
-		blockName := ""
-		for j < len(lines) {
-			t := strings.TrimSpace(lines[j])
-			if t == "" || isTableHeader(lines[j]) {
-				break
-			}
-			if k, v, ok := parseKV(t); ok && k == "name" {
-				blockName = v
-			}
-			j++
-		}
-		if blockName != name {
-			continue
-		}
-		out := make([]string, 0, len(lines))
-		out = append(out, lines[:i]...)
-		out = append(out, strings.Split(newBlock, "\n")...)
-		out = append(out, lines[j:]...)
-		return strings.Join(out, "\n"), true
-	}
-	return content, false
-}
-
-// removeProfileBlock deletes the [[profile]] block whose name matches (plus one
-// trailing blank line so no double gap is left), leaving everything else — other
-// profiles, comments, top-level keys — exactly as it was.
-func removeProfileBlock(content, name string) (string, bool) {
-	lines := strings.Split(content, "\n")
-	isTableHeader := func(s string) bool { return strings.HasPrefix(strings.TrimSpace(s), "[") }
-
-	for i := range lines {
-		if strings.TrimSpace(lines[i]) != "[[profile]]" {
-			continue
-		}
-		j := i + 1
-		blockName := ""
-		for j < len(lines) {
-			t := strings.TrimSpace(lines[j])
-			if t == "" || isTableHeader(lines[j]) {
-				break
-			}
-			if k, v, ok := parseKV(t); ok && k == "name" {
-				blockName = v
-			}
-			j++
-		}
-		if blockName != name {
-			continue
-		}
-		if j < len(lines) && strings.TrimSpace(lines[j]) == "" {
-			j++ // swallow the separating blank line
-		}
-		out := make([]string, 0, len(lines))
-		out = append(out, lines[:i]...)
-		out = append(out, lines[j:]...)
-		return strings.Join(out, "\n"), true
-	}
-	return content, false
-}
-
-// removeTopLevelKey drops a top-level `key = ...` line (the region before the
-// first table header), leaving everything else verbatim.
-func removeTopLevelKey(content, key string) string {
-	lines := strings.Split(content, "\n")
-	out := make([]string, 0, len(lines))
-	inTop := true
-	for _, l := range lines {
-		if inTop {
-			t := strings.TrimSpace(l)
-			if strings.HasPrefix(t, "[") {
-				inTop = false
-			} else if k, _, ok := parseKV(t); ok && k == key {
-				continue
-			}
-		}
-		out = append(out, l)
-	}
-	return strings.Join(out, "\n")
-}
-
-// parseKV splits a `key = value` line, unquoting a string value. It ignores
-// comment lines.
-func parseKV(line string) (key, val string, ok bool) {
-	if strings.HasPrefix(line, "#") {
-		return "", "", false
-	}
-	k, v, found := strings.Cut(line, "=")
-	if !found {
-		return "", "", false
-	}
-	key = strings.TrimSpace(k)
-	val = strings.TrimSpace(v)
-	if len(val) >= 2 && val[0] == '"' {
-		if uq, err := strconv.Unquote(val); err == nil {
-			val = uq
-		}
-	} else if len(val) >= 2 && val[0] == '\'' && val[len(val)-1] == '\'' {
-		val = val[1 : len(val)-1]
-	}
-	return key, val, true
-}
-
-func writeFileAtomic(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".harmos-config-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
-
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, path)
-}
-
-// deriveProfileName is the default profile name for a kdbx path: the file name
-// without its extension.
-func deriveProfileName(path string) string {
-	base := filepath.Base(path)
-	return strings.TrimSuffix(base, filepath.Ext(base))
-}
-
-// absPath expands a leading ~ and makes the path absolute.
-func absPath(p string) (string, error) {
-	if strings.HasPrefix(p, "~") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		switch {
-		case p == "~":
-			p = home
-		case strings.HasPrefix(p, "~/"):
-			p = filepath.Join(home, p[2:])
-		}
-	}
-	return filepath.Abs(p)
+	return true, true, nil
 }
