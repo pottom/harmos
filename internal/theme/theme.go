@@ -1,34 +1,90 @@
-// Package theme is the harmos color set — the executable form of the M4 token
-// table (docs/design/harmos-tui-tokens.md). Charm (violet) is the default.
-// Colors are AdaptiveColor so the set survives light terminals; the accent is
-// spent only on secrets and the act of copying them, teal/rust are status,
-// steel is chrome.
+// Package theme is the harmos color set. A Theme is a named table of light/dark
+// color tokens; Apply makes one active by rebuilding the package-level tokens and
+// styles that the TUI renders through. Charm (violet) is the default; a config
+// can select another built-in or a custom TOML theme. The accent is spent only
+// on focus/secrets, teal/rust are status, steel is chrome.
 package theme
 
 import "github.com/charmbracelet/lipgloss"
 
-// Tokens (charm · light/dark).
+// token is a light/dark color pair (hex). A single value can be repeated for both.
+type token struct {
+	Light string `toml:"light"`
+	Dark  string `toml:"dark"`
+}
+
+// Theme is a named color set. Struct tags let a custom theme be decoded from TOML.
+type Theme struct {
+	Name     string `toml:"name"`
+	Accent   token  `toml:"accent"`
+	AccentHi token  `toml:"accent_hi"`
+	Steel    token  `toml:"steel"`
+	Dim      token  `toml:"dim"`
+	Faint    token  `toml:"faint"`
+	OK       token  `toml:"ok"`
+	Warn     token  `toml:"warn"`
+	SelBg    token  `toml:"sel_bg"`
+}
+
+// Active tokens, set by Apply.
 var (
-	Accent   = lipgloss.AdaptiveColor{Light: "#6a48d0", Dark: "#8b6dff"}
-	AccentHi = lipgloss.AdaptiveColor{Light: "#4a2ea8", Dark: "#c4b4ff"}
-	Steel    = lipgloss.AdaptiveColor{Light: "#2b2740", Dark: "#c8c5d7"}
-	Dim      = lipgloss.AdaptiveColor{Light: "#6b6884", Dark: "#7d7a96"}
-	Faint    = lipgloss.AdaptiveColor{Light: "#a29fb8", Dark: "#4f4c6c"}
-	OK       = lipgloss.AdaptiveColor{Light: "#1f9b70", Dark: "#43d69a"}
-	Warn     = lipgloss.AdaptiveColor{Light: "#cc3b62", Dark: "#ff6a94"}
-	SelBg    = lipgloss.AdaptiveColor{Light: "#ebe6fb", Dark: "#241d3f"}
+	Accent   lipgloss.AdaptiveColor
+	AccentHi lipgloss.AdaptiveColor
+	Steel    lipgloss.AdaptiveColor
+	Dim      lipgloss.AdaptiveColor
+	Faint    lipgloss.AdaptiveColor
+	OK       lipgloss.AdaptiveColor
+	Warn     lipgloss.AdaptiveColor
+	SelBg    lipgloss.AdaptiveColor
 )
 
-// Styles built from the tokens.
+// Active styles built from the tokens, set by Apply.
 var (
-	Brand  = lipgloss.NewStyle().Foreground(Accent).Bold(true)
+	Brand  lipgloss.Style
+	Dimmed lipgloss.Style
+	Faded  lipgloss.Style
+	Acc    lipgloss.Style
+	Hi     lipgloss.Style
+	Ok     lipgloss.Style
+	Bad    lipgloss.Style
+	Strong lipgloss.Style
+	SelRow lipgloss.Style
+	Rule   lipgloss.Style
+)
+
+func adaptive(t token) lipgloss.AdaptiveColor {
+	dark := t.Dark
+	if dark == "" {
+		dark = t.Light
+	}
+	light := t.Light
+	if light == "" {
+		light = t.Dark
+	}
+	return lipgloss.AdaptiveColor{Light: light, Dark: dark}
+}
+
+// Apply makes t the active theme, rebuilding every token and style.
+func Apply(t Theme) {
+	Accent = adaptive(t.Accent)
+	AccentHi = adaptive(t.AccentHi)
+	Steel = adaptive(t.Steel)
+	Dim = adaptive(t.Dim)
+	Faint = adaptive(t.Faint)
+	OK = adaptive(t.OK)
+	Warn = adaptive(t.Warn)
+	SelBg = adaptive(t.SelBg)
+
+	Brand = lipgloss.NewStyle().Foreground(Accent).Bold(true)
 	Dimmed = lipgloss.NewStyle().Foreground(Dim)
-	Faded  = lipgloss.NewStyle().Foreground(Faint)
-	Acc    = lipgloss.NewStyle().Foreground(Accent)
-	Hi     = lipgloss.NewStyle().Foreground(AccentHi)
-	Ok     = lipgloss.NewStyle().Foreground(OK)
-	Bad    = lipgloss.NewStyle().Foreground(Warn)
+	Faded = lipgloss.NewStyle().Foreground(Faint)
+	Acc = lipgloss.NewStyle().Foreground(Accent)
+	Hi = lipgloss.NewStyle().Foreground(AccentHi)
+	Ok = lipgloss.NewStyle().Foreground(OK)
+	Bad = lipgloss.NewStyle().Foreground(Warn)
 	Strong = lipgloss.NewStyle().Foreground(Steel).Bold(true)
 	SelRow = lipgloss.NewStyle().Background(SelBg).Foreground(AccentHi)
-	Rule   = lipgloss.NewStyle().Foreground(Faint)
-)
+	Rule = lipgloss.NewStyle().Foreground(Faint)
+}
+
+func init() { Apply(Charm) }

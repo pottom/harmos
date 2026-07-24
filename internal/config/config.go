@@ -65,6 +65,7 @@ type Profile struct {
 // Config is the whole configuration file.
 type Config struct {
 	Default          string    `toml:"default"`
+	Theme            string    `toml:"theme"` // built-in name or a themes/<name>.toml
 	ClipboardTimeout Duration  `toml:"clipboard_timeout"`
 	Profiles         []Profile `toml:"profile"`
 }
