@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -53,39 +54,49 @@ func (m Model) View() string {
 	if m.help {
 		return m.helpView()
 	}
-	bar := m.tabBar() + "\n"
 	switch {
 	case m.tab == 1:
-		return bar + m.settingsView()
+		return m.settingsView()
 	case m.detail:
-		return bar + m.detailView()
+		return m.detailView()
 	default:
-		return bar + m.vaultBody()
+		return m.vaultBody()
 	}
 }
 
-// tabBar is the top row: the two tabs (active highlighted) and a global hint.
-func (m Model) tabBar() string {
+// tabIndicator is the small "1 Vault · 2 Settings" marker shown bottom-right, the
+// active tab in accent.
+func (m Model) tabIndicator() string {
 	tab := func(n int, name string) string {
-		s := fmt.Sprintf(" %d %s ", n+1, name)
+		s := fmt.Sprintf("%d %s", n+1, name)
 		if m.tab == n {
-			return theme.SelRow.Render(s)
+			return theme.Acc.Render(s)
 		}
-		return theme.Dimmed.Render(s)
+		return theme.Faded.Render(s)
 	}
-	left := tab(0, "Vault") + " " + tab(1, "Settings")
-	right := theme.Faded.Render("1/2 switch · ? keys · q quit")
-	gap := m.w - dw(left) - dw(right)
+	return tab(0, "Vault") + theme.Faded.Render(" · ") + tab(1, "Settings")
+}
+
+// spread puts left at the start and right at the end of a width-w line.
+func spread(left, right string, w int) string {
+	gap := w - dw(left) - dw(right)
 	if gap < 1 {
 		gap = 1
 	}
 	return left + strings.Repeat(" ", gap) + right
 }
 
+// footer is the bottom line: a hint on the left, the tab indicator on the right,
+// with the hint truncated so the two never collide.
+func (m Model) footer(left string) string {
+	ti := m.tabIndicator()
+	return spread(trunc(left, max(4, m.w-dw(ti)-2)), ti, m.w)
+}
+
 func (m Model) vaultBody() string {
 	top := m.searchLine() + "\n" + rule(m.w) + "\n"
-	bottom := "\n" + rule(m.w) + "\n" + m.countdown() + "\n" + m.hints()
-	rows := m.h - 7
+	bottom := "\n" + rule(m.w) + "\n" + m.countdown() + "\n" + m.footer(m.hints())
+	rows := m.h - 6
 	if rows < 1 {
 		rows = 1
 	}
@@ -119,26 +130,28 @@ func (m Model) settingsView() string {
 	profs := m.sources()
 	title := theme.Strong.Render("Sources") + theme.Dimmed.Render(fmt.Sprintf("  %d configured", len(profs)))
 	top := title + "\n" + rule(m.w) + "\n"
-	hint := "↑↓ select · a add · e edit · s sync · p save-pw · x clear-pw · d remove"
-	status := theme.Ok.Render(trunc(m.setStatus, m.w))
-	if m.setStatus == "" {
-		status = theme.Faded.Render(trunc(hint, m.w))
-	}
-	footer := "\n" + rule(m.w) + "\n" + status
 
-	rowsArea := m.h - 6 // tab bar + title + 2 rules + footer hint
+	hint := theme.Faded.Render("↑↓ select · a add · e edit · s sync · p save-pw · x clear-pw · d remove")
+	if m.setStatus != "" {
+		hint = theme.Ok.Render(m.setStatus)
+	}
+	footer := "\n" + rule(m.w) + "\n" + m.footer(hint)
+
+	rowsArea := m.h - 4 // title + 2 rules + footer
 	if rowsArea < 1 {
 		rowsArea = 1
 	}
 
-	nameW, typeW, kfW, krW := 16, 8, 12, 8
-	locW := m.w - nameW - typeW - kfW - krW - 6
-	if locW < 10 {
-		locW = 10
+	// Fixed columns; LOCATION takes the remaining width. KEYFILE shows just the
+	// file name (the full path never fits and is unreadable when truncated).
+	nameW, typeW, kfW, krW := 18, 9, 16, 7
+	locW := m.w - nameW - typeW - kfW - krW - 4
+	if locW < 12 {
+		locW = 12
 	}
 
-	lines := []string{theme.Dimmed.Render(
-		pad("NAME", nameW) + " " + pad("TYPE", typeW) + " " + pad("LOCATION", locW) + " " + pad("KEYFILE", kfW) + " KEYRING")}
+	header := pad("NAME", nameW) + " " + pad("TYPE", typeW) + " " + pad("LOCATION", locW) + " " + pad("KEYFILE", kfW) + " KEYRING"
+	lines := []string{theme.Dimmed.Render(header)}
 	if len(profs) == 0 {
 		lines = append(lines, "", theme.Faded.Render("  no sources yet — press 'a' to add one"))
 	}
@@ -147,9 +160,9 @@ func (m Model) settingsView() string {
 		if p.Type == config.Pleasant {
 			loc = p.URL
 		}
-		kf := p.Keyfile
-		if kf == "" {
-			kf = "—"
+		kf := "—"
+		if p.Keyfile != "" {
+			kf = filepath.Base(p.Keyfile)
 		}
 		if i == m.setSel {
 			kr := "—"
@@ -322,9 +335,9 @@ func (m Model) resultsPane(w, rows int) string {
 // detailView is the full-screen entry details (Pleasant's "Entry Details").
 func (m Model) detailView() string {
 	top := m.searchLine() + "\n" + rule(m.w) + "\n"
-	hint := theme.Faded.Render(trunc("↵ copy pw · ctrl+r reveal · ctrl+u user · ctrl+o url · esc back", m.w))
-	bottom := "\n" + rule(m.w) + "\n" + m.countdown() + "\n" + hint
-	rows := m.h - 7
+	hint := theme.Faded.Render("↵ copy pw · ctrl+r reveal · ctrl+u user · ctrl+o url · esc back")
+	bottom := "\n" + rule(m.w) + "\n" + m.countdown() + "\n" + m.footer(hint)
+	rows := m.h - 6
 	if rows < 1 {
 		rows = 1
 	}

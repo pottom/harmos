@@ -174,7 +174,7 @@ func (m Model) removeConfirmView() string {
 		"",
 		theme.Faded.Render("↑↓ move · space toggle · ↵ apply · esc cancel"),
 	}
-	for len(lines) < m.h-1 {
+	for len(lines) < m.h {
 		lines = append(lines, "")
 	}
 	return strings.Join(lines, "\n")
