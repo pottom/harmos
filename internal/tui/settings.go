@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -197,17 +196,12 @@ func (m Model) removeConfirmView() string {
 	}
 
 	lines := []string{
-		theme.Brand.Render("Remove source ") + theme.Strong.Render(fmt.Sprintf("%q", p.Name)),
 		"",
 		row(0, check(m.rmFile)+"also delete the file  "+theme.Dimmed.Render(trunc(file, max(4, m.w-30)))),
 		row(1, check(m.rmPw)+"also forget its saved keyring password"),
 		"",
 		"  " + button("Remove", true, m.rmToggle == 2),
-		"",
-		theme.Faded.Render("↑↓ move · space toggle · ↵ apply · esc cancel"),
 	}
-	for len(lines) < m.h {
-		lines = append(lines, "")
-	}
-	return strings.Join(lines, "\n")
+	body := box("Remove source", fmt.Sprintf("%q", p.Name), lines, m.w, max(3, m.h-1), true)
+	return body + "\n" + m.footer(theme.Faded.Render("↑↓ move · space toggle · ↵ apply · esc cancel"))
 }

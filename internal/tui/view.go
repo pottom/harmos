@@ -329,7 +329,6 @@ func (m Model) detailView() string {
 	hint := theme.Faded.Render("↵ copy pw · ctrl+r reveal · ctrl+u user · ctrl+o url · esc back")
 	bottom := m.countdown() + "\n" + m.footer(hint)
 	boxH := max(3, m.h-3)
-	i := ic()
 
 	e := m.selEntry()
 	if e == nil {
@@ -348,8 +347,6 @@ func (m Model) detailView() string {
 		loc += " · " + e.Path
 	}
 	b := []string{
-		theme.Acc.Render(i.entry+" ") + theme.Brand.Render(trunc(e.Title, inW-2)),
-		theme.Dimmed.Render(trunc(loc, inW)),
 		"",
 		field("Username", e.Username, theme.Strong),
 		theme.Dimmed.Render(pad("Password", 12)) + pw,
@@ -360,7 +357,7 @@ func (m Model) detailView() string {
 	if len(e.Tags) > 0 {
 		b = append(b, field("Tags", strings.Join(e.Tags, ", "), theme.Dimmed))
 	}
-	return searchLine + "\n" + box("Entry", "", b, m.w, boxH, true) + "\n" + bottom
+	return searchLine + "\n" + box(e.Title, loc, b, m.w, boxH, true) + "\n" + bottom
 }
 
 func (m Model) countdown() string {

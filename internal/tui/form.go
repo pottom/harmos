@@ -25,10 +25,20 @@ type formField struct {
 // on edit the type is fixed. pref pre-fills values (for edit or to keep the name
 // across a type toggle).
 func buildForm(isPps, editing bool, pref map[string]string) []formField {
+	placeholders := map[string]string{
+		"name":    "e.g. work",
+		"path":    "/path/to/vault.kdbx",
+		"keyfile": "optional key file",
+		"url":     "https://pps.example:10001",
+		"user":    "service account",
+		"cache":   "default: $XDG_DATA_HOME/harmos/<name>.kdbx",
+		"ca":      "optional CA bundle",
+	}
 	mk := func(key, label string) formField {
 		ti := textinput.New()
 		ti.Prompt = ""
 		ti.Width = 48
+		ti.Placeholder = placeholders[key]
 		if pref != nil {
 			ti.SetValue(pref[key])
 		}
@@ -220,14 +230,18 @@ func (m Model) writeProfile(name string, write func(overwrite bool) (string, err
 	return write(false)
 }
 
-// formView renders the add/edit overlay.
+// formView renders the add/edit overlay inside a titled box.
 func (m Model) formView() string {
 	title := "Add source"
-	if m.formEditing {
-		title = "Edit source " + m.formValue("name")
+	info := "kdbx"
+	if m.formPps {
+		info = "pps"
 	}
-	lines := []string{theme.Brand.Render(title), ""}
+	if m.formEditing {
+		title, info = "Edit source", m.formOrig
+	}
 
+	var lines []string
 	labelW := 10
 	for i, f := range m.form {
 		sel := i == m.formFocus
@@ -253,18 +267,11 @@ func (m Model) formView() string {
 		}
 		lines = append(lines, cursor+label+"  "+val)
 	}
-
-	// Save button
 	lines = append(lines, "", "  "+button("Save", false, m.formFocus == len(m.form)))
 
-	foot := "↑↓/tab move · ↵ save · esc cancel"
+	hint := theme.Faded.Render("↑↓/tab move · ↵ save · esc cancel")
 	if m.setStatus != "" {
-		foot = m.setStatus + "   ·   " + foot
+		hint = theme.Bad.Render(m.setStatus)
 	}
-	lines = append(lines, "", theme.Faded.Render(trunc(foot, m.w)))
-
-	for len(lines) < m.h {
-		lines = append(lines, "")
-	}
-	return strings.Join(lines, "\n")
+	return box(title, info, lines, m.w, max(3, m.h-1), true) + "\n" + m.footer(hint)
 }
