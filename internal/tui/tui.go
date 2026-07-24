@@ -97,11 +97,23 @@ func New(entries []vault.Entry, configPath string, timeout time.Duration) Model 
 		matcher:    search.New(entries),
 		roots:      roots,
 		nSrc:       len(roots),
+		tsel:       firstFolderWithEntries(roots),
 		input:      ti,
 		configPath: configPath,
 		themeName:  themeName,
 		timeout:    timeout,
 	}
+}
+
+// firstFolderWithEntries is the visible-tree index of the first folder that
+// actually holds entries, so launch doesn't land on an empty source root.
+func firstFolderWithEntries(roots []*node) int {
+	for i, tl := range visibleTree(roots) {
+		if len(tl.node.entries) > 0 {
+			return i
+		}
+	}
+	return 0
 }
 
 // Run launches the TUI in the alt screen.

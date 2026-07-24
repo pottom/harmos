@@ -96,14 +96,8 @@ func (m Model) vaultBody() string {
 	bottom := m.countdown() + "\n" + m.footer(m.hints())
 	panelsH := max(3, m.h-3) // search line + countdown + footer
 
-	leftW := m.w * 2 / 5
-	if leftW > 42 {
-		leftW = 42
-	}
-	if leftW < 18 {
-		leftW = 18
-	}
-	rightW := m.w - leftW
+	leftW := min(42, max(18, m.w*2/5))
+	rightW := m.w - leftW - 1 // 1-column gap between panels
 
 	flat := m.visible()
 	folders := box("Folders", cursorInfo(m.tsel, len(flat)),
@@ -122,7 +116,7 @@ func (m Model) vaultBody() string {
 		right = box(title, info, m.entryLines(rightW-2, panelsH-2), rightW, panelsH, m.focus == 1)
 	}
 
-	panels := lipgloss.JoinHorizontal(lipgloss.Top, folders, right)
+	panels := lipgloss.JoinHorizontal(lipgloss.Top, folders, " ", right)
 	return searchLine + "\n" + panels + "\n" + bottom
 }
 
@@ -203,26 +197,37 @@ func krCell(saved bool) string {
 	return theme.Faded.Render("—")
 }
 
+// brand is the small two-tone "harmos" wordmark.
+func brand() string {
+	return theme.Acc.Bold(true).Render("har") + theme.Hi.Bold(true).Render("mos")
+}
+
+// plural formats a count with a singular/plural word.
+func plural(n int, one, many string) string {
+	w := many
+	if n == 1 {
+		w = one
+	}
+	return fmt.Sprintf("%d %s", n, w)
+}
+
 func (m Model) searchLine() string {
-	glyph := theme.Faded.Render("/  ")
+	glyph := theme.Faded.Render("  /  ")
 	if m.searchMode {
-		glyph = theme.Acc.Render("/  ")
+		glyph = theme.Acc.Render("  /  ")
 	}
-	left := glyph + m.input.View()
-	right := theme.Faded.Render(fmt.Sprintf("%d sources", m.nSrc))
+	left := brand() + glyph + m.input.View()
+	right := theme.Faded.Render(plural(m.nSrc, "source", "sources"))
 	if m.showResults() {
-		right = theme.Dimmed.Render(fmt.Sprintf("%d matches", len(m.results)))
+		right = theme.Dimmed.Render(plural(len(m.results), "match", "matches"))
 	}
-	gap := m.w - dw(left) - dw(right)
-	if gap < 1 {
-		gap = 1
-	}
-	return left + strings.Repeat(" ", gap) + right
+	return spread(left, right, m.w)
 }
 
 func (m Model) treeLines(w, rows int) []string {
 	flat := m.visible()
 	i := ic()
+	dim := m.showResults() // the tree loses emphasis while results are showing
 	start := 0
 	if m.tsel >= rows {
 		start = m.tsel - rows + 1
@@ -237,15 +242,23 @@ func (m Model) treeLines(w, rows int) []string {
 		if len(n.children) > 0 && n.expanded {
 			icon = i.folderOpen
 		}
+		count := ""
+		if len(n.entries) > 0 {
+			count = fmt.Sprintf(" %d", len(n.entries))
+		}
 		if k == m.tsel {
 			st := theme.Hi
 			if m.focus == 0 && !m.showResults() {
 				st = theme.SelRow.Width(w)
 			}
-			out = append(out, st.Render(trunc(indent+icon+" "+n.name, w)))
+			out = append(out, st.Render(trunc(indent+icon+" "+n.name+count, w)))
 			continue
 		}
-		out = append(out, theme.Acc.Render(indent+icon)+" "+theme.Strong.Render(trunc(n.name, max(1, w-dw(indent)-2))))
+		nameStyle, iconStyle := theme.Strong, theme.Acc
+		if dim {
+			nameStyle, iconStyle = theme.Dimmed, theme.Faded
+		}
+		out = append(out, iconStyle.Render(indent+icon)+" "+nameStyle.Render(trunc(n.name, max(1, w-dw(indent)-2-dw(count))))+theme.Faded.Render(count))
 	}
 	return out
 }
@@ -269,7 +282,7 @@ func (m Model) entryLines(w, rows int) []string {
 	for k := start; k < end; k++ {
 		e := f.entries[k]
 		if k == m.esel && m.focus == 1 {
-			plain := pad(i.entry+" "+e.Title, titleW) + " " + pad(e.Username, userW) + " ••••••••"
+			plain := pad("▸ "+e.Title, titleW) + " " + pad(e.Username, userW) + " ••••••••"
 			out = append(out, theme.SelRow.Width(w).Render(trunc(plain, w)))
 			continue
 		}
@@ -301,7 +314,7 @@ func (m Model) resultLines(w, rows int) []string {
 			loc += " · " + e.Path
 		}
 		if k == m.sel {
-			plain := pad(i.entry+" "+e.Title, titleW) + " " + loc
+			plain := pad("▸ "+e.Title, titleW) + " " + loc
 			out = append(out, theme.SelRow.Width(w).Render(trunc(plain, w)))
 			continue
 		}
@@ -352,7 +365,15 @@ func (m Model) detailView() string {
 
 func (m Model) countdown() string {
 	if m.remaining <= 0 {
-		return theme.Faded.Render(trunc("  clipboard empty", m.w))
+		// idle: show where the selected entry lives, rather than a dead line
+		if e := m.selEntry(); e != nil {
+			loc := e.Source
+			if e.Path != "" {
+				loc += " · " + e.Path
+			}
+			return theme.Faded.Render(trunc("  "+loc, m.w))
+		}
+		return ""
 	}
 	what := theme.Dimmed.Render("copied ") + theme.Hi.Render(m.copiedWhat) + theme.Dimmed.Render(" · ")
 	total := int(m.timeout.Seconds())
