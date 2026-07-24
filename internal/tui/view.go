@@ -94,33 +94,46 @@ func (m Model) footer(left string) string {
 }
 
 func (m Model) vaultBody() string {
-	top := m.searchLine() + "\n" + rule(m.w) + "\n"
-	bottom := "\n" + rule(m.w) + "\n" + m.countdown() + "\n" + m.footer(m.hints())
-	rows := m.h - 6
-	if rows < 1 {
-		rows = 1
-	}
+	searchLine := m.searchLine()
+	bottom := m.countdown() + "\n" + m.footer(m.hints())
+	panelsH := max(3, m.h-3) // search line + countdown + footer
 
 	leftW := m.w * 2 / 5
-	if leftW > 40 {
-		leftW = 40
+	if leftW > 42 {
+		leftW = 42
 	}
-	if leftW < 16 {
-		leftW = 16
+	if leftW < 18 {
+		leftW = 18
 	}
-	rightW := m.w - leftW - 3
+	rightW := m.w - leftW
 
-	right := m.tablePane(rightW, rows)
+	flat := m.visible()
+	folders := box("Folders", cursorInfo(m.tsel, len(flat)),
+		m.treeLines(leftW-2, panelsH-2), leftW, panelsH, m.focus == 0 && !m.showResults())
+
+	var right string
 	if m.showResults() {
-		right = m.resultsPane(rightW, rows)
+		right = box("Search results", fmt.Sprintf("%d", len(m.results)),
+			m.resultLines(rightW-2, panelsH-2), rightW, panelsH, true)
+	} else {
+		f := m.currentFolder()
+		title, info := "Entries", ""
+		if f != nil {
+			title, info = f.name, fmt.Sprintf("%d", len(f.entries))
+		}
+		right = box(title, info, m.entryLines(rightW-2, panelsH-2), rightW, panelsH, m.focus == 1)
 	}
-	sep := theme.Rule.Render(" │ ")
-	body := lipgloss.JoinHorizontal(lipgloss.Top,
-		lipgloss.NewStyle().Width(leftW).Height(rows).Render(m.treePane(leftW, rows)),
-		sep,
-		lipgloss.NewStyle().Width(rightW).Height(rows).Render(right),
-	)
-	return top + body + bottom
+
+	panels := lipgloss.JoinHorizontal(lipgloss.Top, folders, right)
+	return searchLine + "\n" + panels + "\n" + bottom
+}
+
+// cursorInfo is the "3/42" position marker for a panel's top border.
+func cursorInfo(sel, n int) string {
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d/%d", sel+1, n)
 }
 
 func (m Model) settingsView() string {
@@ -221,122 +234,94 @@ func (m Model) searchLine() string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-func (m Model) treePane(w, rows int) string {
+func (m Model) treeLines(w, rows int) []string {
 	flat := m.visible()
+	i := ic()
 	start := 0
 	if m.tsel >= rows {
 		start = m.tsel - rows + 1
 	}
 	end := min(start+rows, len(flat))
 
-	var lines []string
-	for i := start; i < end; i++ {
-		n := flat[i].node
-		indent := strings.Repeat("  ", flat[i].depth)
-		caret := "  "
-		if len(n.children) > 0 {
-			if n.expanded {
-				caret = "▾ "
-			} else {
-				caret = "▸ "
-			}
+	var out []string
+	for k := start; k < end; k++ {
+		n := flat[k].node
+		indent := strings.Repeat("  ", flat[k].depth)
+		icon := i.folder
+		if len(n.children) > 0 && n.expanded {
+			icon = i.folderOpen
 		}
-		if i == m.tsel {
+		if k == m.tsel {
 			st := theme.Hi
-			if m.focus == 0 {
+			if m.focus == 0 && !m.showResults() {
 				st = theme.SelRow.Width(w)
 			}
-			lines = append(lines, st.Render(trunc(indent+caret+n.name, w)))
+			out = append(out, st.Render(trunc(indent+icon+" "+n.name, w)))
 			continue
 		}
-		lines = append(lines, theme.Acc.Render(indent+caret)+theme.Strong.Render(trunc(n.name, max(1, w-dw(indent)-2))))
+		out = append(out, theme.Acc.Render(indent+icon)+" "+theme.Strong.Render(trunc(n.name, max(1, w-dw(indent)-2))))
 	}
-	for len(lines) < rows {
-		lines = append(lines, "")
-	}
-	return strings.Join(lines, "\n")
+	return out
 }
 
-func (m Model) tablePane(w, rows int) string {
-	folder := m.currentFolder()
-	if folder == nil {
-		return ""
+func (m Model) entryLines(w, rows int) []string {
+	f := m.currentFolder()
+	i := ic()
+	titleW := max(8, w*4/10)
+	userW := max(6, w*3/10)
+	out := []string{theme.Dimmed.Render(pad("Title", titleW) + " " + pad("Username", userW) + " Password")}
+	if f == nil || len(f.entries) == 0 {
+		out = append(out, theme.Faded.Render("  (no entries here — open a sub-folder)"))
+		return out
 	}
-	titleW := w * 4 / 10
-	userW := w * 3 / 10
-	if titleW < 8 {
-		titleW = 8
-	}
-	if userW < 6 {
-		userW = 6
-	}
-	lines := []string{
-		theme.Strong.Render(trunc(folder.name, max(4, w-14))) + theme.Dimmed.Render(fmt.Sprintf("  %d entries", len(folder.entries))),
-		theme.Dimmed.Render(pad("Title", titleW)) + " " + theme.Dimmed.Render(pad("Username", userW)) + " " + theme.Dimmed.Render("Password"),
-		rule(w),
-	}
-	if len(folder.entries) == 0 {
-		lines = append(lines, theme.Faded.Render("  (no entries here — open a sub-folder)"))
-	}
-	avail := max(1, rows-3)
+	avail := max(1, rows-1)
 	start := 0
 	if m.esel >= avail {
 		start = m.esel - avail + 1
 	}
-	end := min(start+avail, len(folder.entries))
-	for i := start; i < end; i++ {
-		e := folder.entries[i]
-		if i == m.esel && m.focus == 1 {
-			plain := pad("• "+e.Title, titleW+2) + " " + pad(e.Username, userW) + " " + "••••••••"
-			lines = append(lines, theme.SelRow.Width(w).Render(trunc(plain, w)))
+	end := min(start+avail, len(f.entries))
+	for k := start; k < end; k++ {
+		e := f.entries[k]
+		if k == m.esel && m.focus == 1 {
+			plain := pad(i.entry+" "+e.Title, titleW) + " " + pad(e.Username, userW) + " ••••••••"
+			out = append(out, theme.SelRow.Width(w).Render(trunc(plain, w)))
 			continue
 		}
-		lines = append(lines, theme.Faded.Render("• ")+theme.Strong.Render(pad(trunc(e.Title, titleW-2), titleW))+" "+theme.Dimmed.Render(pad(e.Username, userW))+" "+theme.Acc.Render("••••••••"))
+		out = append(out, theme.Faded.Render(i.entry+" ")+theme.Strong.Render(pad(trunc(e.Title, titleW-2), titleW-2))+" "+theme.Dimmed.Render(pad(e.Username, userW))+" "+theme.Acc.Render("••••••••"))
 	}
-	for len(lines) < rows {
-		lines = append(lines, "")
-	}
-	return strings.Join(lines, "\n")
+	return out
 }
 
-// resultsPane replaces the folder table while a search is active.
-func (m Model) resultsPane(w, rows int) string {
-	titleW := w * 4 / 10
-	if titleW < 8 {
-		titleW = 8
-	}
-	lines := []string{
-		theme.Strong.Render("Search results") + theme.Dimmed.Render(fmt.Sprintf("  %d matches", len(m.results))),
-		theme.Dimmed.Render(pad("Title", titleW)) + " " + theme.Dimmed.Render("Location"),
-		rule(w),
-	}
+// resultLines are the ranked search results shown in the right panel.
+func (m Model) resultLines(w, rows int) []string {
+	i := ic()
+	titleW := max(8, w*4/10)
+	out := []string{theme.Dimmed.Render(pad("Title", titleW) + " Location")}
 	if len(m.results) == 0 {
-		lines = append(lines, theme.Dimmed.Render("  nothing matches — esc clears"))
+		out = append(out, theme.Faded.Render("  nothing matches — esc clears"))
+		return out
 	}
-	avail := max(1, rows-3)
+	avail := max(1, rows-1)
 	start := 0
 	if m.sel >= avail {
 		start = m.sel - avail + 1
 	}
 	end := min(start+avail, len(m.results))
 	q := m.input.Value()
-	for i := start; i < end; i++ {
-		e := m.results[i].Entry
+	for k := start; k < end; k++ {
+		e := m.results[k].Entry
 		loc := e.Source
 		if e.Path != "" {
 			loc += " · " + e.Path
 		}
-		if i == m.sel {
-			plain := pad("• "+e.Title, titleW+2) + " " + loc
-			lines = append(lines, theme.SelRow.Width(w).Render(trunc(plain, w)))
+		if k == m.sel {
+			plain := pad(i.entry+" "+e.Title, titleW) + " " + loc
+			out = append(out, theme.SelRow.Width(w).Render(trunc(plain, w)))
 			continue
 		}
-		lines = append(lines, theme.Faded.Render("• ")+highlight(pad(e.Title, titleW), q, theme.Strong)+" "+theme.Dimmed.Render(trunc(loc, max(4, w-titleW-3))))
+		out = append(out, theme.Faded.Render(i.entry+" ")+highlight(pad(trunc(e.Title, titleW-2), titleW-2), q, theme.Strong)+" "+theme.Dimmed.Render(trunc(loc, max(4, w-titleW-3))))
 	}
-	for len(lines) < rows {
-		lines = append(lines, "")
-	}
-	return strings.Join(lines, "\n")
+	return out
 }
 
 // detailView is the full-screen entry details (Pleasant's "Entry Details").
