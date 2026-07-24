@@ -24,5 +24,6 @@ func runTUI(configPath string) error {
 	if len(res.Entries) == 0 {
 		return fmt.Errorf("no entries — run `harmos sync` first, or check your config")
 	}
+	applyConfiguredTheme(cfg, cfgPath)
 	return tui.Run(res.Entries, cfgPath, cfg.ClipboardTimeout.Duration)
 }

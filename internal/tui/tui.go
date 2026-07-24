@@ -46,6 +46,7 @@ type Model struct {
 	setSel     int             // selected row in the Settings sources table
 	setKeyring map[string]bool // profile name → has a saved keyring password
 	setMode    int             // setList / setRemove / …
+	setCat     int             // selected Settings category (left pane): catSources / catTheme
 	setStatus  string          // last action result, shown in the Settings footer
 	rmToggle   int             // remove overlay: 0 delete-file, 1 forget-pw, 2 confirm
 	rmFile     bool            // remove overlay: also delete the local file
@@ -67,6 +68,10 @@ type Model struct {
 	syncDone  int64                // bytes downloaded
 	syncTotal int64                // total bytes (-1 unknown)
 
+	themeName string // active theme name
+	themeSel  int    // theme picker: selected index into theme.Names()
+	themeOrig string // theme picker: name to revert to on cancel
+
 	timeout    time.Duration
 	copied     string
 	copiedWhat string
@@ -83,14 +88,33 @@ func New(entries []vault.Entry, configPath string, timeout time.Duration) Model 
 		timeout = 30 * time.Second
 	}
 	roots := buildTree(entries)
+	themeName := "charm"
+	if configPath != "" {
+		if cfg, err := config.Load(configPath); err == nil && cfg.Theme != "" {
+			themeName = cfg.Theme
+		}
+	}
 	return Model{
 		matcher:    search.New(entries),
 		roots:      roots,
 		nSrc:       len(roots),
+		tsel:       firstFolderWithEntries(roots),
 		input:      ti,
 		configPath: configPath,
+		themeName:  themeName,
 		timeout:    timeout,
 	}
+}
+
+// firstFolderWithEntries is the visible-tree index of the first folder that
+// actually holds entries, so launch doesn't land on an empty source root.
+func firstFolderWithEntries(roots []*node) int {
+	for i, tl := range visibleTree(roots) {
+		if len(tl.node.entries) > 0 {
+			return i
+		}
+	}
+	return 0
 }
 
 // Run launches the TUI in the alt screen.
@@ -269,10 +293,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !inOverlay {
 			switch key {
 			case "1":
-				m.tab, m.detail = 0, false
+				m.tab, m.detail, m.focus = 0, false, 0
 				return m, nil
 			case "2":
-				m.tab, m.detail = 1, false
+				m.tab, m.detail, m.focus = 1, false, 0
 				m.setKeyring = keyringStatus(m.sources())
 				return m, nil
 			}

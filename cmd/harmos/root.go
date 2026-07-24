@@ -26,5 +26,6 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newSourcesCmd())
 	root.AddCommand(newSavePasswordCmd())
 	root.AddCommand(newRemovePasswordCmd())
+	root.AddCommand(newThemesCmd())
 	return root
 }

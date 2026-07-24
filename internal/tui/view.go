@@ -96,14 +96,8 @@ func (m Model) vaultBody() string {
 	bottom := m.countdown() + "\n" + m.footer(m.hints())
 	panelsH := max(3, m.h-3) // search line + countdown + footer
 
-	leftW := m.w * 2 / 5
-	if leftW > 42 {
-		leftW = 42
-	}
-	if leftW < 18 {
-		leftW = 18
-	}
-	rightW := m.w - leftW
+	leftW := min(42, max(18, m.w*2/5))
+	rightW := m.w - leftW - 1 // 1-column gap between panels
 
 	flat := m.visible()
 	folders := box("Folders", cursorInfo(m.tsel, len(flat)),
@@ -122,7 +116,7 @@ func (m Model) vaultBody() string {
 		right = box(title, info, m.entryLines(rightW-2, panelsH-2), rightW, panelsH, m.focus == 1)
 	}
 
-	panels := lipgloss.JoinHorizontal(lipgloss.Top, folders, right)
+	panels := lipgloss.JoinHorizontal(lipgloss.Top, folders, " ", right)
 	return searchLine + "\n" + panels + "\n" + bottom
 }
 
@@ -145,22 +139,52 @@ func (m Model) settingsView() string {
 	case setSyncing:
 		return m.syncView()
 	}
-	profs := m.sources()
-	i := ic()
 
-	hint := theme.Faded.Render("↑↓ select · a add · e edit · s sync · p save-pw · x clear-pw · d remove")
-	if m.setStatus != "" {
-		hint = theme.Ok.Render(m.setStatus)
+	panelsH := max(3, m.h-1)
+	leftW := 22
+	rightW := m.w - leftW - 1
+
+	left := box("Settings", "", m.catLines(leftW-2), leftW, panelsH, m.focus == 0)
+
+	var right string
+	switch m.setCat {
+	case catTheme:
+		right = box("Theme  ·  live preview", m.themeName, m.themeLines(rightW-2), rightW, panelsH, m.focus == 1)
+	default:
+		profs := m.sources()
+		right = box("Sources", fmt.Sprintf("%d", len(profs)), m.sourceLines(rightW-2, profs), rightW, panelsH, m.focus == 1)
 	}
 
-	inW := m.w - 2 // inside the box border
-	nameW, typeW, kfW, krW := 20, 9, 16, 7
-	locW := max(12, inW-nameW-typeW-kfW-krW-4)
+	panels := lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
+	return panels + "\n" + m.footer(m.settingsHint())
+}
 
-	header := pad("NAME", nameW) + " " + pad("TYPE", typeW) + " " + pad("LOCATION", locW) + " " + pad("KEYFILE", kfW) + " KEYRING"
-	lines := []string{theme.Dimmed.Render(header)}
+// catLines renders the Settings category list (left pane).
+func (m Model) catLines(w int) []string {
+	var out []string
+	for k, name := range settingsCats {
+		if k == m.setCat {
+			st := theme.Hi
+			if m.focus == 0 {
+				st = theme.SelRow.Width(w)
+			}
+			out = append(out, st.Render(trunc("▸ "+name, w)))
+			continue
+		}
+		out = append(out, "  "+theme.Strong.Render(name))
+	}
+	return out
+}
+
+// sourceLines renders the Sources table (right pane).
+func (m Model) sourceLines(w int, profs []config.Profile) []string {
+	i := ic()
+	nameW, typeW, kfW := 18, 9, 14
+	locW := max(10, w-nameW-typeW-kfW-8-3)
+	out := []string{theme.Dimmed.Render(pad("NAME", nameW) + " " + pad("TYPE", typeW) + " " + pad("LOCATION", locW) + " " + pad("KEYFILE", kfW) + " KEYRING")}
 	if len(profs) == 0 {
-		lines = append(lines, "", theme.Faded.Render("  no sources yet — press 'a' to add one"))
+		out = append(out, "", theme.Faded.Render("  no sources yet — press 'a' to add one"))
+		return out
 	}
 	for k, p := range profs {
 		sicon := i.kdbx
@@ -172,25 +196,38 @@ func (m Model) settingsView() string {
 		if p.Keyfile != "" {
 			kf = filepath.Base(p.Keyfile)
 		}
-		if k == m.setSel {
+		if k == m.setSel && m.focus == 1 {
 			kr := "—"
 			if m.setKeyring[p.Name] {
 				kr = "saved"
 			}
-			plain := pad(sicon+" "+p.Name, nameW) + " " + pad(string(p.Type), typeW) + " " + pad(trunc(loc, locW), locW) + " " + pad(trunc(kf, kfW), kfW) + " " + kr
-			lines = append(lines, theme.SelRow.Width(inW).Render(trunc(plain, inW)))
+			plain := pad("▸ "+p.Name, nameW) + " " + pad(string(p.Type), typeW) + " " + pad(trunc(loc, locW), locW) + " " + pad(trunc(kf, kfW), kfW) + " " + kr
+			out = append(out, theme.SelRow.Width(w).Render(trunc(plain, w)))
 			continue
 		}
-		lines = append(lines,
+		out = append(out,
 			theme.Acc.Render(sicon)+" "+theme.Strong.Render(pad(trunc(p.Name, nameW-2), nameW-2))+" "+
 				theme.Dimmed.Render(pad(string(p.Type), typeW))+" "+
 				theme.Dimmed.Render(pad(trunc(loc, locW), locW))+" "+
 				theme.Faded.Render(pad(trunc(kf, kfW), kfW))+" "+
 				krCell(m.setKeyring[p.Name]))
 	}
+	return out
+}
 
-	body := box("Sources", fmt.Sprintf("%d configured", len(profs)), lines, m.w, max(3, m.h-1), true)
-	return body + "\n" + m.footer(hint)
+// settingsHint is the footer for the Settings tab, contextual to focus/category.
+func (m Model) settingsHint() string {
+	if m.setStatus != "" {
+		return theme.Ok.Render(m.setStatus)
+	}
+	switch {
+	case m.focus == 0:
+		return theme.Faded.Render("↑↓ pick · →/↵ open · 1 Vault")
+	case m.setCat == catTheme:
+		return theme.Faded.Render("↑↓ preview · ↵ save · ← back")
+	default:
+		return theme.Faded.Render("↑↓ select · a add · e edit · s sync · p save-pw · x clear-pw · d remove · ← back")
+	}
 }
 
 // krCell renders the KEYRING cell: a green "saved" or a muted dash.
@@ -201,26 +238,37 @@ func krCell(saved bool) string {
 	return theme.Faded.Render("—")
 }
 
+// brand is the small two-tone "harmos" wordmark.
+func brand() string {
+	return theme.Acc.Bold(true).Render("har") + theme.Hi.Bold(true).Render("mos")
+}
+
+// plural formats a count with a singular/plural word.
+func plural(n int, one, many string) string {
+	w := many
+	if n == 1 {
+		w = one
+	}
+	return fmt.Sprintf("%d %s", n, w)
+}
+
 func (m Model) searchLine() string {
-	glyph := theme.Faded.Render("/  ")
+	glyph := theme.Faded.Render("  /  ")
 	if m.searchMode {
-		glyph = theme.Acc.Render("/  ")
+		glyph = theme.Acc.Render("  /  ")
 	}
-	left := glyph + m.input.View()
-	right := theme.Faded.Render(fmt.Sprintf("%d sources", m.nSrc))
+	left := brand() + glyph + m.input.View()
+	right := theme.Faded.Render(plural(m.nSrc, "source", "sources"))
 	if m.showResults() {
-		right = theme.Dimmed.Render(fmt.Sprintf("%d matches", len(m.results)))
+		right = theme.Dimmed.Render(plural(len(m.results), "match", "matches"))
 	}
-	gap := m.w - dw(left) - dw(right)
-	if gap < 1 {
-		gap = 1
-	}
-	return left + strings.Repeat(" ", gap) + right
+	return spread(left, right, m.w)
 }
 
 func (m Model) treeLines(w, rows int) []string {
 	flat := m.visible()
 	i := ic()
+	dim := m.showResults() // the tree loses emphasis while results are showing
 	start := 0
 	if m.tsel >= rows {
 		start = m.tsel - rows + 1
@@ -235,15 +283,23 @@ func (m Model) treeLines(w, rows int) []string {
 		if len(n.children) > 0 && n.expanded {
 			icon = i.folderOpen
 		}
+		count := ""
+		if len(n.entries) > 0 {
+			count = fmt.Sprintf(" %d", len(n.entries))
+		}
 		if k == m.tsel {
 			st := theme.Hi
 			if m.focus == 0 && !m.showResults() {
 				st = theme.SelRow.Width(w)
 			}
-			out = append(out, st.Render(trunc(indent+icon+" "+n.name, w)))
+			out = append(out, st.Render(trunc(indent+icon+" "+n.name+count, w)))
 			continue
 		}
-		out = append(out, theme.Acc.Render(indent+icon)+" "+theme.Strong.Render(trunc(n.name, max(1, w-dw(indent)-2))))
+		nameStyle, iconStyle := theme.Strong, theme.Acc
+		if dim {
+			nameStyle, iconStyle = theme.Dimmed, theme.Faded
+		}
+		out = append(out, iconStyle.Render(indent+icon)+" "+nameStyle.Render(trunc(n.name, max(1, w-dw(indent)-2-dw(count))))+theme.Faded.Render(count))
 	}
 	return out
 }
@@ -267,7 +323,7 @@ func (m Model) entryLines(w, rows int) []string {
 	for k := start; k < end; k++ {
 		e := f.entries[k]
 		if k == m.esel && m.focus == 1 {
-			plain := pad(i.entry+" "+e.Title, titleW) + " " + pad(e.Username, userW) + " ••••••••"
+			plain := pad("▸ "+e.Title, titleW) + " " + pad(e.Username, userW) + " ••••••••"
 			out = append(out, theme.SelRow.Width(w).Render(trunc(plain, w)))
 			continue
 		}
@@ -299,7 +355,7 @@ func (m Model) resultLines(w, rows int) []string {
 			loc += " · " + e.Path
 		}
 		if k == m.sel {
-			plain := pad(i.entry+" "+e.Title, titleW) + " " + loc
+			plain := pad("▸ "+e.Title, titleW) + " " + loc
 			out = append(out, theme.SelRow.Width(w).Render(trunc(plain, w)))
 			continue
 		}
@@ -314,7 +370,6 @@ func (m Model) detailView() string {
 	hint := theme.Faded.Render("↵ copy pw · ctrl+r reveal · ctrl+u user · ctrl+o url · esc back")
 	bottom := m.countdown() + "\n" + m.footer(hint)
 	boxH := max(3, m.h-3)
-	i := ic()
 
 	e := m.selEntry()
 	if e == nil {
@@ -333,8 +388,6 @@ func (m Model) detailView() string {
 		loc += " · " + e.Path
 	}
 	b := []string{
-		theme.Acc.Render(i.entry+" ") + theme.Brand.Render(trunc(e.Title, inW-2)),
-		theme.Dimmed.Render(trunc(loc, inW)),
 		"",
 		field("Username", e.Username, theme.Strong),
 		theme.Dimmed.Render(pad("Password", 12)) + pw,
@@ -345,12 +398,20 @@ func (m Model) detailView() string {
 	if len(e.Tags) > 0 {
 		b = append(b, field("Tags", strings.Join(e.Tags, ", "), theme.Dimmed))
 	}
-	return searchLine + "\n" + box("Entry", "", b, m.w, boxH, true) + "\n" + bottom
+	return searchLine + "\n" + box(e.Title, loc, b, m.w, boxH, true) + "\n" + bottom
 }
 
 func (m Model) countdown() string {
 	if m.remaining <= 0 {
-		return theme.Faded.Render(trunc("  clipboard empty", m.w))
+		// idle: show where the selected entry lives, rather than a dead line
+		if e := m.selEntry(); e != nil {
+			loc := e.Source
+			if e.Path != "" {
+				loc += " · " + e.Path
+			}
+			return theme.Faded.Render(trunc("  "+loc, m.w))
+		}
+		return ""
 	}
 	what := theme.Dimmed.Render("copied ") + theme.Hi.Render(m.copiedWhat) + theme.Dimmed.Render(" · ")
 	total := int(m.timeout.Seconds())
@@ -404,37 +465,52 @@ func padLeft(s string, w int) string {
 	return trunc(s, w)
 }
 
-func (m Model) helpView() string {
-	groups := []struct {
-		title string
-		rows  [][2]string
-	}{
-		{"Navigate", [][2]string{
-			{"↑ / ↓", "Move up / down — tree, table, results"},
-			{"→ / tab", "Enter folder · move to the entry table"},
-			{"←", "Collapse folder · back to the tree"},
-			{"enter", "Expand folder · open entry details"},
-		}},
-		{"Search", [][2]string{
-			{"/", "Search every source"},
-			{"enter", "Apply the filter, leave the search box"},
-			{"esc", "Cancel search · clear the filter"},
-		}},
-		{"Entry under cursor", [][2]string{
-			{"ctrl+r", "Reveal the password (in details)"},
-			{"ctrl+y", "Copy password"},
-			{"ctrl+u", "Copy username"},
-			{"ctrl+o", "Copy URL"},
-		}},
-		{"General", [][2]string{
-			{"?", "Toggle this help"},
-			{"q / ctrl+c", "Quit — clears the clipboard"},
-		}},
-	}
+type helpGroup struct {
+	title string
+	rows  [][2]string
+}
 
-	const keyW = 9
+func (m Model) helpView() string {
+	var groups []helpGroup
+	if m.tab == 1 {
+		groups = []helpGroup{
+			{"Settings", [][2]string{
+				{"↑ / ↓", "Move in the sources list"},
+				{"a / e", "Add / edit a source"},
+				{"s", "Sync a Pleasant source"},
+				{"p / x", "Save / clear a keyring password"},
+				{"d", "Remove a source"},
+				{"t", "Change the color theme (live)"},
+			}},
+		}
+	} else {
+		groups = []helpGroup{
+			{"Navigate", [][2]string{
+				{"↑ / ↓", "Move — tree, table, results"},
+				{"→ / tab", "Enter folder · move to the table"},
+				{"←", "Collapse folder · back to the tree"},
+				{"enter", "Expand folder · open entry details"},
+			}},
+			{"Search", [][2]string{
+				{"/", "Search every source"},
+				{"enter", "Apply the filter, leave the box"},
+				{"esc", "Cancel search · clear the filter"},
+			}},
+			{"Entry under cursor", [][2]string{
+				{"ctrl+r", "Reveal the password (in details)"},
+				{"ctrl+y / u / o", "Copy password / username / URL"},
+			}},
+		}
+	}
+	groups = append(groups, helpGroup{"General", [][2]string{
+		{"1 / 2", "Switch tab — Vault / Settings"},
+		{"?", "Toggle this help"},
+		{"q / ctrl+c", "Quit — clears the clipboard"},
+	}})
+
+	const keyW = 14
 	var b strings.Builder
-	fmt.Fprint(&b, theme.Brand.Render("harmos")+theme.Dimmed.Render("  ·  keys"))
+	fmt.Fprint(&b, brand()+theme.Dimmed.Render("  ·  keys"))
 	for _, g := range groups {
 		fmt.Fprint(&b, "\n\n"+theme.Acc.Render(g.title))
 		for _, r := range g.rows {
@@ -442,10 +518,10 @@ func (m Model) helpView() string {
 		}
 	}
 
-	box := lipgloss.NewStyle().
+	panel := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(theme.Faint).
+		BorderForeground(theme.Accent).
 		Padding(1, 3).
 		Render(b.String())
-	return lipgloss.Place(max(1, m.w), max(1, m.h), lipgloss.Center, lipgloss.Center, box)
+	return lipgloss.Place(max(1, m.w), max(1, m.h), lipgloss.Center, lipgloss.Center, panel)
 }

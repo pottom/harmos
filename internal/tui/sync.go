@@ -106,19 +106,14 @@ func listenSync(ch chan syncProgressMsg) tea.Cmd {
 
 func (m Model) syncView() string {
 	lines := []string{
-		theme.Brand.Render("Syncing ") + theme.Strong.Render(m.syncName),
 		"",
 		"  " + theme.Acc.Render(m.syncPhase+"…"),
 	}
 	if m.syncPhase == "downloading offline package" && m.syncDone > 0 {
-		bar := m.progressBar()
-		lines = append(lines, "  "+bar)
+		lines = append(lines, "", "  "+m.progressBar())
 	}
-	lines = append(lines, "", theme.Faded.Render("please wait — this can take a while"))
-	for len(lines) < m.h {
-		lines = append(lines, "")
-	}
-	return strings.Join(lines, "\n")
+	body := box("Syncing", m.syncName, lines, m.w, max(3, m.h-1), true)
+	return body + "\n" + m.footer(theme.Faded.Render("please wait — this can take a while"))
 }
 
 func (m Model) progressBar() string {

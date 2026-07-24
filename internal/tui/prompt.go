@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -96,16 +95,12 @@ func (m Model) promptView() string {
 		label = m.promptQueue[0].label
 	}
 	lines := []string{
-		theme.Brand.Render("Save password") + theme.Dimmed.Render("  "+m.promptName),
 		"",
 		theme.Dimmed.Render(label+": ") + m.promptInput.View(),
 	}
 	if len(m.promptQueue) > 1 {
 		lines = append(lines, "", theme.Faded.Render(fmt.Sprintf("(%d more to enter)", len(m.promptQueue)-1)))
 	}
-	lines = append(lines, "", theme.Faded.Render("↵ save · esc cancel"))
-	for len(lines) < m.h {
-		lines = append(lines, "")
-	}
-	return strings.Join(lines, "\n")
+	body := box("Save password", m.promptName, lines, m.w, max(3, m.h-1), true)
+	return body + "\n" + m.footer(theme.Faded.Render("↵ save · esc cancel"))
 }
