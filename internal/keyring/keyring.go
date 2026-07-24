@@ -40,6 +40,19 @@ func FetchMaster() (secret.Secret, bool, error) { return get(masterAccount) }
 // ForgetMaster deletes the shared harmos master password.
 func ForgetMaster() error { return del(masterAccount) }
 
+// serverAccount namespaces a Pleasant source's server login password so it never
+// collides with a kdbx source's per-file password of the same profile name.
+func serverAccount(profile string) string { return "server:" + profile }
+
+// StoreServer saves a Pleasant source's server login password.
+func StoreServer(profile string, pw secret.Secret) error { return set(serverAccount(profile), pw) }
+
+// FetchServer returns a Pleasant source's server login password, if stored.
+func FetchServer(profile string) (secret.Secret, bool, error) { return get(serverAccount(profile)) }
+
+// ForgetServer deletes a Pleasant source's server login password.
+func ForgetServer(profile string) error { return del(serverAccount(profile)) }
+
 func set(account string, pw secret.Secret) error {
 	return gokeyring.Set(service, account, pw.Reveal())
 }

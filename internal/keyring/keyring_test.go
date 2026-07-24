@@ -46,6 +46,31 @@ func TestStoreFetchForget(t *testing.T) {
 	}
 }
 
+func TestServerStoreFetchForget(t *testing.T) {
+	gokeyring.MockInit()
+
+	if _, ok, err := FetchServer("work"); err != nil || ok {
+		t.Fatalf("empty server slot: ok=%v err=%v", ok, err)
+	}
+	if err := StoreServer("work", secret.New("srv")); err != nil {
+		t.Fatalf("store server: %v", err)
+	}
+	pw, ok, err := FetchServer("work")
+	if err != nil || !ok || pw.Reveal() != "srv" {
+		t.Fatalf("fetch server: ok=%v err=%v pw=%q", ok, err, pw.Reveal())
+	}
+	// the server slot is separate from the per-name (kdbx) slot
+	if _, ok, _ := Fetch("work"); ok {
+		t.Error("a server password must not appear as a kdbx per-file password")
+	}
+	if err := ForgetServer("work"); err != nil {
+		t.Fatalf("forget server: %v", err)
+	}
+	if _, ok, _ := FetchServer("work"); ok {
+		t.Error("server password still present after forget")
+	}
+}
+
 func TestMasterStoreFetchForget(t *testing.T) {
 	gokeyring.MockInit()
 

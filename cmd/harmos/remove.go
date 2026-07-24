@@ -201,14 +201,17 @@ func runRemovePassword(configPath, spec string, out io.Writer) error {
 			return fmt.Errorf("no profile named %q", name)
 		}
 		if p.Type == config.Pleasant {
-			if masterDone {
-				continue
-			}
-			if err := keyring.ForgetMaster(); err != nil {
+			if err := keyring.ForgetServer(name); err != nil {
 				return err
 			}
-			masterDone = true
-			emitf(out, "removed the shared master password from the keyring\n")
+			emitf(out, "removed %q's saved server password from the keyring\n", name)
+			if !masterDone {
+				if err := keyring.ForgetMaster(); err != nil {
+					return err
+				}
+				masterDone = true
+				emitf(out, "removed the shared master password from the keyring\n")
+			}
 			continue
 		}
 		if err := keyring.Forget(name); err != nil {
