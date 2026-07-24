@@ -20,8 +20,8 @@ func seedTwoKdbx(t *testing.T, dir string) (cfgPath, aPath string) {
 	aPath = writeDummyKdbx(t, dir, "a.kdbx")
 	bPath := writeDummyKdbx(t, dir, "b.kdbx")
 	seed := "# my config\n" +
-		"[[profile]]\nname = \"a\"\ntype = \"kdbx\"\npath = \"" + aPath + "\"\n" +
-		"\n# keep me\n[[profile]]\nname = \"b\"\ntype = \"kdbx\"\npath = \"" + bPath + "\"\n"
+		"[[profile]]\nname = \"a\"\ntype = \"kdbx\"\npath = " + qt(aPath) + "\n" +
+		"\n# keep me\n[[profile]]\nname = \"b\"\ntype = \"kdbx\"\npath = " + qt(bPath) + "\n"
 	if err := os.WriteFile(cfgPath, []byte(seed), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -75,8 +75,8 @@ func TestRemoveSourcePleasantForgetsMasterWhenLast(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.toml")
 	own := writeDummyKdbx(t, dir, "own.kdbx")
 	seed := "[[profile]]\nname = \"work\"\ntype = \"pleasant\"\n" +
-		"url = \"https://x.invalid\"\nuser = \"u\"\ncache = \"" + filepath.Join(dir, "w.kdbx") + "\"\n" +
-		"\n[[profile]]\nname = \"own\"\ntype = \"kdbx\"\npath = \"" + own + "\"\n"
+		"url = \"https://x.invalid\"\nuser = \"u\"\ncache = " + qt(filepath.Join(dir, "w.kdbx")) + "\n" +
+		"\n[[profile]]\nname = \"own\"\ntype = \"kdbx\"\npath = " + qt(own) + "\n"
 	if err := os.WriteFile(cfgPath, []byte(seed), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -108,8 +108,8 @@ func TestRemoveSourcePleasantKeepsMasterWhenOthersRemain(t *testing.T) {
 	gokeyring.MockInit()
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
-	seed := "[[profile]]\nname = \"a\"\ntype = \"pleasant\"\nurl = \"https://a.invalid\"\nuser = \"u\"\ncache = \"" + filepath.Join(dir, "a.kdbx") + "\"\n" +
-		"\n[[profile]]\nname = \"b\"\ntype = \"pleasant\"\nurl = \"https://b.invalid\"\nuser = \"u\"\ncache = \"" + filepath.Join(dir, "b.kdbx") + "\"\n"
+	seed := "[[profile]]\nname = \"a\"\ntype = \"pleasant\"\nurl = \"https://a.invalid\"\nuser = \"u\"\ncache = " + qt(filepath.Join(dir, "a.kdbx")) + "\n" +
+		"\n[[profile]]\nname = \"b\"\ntype = \"pleasant\"\nurl = \"https://b.invalid\"\nuser = \"u\"\ncache = " + qt(filepath.Join(dir, "b.kdbx")) + "\n"
 	if err := os.WriteFile(cfgPath, []byte(seed), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -131,8 +131,8 @@ func TestRemoveSourceCleansDefault(t *testing.T) {
 	own := writeDummyKdbx(t, dir, "own.kdbx")
 	work := writeDummyKdbx(t, dir, "work.kdbx")
 	seed := "default = \"work\"\n\n" +
-		"[[profile]]\nname = \"work\"\ntype = \"kdbx\"\npath = \"" + work + "\"\n\n" +
-		"[[profile]]\nname = \"own\"\ntype = \"kdbx\"\npath = \"" + own + "\"\n"
+		"[[profile]]\nname = \"work\"\ntype = \"kdbx\"\npath = " + qt(work) + "\n\n" +
+		"[[profile]]\nname = \"own\"\ntype = \"kdbx\"\npath = " + qt(own) + "\n"
 	if err := os.WriteFile(cfgPath, []byte(seed), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -175,8 +175,8 @@ func TestRemovePasswordAll(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.toml")
 	own := writeDummyKdbx(t, dir, "own.kdbx")
 	seed := "[[profile]]\nname = \"work\"\ntype = \"pleasant\"\n" +
-		"url = \"https://x.invalid\"\nuser = \"u\"\ncache = \"" + filepath.Join(dir, "w.kdbx") + "\"\n" +
-		"\n[[profile]]\nname = \"own\"\ntype = \"kdbx\"\npath = \"" + own + "\"\n"
+		"url = \"https://x.invalid\"\nuser = \"u\"\ncache = " + qt(filepath.Join(dir, "w.kdbx")) + "\n" +
+		"\n[[profile]]\nname = \"own\"\ntype = \"kdbx\"\npath = " + qt(own) + "\n"
 	if err := os.WriteFile(cfgPath, []byte(seed), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestRemovePasswordRejectsUnknown(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
 	own := writeDummyKdbx(t, dir, "own.kdbx")
-	if err := os.WriteFile(cfgPath, []byte("[[profile]]\nname = \"own\"\ntype = \"kdbx\"\npath = \""+own+"\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("[[profile]]\nname = \"own\"\ntype = \"kdbx\"\npath = "+qt(own)+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer

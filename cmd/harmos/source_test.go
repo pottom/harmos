@@ -4,12 +4,17 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/pottom/harmos/internal/config"
 )
+
+// qt quotes a value as a TOML basic string, escaping backslashes so Windows
+// paths (C:\Users\…) don't turn into invalid \U escapes.
+func qt(s string) string { return strconv.Quote(s) }
 
 func writeDummyKdbx(t *testing.T, dir, name string) string {
 	t.Helper()
@@ -40,7 +45,7 @@ func TestAddKdbxWritesLoadableProfile(t *testing.T) {
 	if p.Type != config.Kdbx || p.Path != kdbx {
 		t.Errorf("profile = %+v, want kdbx at %s", p, kdbx)
 	}
-	if info, _ := os.Stat(cfgPath); info.Mode().Perm() != 0o600 {
+	if info, _ := os.Stat(cfgPath); runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Errorf("config perms = %#o, want 0600", info.Mode().Perm())
 	}
 }
@@ -104,7 +109,7 @@ func TestAddKdbxOverwritePreservesRest(t *testing.T) {
 		"type = \"pleasant\"\n" +
 		"url = \"https://pps.example.invalid\"\n" +
 		"user = \"svc\"\n" +
-		"cache = \"" + filepath.Join(dir, "work.kdbx") + "\"\n"
+		"cache = " + qt(filepath.Join(dir, "work.kdbx")) + "\n"
 	if err := os.WriteFile(cfgPath, []byte(seed), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +300,7 @@ func TestAddKdbxAppendsAndMasterGating(t *testing.T) {
 		"type = \"pleasant\"\n" +
 		"url = \"https://pps.example.invalid\"\n" +
 		"user = \"svc\"\n" +
-		"cache = \"" + filepath.Join(dir, "work.kdbx") + "\"\n"
+		"cache = " + qt(filepath.Join(dir, "work.kdbx")) + "\n"
 	if err := os.WriteFile(cfgPath, []byte(seed), 0o600); err != nil {
 		t.Fatal(err)
 	}
