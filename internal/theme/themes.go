@@ -67,12 +67,82 @@ var Gruvbox = Theme{
 	SelBg:    token{"#ebdbb2", "#3c3836"},
 }
 
+// Solarized (blue/cyan on base tones).
+var Solarized = Theme{
+	Name:     "solarized",
+	Accent:   token{"#22729e", "#4aa6dc"},
+	AccentHi: token{"#1a7a86", "#7fd6cc"},
+	Steel:    token{"#073642", "#eee8d5"},
+	Dim:      token{"#586e75", "#93a1a1"},
+	Faint:    token{"#93a1a1", "#586e75"},
+	OK:       token{"#6c7a00", "#a7b42a"},
+	Warn:     token{"#c0271f", "#e5564f"},
+	SelBg:    token{"#eee8d5", "#073642"},
+}
+
+// Tokyo Night (blue/purple night sky).
+var TokyoNight = Theme{
+	Name:     "tokyonight",
+	Accent:   token{"#2e7de9", "#7aa2f7"},
+	AccentHi: token{"#9854f1", "#bb9af7"},
+	Steel:    token{"#343b58", "#c0caf5"},
+	Dim:      token{"#6172b0", "#7982a9"},
+	Faint:    token{"#a8aecb", "#3b4261"},
+	OK:       token{"#587539", "#9ece6a"},
+	Warn:     token{"#c64343", "#f7768e"},
+	SelBg:    token{"#d4d6e4", "#292e42"},
+}
+
+// Catppuccin (mauve/pink pastel — Latte light, Mocha dark).
+var Catppuccin = Theme{
+	Name:     "catppuccin",
+	Accent:   token{"#8839ef", "#cba6f7"},
+	AccentHi: token{"#ea76cb", "#f5c2e7"},
+	Steel:    token{"#4c4f69", "#cdd6f4"},
+	Dim:      token{"#6c6f85", "#9399b2"},
+	Faint:    token{"#acb0be", "#45475a"},
+	OK:       token{"#40a02b", "#a6e3a1"},
+	Warn:     token{"#d20f39", "#f38ba8"},
+	SelBg:    token{"#e6e9ef", "#313244"},
+}
+
+// Rosé Pine (muted rose/iris/gold — Dawn light, Main dark).
+var RosePine = Theme{
+	Name:     "rosepine",
+	Accent:   token{"#907aa9", "#c4a7e7"},
+	AccentHi: token{"#c07a1e", "#f6c177"},
+	Steel:    token{"#575279", "#e0def4"},
+	Dim:      token{"#797593", "#908caa"},
+	Faint:    token{"#cecacd", "#403d52"},
+	OK:       token{"#56949f", "#9ccfd8"},
+	Warn:     token{"#b4637a", "#eb6f92"},
+	SelBg:    token{"#f2e9e1", "#26233a"},
+}
+
+// Everforest (comfy green forest).
+var Everforest = Theme{
+	Name:     "everforest",
+	Accent:   token{"#8da101", "#a7c080"},
+	AccentHi: token{"#3a94c5", "#7fbbb3"},
+	Steel:    token{"#5c6a72", "#d3c6aa"},
+	Dim:      token{"#829181", "#859289"},
+	Faint:    token{"#bec5b2", "#4a555b"},
+	OK:       token{"#35a77c", "#83c092"},
+	Warn:     token{"#f85552", "#e67e80"},
+	SelBg:    token{"#eaedc8", "#3d484d"},
+}
+
 var builtins = map[string]Theme{
-	"charm":   Charm,
-	"brass":   Brass,
-	"nord":    Nord,
-	"dracula": Dracula,
-	"gruvbox": Gruvbox,
+	"charm":      Charm,
+	"brass":      Brass,
+	"nord":       Nord,
+	"dracula":    Dracula,
+	"gruvbox":    Gruvbox,
+	"solarized":  Solarized,
+	"tokyonight": TokyoNight,
+	"catppuccin": Catppuccin,
+	"rosepine":   RosePine,
+	"everforest": Everforest,
 }
 
 // Builtin returns a built-in theme by name.
