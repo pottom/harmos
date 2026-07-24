@@ -19,6 +19,7 @@ const (
 	setForm           // the add/edit form overlay
 	setPrompt         // the save-password prompt overlay
 	setSyncing        // a sync is running
+	setTheme          // the theme picker overlay
 )
 
 // updateSettings handles keys while the Settings tab is active. It takes the raw
@@ -34,6 +35,8 @@ func (m Model) updateSettings(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updatePrompt(key, msg)
 	case setSyncing:
 		return m, nil // keys ignored while a sync runs
+	case setTheme:
+		return m.updateThemePicker(key)
 	}
 
 	switch key {
@@ -70,6 +73,8 @@ func (m Model) updateSettings(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.setSel < len(profs) {
 			m = m.clearPassword(profs[m.setSel])
 		}
+	case "t":
+		return m.openThemePicker(), nil
 	}
 	return m, nil
 }

@@ -112,6 +112,37 @@ func RemoveProfile(path, name string) (int, error) {
 	return remaining, nil
 }
 
+// SetTopLevelKey sets a top-level `key = "value"` in the config, updating it in
+// place if present, else inserting it before the first table — leaving the rest
+// of the file verbatim.
+func SetTopLevelKey(path, key, value string) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	newLine := fmt.Sprintf("%s = %q", key, value)
+	lines := strings.Split(string(content), "\n")
+
+	firstTable := len(lines)
+	for i, l := range lines {
+		t := strings.TrimSpace(l)
+		if strings.HasPrefix(t, "[") {
+			firstTable = i
+			break
+		}
+		if k, _, ok := parseKV(t); ok && k == key {
+			lines[i] = newLine
+			return writeFileAtomic(path, []byte(strings.Join(lines, "\n")))
+		}
+	}
+
+	out := make([]string, 0, len(lines)+2)
+	out = append(out, lines[:firstTable]...)
+	out = append(out, newLine, "")
+	out = append(out, lines[firstTable:]...)
+	return writeFileAtomic(path, []byte(strings.Join(out, "\n")))
+}
+
 // upsert inserts block as a new profile, or — if a profile of that name exists —
 // rewrites just that block (leaving the rest of the file verbatim). A file that
 // parses but has no profiles yet is appendable. Returns "added" or "updated".

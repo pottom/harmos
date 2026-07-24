@@ -144,11 +144,13 @@ func (m Model) settingsView() string {
 		return m.promptView()
 	case setSyncing:
 		return m.syncView()
+	case setTheme:
+		return m.themePickerView()
 	}
 	profs := m.sources()
 	i := ic()
 
-	hint := theme.Faded.Render("↑↓ select · a add · e edit · s sync · p save-pw · x clear-pw · d remove")
+	hint := theme.Faded.Render("↑↓ select · a add · e edit · s sync · p save-pw · x clear-pw · d remove · t theme")
 	if m.setStatus != "" {
 		hint = theme.Ok.Render(m.setStatus)
 	}

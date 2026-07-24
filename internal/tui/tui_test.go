@@ -12,8 +12,37 @@ import (
 	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/keyring"
 	"github.com/pottom/harmos/internal/secret"
+	"github.com/pottom/harmos/internal/theme"
 	"github.com/pottom/harmos/internal/vault"
 )
+
+func TestSettingsThemePicker(t *testing.T) {
+	defer theme.Apply(theme.Charm)
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	if _, err := config.WriteKdbxProfile(cfgPath, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
+		t.Fatal(err)
+	}
+	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 16})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	if m.setMode != setTheme {
+		t.Fatal("t should open the theme picker")
+	}
+	before := m.themeName
+	m = up(m, tea.KeyMsg{Type: tea.KeyDown}) // preview the next theme
+	if m.themeName == before {
+		t.Error("moving should preview a different theme")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter}) // apply & save
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Theme != m.themeName {
+		t.Errorf("saved theme %q != active %q", cfg.Theme, m.themeName)
+	}
+}
 
 func TestSettingsSavePassword(t *testing.T) {
 	gokeyring.MockInit()

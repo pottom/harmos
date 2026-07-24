@@ -67,6 +67,10 @@ type Model struct {
 	syncDone  int64                // bytes downloaded
 	syncTotal int64                // total bytes (-1 unknown)
 
+	themeName string // active theme name
+	themeSel  int    // theme picker: selected index into theme.Names()
+	themeOrig string // theme picker: name to revert to on cancel
+
 	timeout    time.Duration
 	copied     string
 	copiedWhat string
@@ -83,12 +87,19 @@ func New(entries []vault.Entry, configPath string, timeout time.Duration) Model 
 		timeout = 30 * time.Second
 	}
 	roots := buildTree(entries)
+	themeName := "charm"
+	if configPath != "" {
+		if cfg, err := config.Load(configPath); err == nil && cfg.Theme != "" {
+			themeName = cfg.Theme
+		}
+	}
 	return Model{
 		matcher:    search.New(entries),
 		roots:      roots,
 		nSrc:       len(roots),
 		input:      ti,
 		configPath: configPath,
+		themeName:  themeName,
 		timeout:    timeout,
 	}
 }

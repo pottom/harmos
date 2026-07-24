@@ -51,3 +51,32 @@ func TestWriteRemoveProfile(t *testing.T) {
 		t.Error("work should remain")
 	}
 }
+
+func TestSetTopLevelKey(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if _, err := WriteKdbxProfile(path, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
+		t.Fatal(err)
+	}
+	// insert a new top-level key
+	if err := SetTopLevelKey(path, "theme", "nord"); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ := Load(path); cfg.Theme != "nord" {
+		t.Fatalf("theme = %q, want nord", cfg.Theme)
+	}
+	// update it in place
+	if err := SetTopLevelKey(path, "theme", "dracula"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Theme != "dracula" {
+		t.Errorf("theme = %q, want dracula", cfg.Theme)
+	}
+	if cfg.Profile("own") == nil {
+		t.Error("the profile should survive setting a top-level key")
+	}
+}
