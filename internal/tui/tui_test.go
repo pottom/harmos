@@ -13,6 +13,32 @@ import (
 	"github.com/pottom/harmos/internal/vault"
 )
 
+func TestSettingsAddForm(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 20})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}}) // Settings
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}) // add form
+	if m.setMode != setForm {
+		t.Fatal("a should open the add form")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // Type toggle → Name
+	m = typeStr(m, "own")
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // Name → Path
+	m = typeStr(m, "/vault/own.kdbx")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter}) // submit
+	if m.setMode != setList {
+		t.Fatalf("submit should return to the list (mode=%d, status=%q)", m.setMode, m.setStatus)
+	}
+	profs := m.sources()
+	if len(profs) != 1 || profs[0].Name != "own" {
+		t.Fatalf("form add failed: %+v (status %q)", profs, m.setStatus)
+	}
+	if !strings.HasSuffix(profs[0].Path, "own.kdbx") {
+		t.Errorf("path = %q, want …/own.kdbx", profs[0].Path)
+	}
+}
+
 func TestSettingsRemove(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")

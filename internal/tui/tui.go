@@ -51,6 +51,12 @@ type Model struct {
 	rmFile     bool            // remove overlay: also delete the local file
 	rmPw       bool            // remove overlay: also forget the keyring password
 
+	form        []formField // add/edit form fields
+	formFocus   int         // focused form row (len(form) = the Save button)
+	formEditing bool        // editing an existing source vs adding
+	formOrig    string      // the profile name being edited (for rename)
+	formPps     bool        // form type: Pleasant vs kdbx
+
 	timeout    time.Duration
 	copied     string
 	copiedWhat string
@@ -229,8 +235,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Sequence(clearClip, tea.Quit)
 		}
 
-		// Tab switching (1 = Vault, 2 = Settings), except while typing a search.
-		if !m.searchMode {
+		// Tab switching (1 = Vault, 2 = Settings) — not while typing a search, and
+		// not while a Settings overlay (form/remove) is capturing keys.
+		inOverlay := m.searchMode || (m.tab == 1 && m.setMode != setList)
+		if !inOverlay {
 			switch key {
 			case "1":
 				m.tab, m.detail = 0, false
@@ -244,7 +252,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// The Settings tab handles its own keys.
 		if m.tab == 1 {
-			return m.updateSettings(key)
+			return m.updateSettings(key, msg)
 		}
 
 		// SEARCH MODE — the "/" box is capturing keystrokes.

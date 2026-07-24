@@ -124,8 +124,11 @@ func (m Model) vaultBody() string {
 }
 
 func (m Model) settingsView() string {
-	if m.setMode == setRemove {
+	switch m.setMode {
+	case setRemove:
 		return m.removeConfirmView()
+	case setForm:
+		return m.formView()
 	}
 	profs := m.sources()
 	title := theme.Strong.Render("Sources") + theme.Dimmed.Render(fmt.Sprintf("  %d configured", len(profs)))

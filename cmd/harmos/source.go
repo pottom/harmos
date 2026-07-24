@@ -150,7 +150,7 @@ func runAddSource(configPath, path, name, keyfile string, force bool, out io.Wri
 	if err != nil {
 		return err
 	}
-	kdbxPath, err := absPath(path)
+	kdbxPath, err := config.AbsPath(path)
 	if err != nil {
 		return err
 	}
@@ -162,7 +162,7 @@ func runAddSource(configPath, path, name, keyfile string, force bool, out io.Wri
 		return fmt.Errorf("%s is a directory, not a .kdbx file", kdbxPath)
 	}
 	if keyfile != "" {
-		if keyfile, err = absPath(keyfile); err != nil {
+		if keyfile, err = config.AbsPath(keyfile); err != nil {
 			return err
 		}
 		if _, err := os.Stat(keyfile); err != nil {
@@ -207,18 +207,18 @@ func runAddPleasant(configPath, name, url, user, cache, caBundle string, force b
 		if name == "" {
 			return fmt.Errorf("a Pleasant source needs --name (or --cache) so its cache can be named")
 		}
-		p, derr := defaultCachePath(name)
+		p, derr := config.DefaultCachePath(name)
 		if derr != nil {
 			return derr
 		}
 		cache = p
 	}
-	cachePath, err := absPath(cache)
+	cachePath, err := config.AbsPath(cache)
 	if err != nil {
 		return err
 	}
 	if caBundle != "" {
-		if caBundle, err = absPath(caBundle); err != nil {
+		if caBundle, err = config.AbsPath(caBundle); err != nil {
 			return err
 		}
 		if _, err := os.Stat(caBundle); err != nil {
@@ -293,35 +293,4 @@ func confirmOverwrite(cfgPath, name string, force bool, out io.Writer) (proceed,
 		return false, false, nil
 	}
 	return true, true, nil
-}
-
-// defaultCachePath is where a Pleasant source's cache lives when --cache is
-// omitted: $XDG_DATA_HOME/harmos/<name>.kdbx, falling back to ~/.local/share.
-func defaultCachePath(name string) (string, error) {
-	dir := os.Getenv("XDG_DATA_HOME")
-	if dir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		dir = filepath.Join(home, ".local", "share")
-	}
-	return filepath.Join(dir, "harmos", name+".kdbx"), nil
-}
-
-// absPath expands a leading ~ and makes the path absolute.
-func absPath(p string) (string, error) {
-	if strings.HasPrefix(p, "~") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		switch {
-		case p == "~":
-			p = home
-		case strings.HasPrefix(p, "~/"):
-			p = filepath.Join(home, p[2:])
-		}
-	}
-	return filepath.Abs(p)
 }

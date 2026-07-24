@@ -20,6 +20,37 @@ func DeriveProfileName(path string) string {
 	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
+// AbsPath expands a leading ~ and makes the path absolute.
+func AbsPath(p string) (string, error) {
+	if strings.HasPrefix(p, "~") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		switch {
+		case p == "~":
+			p = home
+		case strings.HasPrefix(p, "~/"):
+			p = filepath.Join(home, p[2:])
+		}
+	}
+	return filepath.Abs(p)
+}
+
+// DefaultCachePath is where a Pleasant source's cache lives when no path is
+// given: $XDG_DATA_HOME/harmos/<name>.kdbx, falling back to ~/.local/share.
+func DefaultCachePath(name string) (string, error) {
+	dir := os.Getenv("XDG_DATA_HOME")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		dir = filepath.Join(home, ".local", "share")
+	}
+	return filepath.Join(dir, "harmos", name+".kdbx"), nil
+}
+
 // ProfileExists reports whether the config at path already has a profile named
 // name. A missing or profile-less config reports false — it is appendable.
 func ProfileExists(path, name string) (bool, error) {

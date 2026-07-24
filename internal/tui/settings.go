@@ -16,23 +16,36 @@ import (
 const (
 	setList   = iota // browsing the sources table
 	setRemove        // the remove-source confirmation overlay
+	setForm          // the add/edit form overlay
 )
 
-// updateSettings handles keys while the Settings tab is active.
-func (m Model) updateSettings(key string) (tea.Model, tea.Cmd) {
+// updateSettings handles keys while the Settings tab is active. It takes the raw
+// message too so overlays with text inputs can forward keystrokes.
+func (m Model) updateSettings(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	profs := m.sources()
-	if m.setMode == setRemove {
+	switch m.setMode {
+	case setRemove:
 		return m.updateRemove(key, profs)
+	case setForm:
+		return m.updateForm(key, msg)
 	}
 
 	switch key {
 	case "up", "ctrl+p":
 		if m.setSel > 0 {
 			m.setSel--
+			m.setStatus = ""
 		}
 	case "down", "ctrl+n":
 		if m.setSel < len(profs)-1 {
 			m.setSel++
+			m.setStatus = ""
+		}
+	case "a":
+		return m.openAddForm(), nil
+	case "e":
+		if m.setSel < len(profs) {
+			return m.openEditForm(profs[m.setSel]), nil
 		}
 	case "d":
 		if m.setSel < len(profs) {
