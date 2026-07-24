@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/theme"
 )
 
@@ -52,13 +53,39 @@ func (m Model) View() string {
 	if m.help {
 		return m.helpView()
 	}
-	if m.detail {
-		return m.detailView()
+	bar := m.tabBar() + "\n"
+	switch {
+	case m.tab == 1:
+		return bar + m.settingsView()
+	case m.detail:
+		return bar + m.detailView()
+	default:
+		return bar + m.vaultBody()
 	}
+}
 
+// tabBar is the top row: the two tabs (active highlighted) and a global hint.
+func (m Model) tabBar() string {
+	tab := func(n int, name string) string {
+		s := fmt.Sprintf(" %d %s ", n+1, name)
+		if m.tab == n {
+			return theme.SelRow.Render(s)
+		}
+		return theme.Dimmed.Render(s)
+	}
+	left := tab(0, "Vault") + " " + tab(1, "Settings")
+	right := theme.Faded.Render("1/2 switch · ? keys · q quit")
+	gap := m.w - dw(left) - dw(right)
+	if gap < 1 {
+		gap = 1
+	}
+	return left + strings.Repeat(" ", gap) + right
+}
+
+func (m Model) vaultBody() string {
 	top := m.searchLine() + "\n" + rule(m.w) + "\n"
 	bottom := "\n" + rule(m.w) + "\n" + m.countdown() + "\n" + m.hints()
-	rows := m.h - 6
+	rows := m.h - 7
 	if rows < 1 {
 		rows = 1
 	}
@@ -83,6 +110,71 @@ func (m Model) View() string {
 		lipgloss.NewStyle().Width(rightW).Height(rows).Render(right),
 	)
 	return top + body + bottom
+}
+
+func (m Model) settingsView() string {
+	profs := m.sources()
+	title := theme.Strong.Render("Sources") + theme.Dimmed.Render(fmt.Sprintf("  %d configured", len(profs)))
+	top := title + "\n" + rule(m.w) + "\n"
+	footer := "\n" + rule(m.w) + "\n" + theme.Faded.Render(trunc(
+		"↑↓ select · a add · e edit · s sync · p save-pw · x clear-pw · d remove", m.w))
+
+	rowsArea := m.h - 6 // tab bar + title + 2 rules + footer hint
+	if rowsArea < 1 {
+		rowsArea = 1
+	}
+
+	nameW, typeW, kfW, krW := 16, 8, 12, 8
+	locW := m.w - nameW - typeW - kfW - krW - 6
+	if locW < 10 {
+		locW = 10
+	}
+
+	lines := []string{theme.Dimmed.Render(
+		pad("NAME", nameW) + " " + pad("TYPE", typeW) + " " + pad("LOCATION", locW) + " " + pad("KEYFILE", kfW) + " KEYRING")}
+	if len(profs) == 0 {
+		lines = append(lines, "", theme.Faded.Render("  no sources yet — press 'a' to add one"))
+	}
+	for i, p := range profs {
+		loc := p.Path
+		if p.Type == config.Pleasant {
+			loc = p.URL
+		}
+		kf := p.Keyfile
+		if kf == "" {
+			kf = "—"
+		}
+		if i == m.setSel {
+			kr := "—"
+			if m.setKeyring[p.Name] {
+				kr = "saved"
+			}
+			plain := pad(p.Name, nameW) + " " + pad(string(p.Type), typeW) + " " + pad(trunc(loc, locW), locW) + " " + pad(trunc(kf, kfW), kfW) + " " + kr
+			lines = append(lines, theme.SelRow.Width(m.w).Render(trunc(plain, m.w)))
+			continue
+		}
+		lines = append(lines,
+			theme.Strong.Render(pad(p.Name, nameW))+" "+
+				theme.Dimmed.Render(pad(string(p.Type), typeW))+" "+
+				theme.Dimmed.Render(pad(trunc(loc, locW), locW))+" "+
+				theme.Faded.Render(pad(trunc(kf, kfW), kfW))+" "+
+				krCell(m.setKeyring[p.Name]))
+	}
+	for len(lines) < rowsArea {
+		lines = append(lines, "")
+	}
+	if len(lines) > rowsArea {
+		lines = lines[:rowsArea]
+	}
+	return top + strings.Join(lines, "\n") + footer
+}
+
+// krCell renders the KEYRING cell: a green "saved" or a muted dash.
+func krCell(saved bool) string {
+	if saved {
+		return theme.Ok.Render("saved")
+	}
+	return theme.Faded.Render("—")
 }
 
 func (m Model) searchLine() string {
@@ -225,7 +317,7 @@ func (m Model) detailView() string {
 	top := m.searchLine() + "\n" + rule(m.w) + "\n"
 	hint := theme.Faded.Render(trunc("↵ copy pw · ctrl+r reveal · ctrl+u user · ctrl+o url · esc back", m.w))
 	bottom := "\n" + rule(m.w) + "\n" + m.countdown() + "\n" + hint
-	rows := m.h - 6
+	rows := m.h - 7
 	if rows < 1 {
 		rows = 1
 	}

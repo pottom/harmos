@@ -16,7 +16,7 @@ func testModel() Model {
 		{Source: "work", Path: "Infra", Title: "db-prod", Username: "svc_admin", Password: secret.New("p1")},
 		{Source: "work", Path: "Infra", Title: "db-staging", Username: "svc", Password: secret.New("p2")},
 		{Source: "personal", Path: "Net", Title: "router", Username: "admin", Password: secret.New("p3"), URL: "https://10.0.0.1"},
-	}, 30*time.Second)
+	}, "", 30*time.Second)
 }
 
 func up(m Model, msg tea.Msg) Model {
@@ -161,6 +161,28 @@ func TestQuitAndSearchQ(t *testing.T) {
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 	if m.input.Value() != "q" {
 		t.Errorf("q should be typed in search mode, got %q", m.input.Value())
+	}
+}
+
+// 1/2 switch tabs, but digits type while searching.
+func TestTabsSwitch(t *testing.T) {
+	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
+	if m.tab != 0 {
+		t.Fatal("default tab should be Vault")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	if m.tab != 1 || !strings.Contains(m.View(), "Sources") {
+		t.Error("2 should switch to the Settings tab")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+	if m.tab != 0 {
+		t.Error("1 should switch back to Vault")
+	}
+	// while searching, digits are typed, not tab switches
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	if m.tab != 0 || m.input.Value() != "2" {
+		t.Errorf("digits should type in search, not switch tabs: tab=%d value=%q", m.tab, m.input.Value())
 	}
 }
 
