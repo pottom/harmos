@@ -8,6 +8,21 @@ import (
 	"github.com/pottom/harmos/internal/theme"
 )
 
+// button renders a modal action button: an outlined "[ Label ]" normally, a
+// filled (reverse-video) colored button when focused. danger → red (Remove),
+// else green (Save/Confirm).
+func button(label string, danger, focused bool) string {
+	col := theme.OK
+	if danger {
+		col = theme.Warn
+	}
+	st := lipgloss.NewStyle().Foreground(col).Bold(true)
+	if focused {
+		return st.Reverse(true).Render(" " + label + " ")
+	}
+	return st.Render("[ " + label + " ]")
+}
+
 func borderStyle(active bool) lipgloss.Style {
 	if active {
 		return lipgloss.NewStyle().Foreground(theme.Accent)

@@ -33,8 +33,6 @@ func pad(s string, w int) string {
 	return s
 }
 
-func rule(w int) string { return theme.Rule.Render(strings.Repeat("─", max(1, w))) }
-
 func highlight(s, q string, base lipgloss.Style) string {
 	if q == "" {
 		return base.Render(s)
@@ -148,65 +146,51 @@ func (m Model) settingsView() string {
 		return m.syncView()
 	}
 	profs := m.sources()
-	title := theme.Strong.Render("Sources") + theme.Dimmed.Render(fmt.Sprintf("  %d configured", len(profs)))
-	top := title + "\n" + rule(m.w) + "\n"
+	i := ic()
 
 	hint := theme.Faded.Render("↑↓ select · a add · e edit · s sync · p save-pw · x clear-pw · d remove")
 	if m.setStatus != "" {
 		hint = theme.Ok.Render(m.setStatus)
 	}
-	footer := "\n" + rule(m.w) + "\n" + m.footer(hint)
 
-	rowsArea := m.h - 4 // title + 2 rules + footer
-	if rowsArea < 1 {
-		rowsArea = 1
-	}
-
-	// Fixed columns; LOCATION takes the remaining width. KEYFILE shows just the
-	// file name (the full path never fits and is unreadable when truncated).
-	nameW, typeW, kfW, krW := 18, 9, 16, 7
-	locW := m.w - nameW - typeW - kfW - krW - 4
-	if locW < 12 {
-		locW = 12
-	}
+	inW := m.w - 2 // inside the box border
+	nameW, typeW, kfW, krW := 20, 9, 16, 7
+	locW := max(12, inW-nameW-typeW-kfW-krW-4)
 
 	header := pad("NAME", nameW) + " " + pad("TYPE", typeW) + " " + pad("LOCATION", locW) + " " + pad("KEYFILE", kfW) + " KEYRING"
 	lines := []string{theme.Dimmed.Render(header)}
 	if len(profs) == 0 {
 		lines = append(lines, "", theme.Faded.Render("  no sources yet — press 'a' to add one"))
 	}
-	for i, p := range profs {
+	for k, p := range profs {
+		sicon := i.kdbx
 		loc := p.Path
 		if p.Type == config.Pleasant {
-			loc = p.URL
+			sicon, loc = i.pps, p.URL
 		}
-		kf := "—"
+		kf := i.none
 		if p.Keyfile != "" {
 			kf = filepath.Base(p.Keyfile)
 		}
-		if i == m.setSel {
+		if k == m.setSel {
 			kr := "—"
 			if m.setKeyring[p.Name] {
 				kr = "saved"
 			}
-			plain := pad(p.Name, nameW) + " " + pad(string(p.Type), typeW) + " " + pad(trunc(loc, locW), locW) + " " + pad(trunc(kf, kfW), kfW) + " " + kr
-			lines = append(lines, theme.SelRow.Width(m.w).Render(trunc(plain, m.w)))
+			plain := pad(sicon+" "+p.Name, nameW) + " " + pad(string(p.Type), typeW) + " " + pad(trunc(loc, locW), locW) + " " + pad(trunc(kf, kfW), kfW) + " " + kr
+			lines = append(lines, theme.SelRow.Width(inW).Render(trunc(plain, inW)))
 			continue
 		}
 		lines = append(lines,
-			theme.Strong.Render(pad(p.Name, nameW))+" "+
+			theme.Acc.Render(sicon)+" "+theme.Strong.Render(pad(trunc(p.Name, nameW-2), nameW-2))+" "+
 				theme.Dimmed.Render(pad(string(p.Type), typeW))+" "+
 				theme.Dimmed.Render(pad(trunc(loc, locW), locW))+" "+
 				theme.Faded.Render(pad(trunc(kf, kfW), kfW))+" "+
 				krCell(m.setKeyring[p.Name]))
 	}
-	for len(lines) < rowsArea {
-		lines = append(lines, "")
-	}
-	if len(lines) > rowsArea {
-		lines = lines[:rowsArea]
-	}
-	return top + strings.Join(lines, "\n") + footer
+
+	body := box("Sources", fmt.Sprintf("%d configured", len(profs)), lines, m.w, max(3, m.h-1), true)
+	return body + "\n" + m.footer(hint)
 }
 
 // krCell renders the KEYRING cell: a green "saved" or a muted dash.
@@ -324,35 +308,33 @@ func (m Model) resultLines(w, rows int) []string {
 	return out
 }
 
-// detailView is the full-screen entry details (Pleasant's "Entry Details").
+// detailView shows the selected entry inside a titled box.
 func (m Model) detailView() string {
-	top := m.searchLine() + "\n" + rule(m.w) + "\n"
+	searchLine := m.searchLine()
 	hint := theme.Faded.Render("↵ copy pw · ctrl+r reveal · ctrl+u user · ctrl+o url · esc back")
-	bottom := "\n" + rule(m.w) + "\n" + m.countdown() + "\n" + m.footer(hint)
-	rows := m.h - 6
-	if rows < 1 {
-		rows = 1
-	}
+	bottom := m.countdown() + "\n" + m.footer(hint)
+	boxH := max(3, m.h-3)
+	i := ic()
 
 	e := m.selEntry()
 	if e == nil {
-		return top + strings.Repeat("\n", max(0, rows-1)) + bottom
+		return searchLine + "\n" + box("Entry", "", nil, m.w, boxH, true) + "\n" + bottom
 	}
-	w := m.w
+	inW := m.w - 2
 	field := func(l, v string, st lipgloss.Style) string {
-		return theme.Dimmed.Render(pad(l, 12)) + st.Render(trunc(v, max(4, w-14)))
+		return theme.Dimmed.Render(pad(l, 12)) + st.Render(trunc(v, max(4, inW-14)))
 	}
 	pw := theme.Acc.Render(strings.Repeat("•", 12)) + theme.Dimmed.Render("   ctrl+r reveal")
 	if m.reveal {
-		pw = theme.Hi.Render(trunc(e.Password.Reveal(), max(4, w-18))) + theme.Dimmed.Render("   ctrl+r hide")
+		pw = theme.Hi.Render(trunc(e.Password.Reveal(), max(4, inW-18))) + theme.Dimmed.Render("   ctrl+r hide")
 	}
 	loc := e.Source
 	if e.Path != "" {
 		loc += " · " + e.Path
 	}
 	b := []string{
-		theme.Brand.Render(trunc(e.Title, w)),
-		theme.Dimmed.Render(trunc(loc, w)),
+		theme.Acc.Render(i.entry+" ") + theme.Brand.Render(trunc(e.Title, inW-2)),
+		theme.Dimmed.Render(trunc(loc, inW)),
 		"",
 		field("Username", e.Username, theme.Strong),
 		theme.Dimmed.Render(pad("Password", 12)) + pw,
@@ -363,13 +345,7 @@ func (m Model) detailView() string {
 	if len(e.Tags) > 0 {
 		b = append(b, field("Tags", strings.Join(e.Tags, ", "), theme.Dimmed))
 	}
-	for len(b) < rows {
-		b = append(b, "")
-	}
-	if len(b) > rows {
-		b = b[:rows]
-	}
-	return top + strings.Join(b, "\n") + bottom
+	return searchLine + "\n" + box("Entry", "", b, m.w, boxH, true) + "\n" + bottom
 }
 
 func (m Model) countdown() string {

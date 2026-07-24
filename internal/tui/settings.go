@@ -197,7 +197,7 @@ func (m Model) removeConfirmView() string {
 		row(0, check(m.rmFile)+"also delete the file  "+theme.Dimmed.Render(trunc(file, max(4, m.w-30)))),
 		row(1, check(m.rmPw)+"also forget its saved keyring password"),
 		"",
-		row(2, theme.Bad.Render("Remove")),
+		"  " + button("Remove", true, m.rmToggle == 2),
 		"",
 		theme.Faded.Render("↑↓ move · space toggle · ↵ apply · esc cancel"),
 	}

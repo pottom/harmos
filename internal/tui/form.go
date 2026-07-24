@@ -255,11 +255,7 @@ func (m Model) formView() string {
 	}
 
 	// Save button
-	save := theme.Dimmed.Render("[ Save ]")
-	if m.formFocus == len(m.form) {
-		save = theme.SelRow.Render(" Save ")
-	}
-	lines = append(lines, "", "  "+save)
+	lines = append(lines, "", "  "+button("Save", false, m.formFocus == len(m.form)))
 
 	foot := "↑↓/tab move · ↵ save · esc cancel"
 	if m.setStatus != "" {
