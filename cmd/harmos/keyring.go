@@ -15,11 +15,10 @@ func newSavePasswordCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "save-password <name>",
 		Short: "Store a source's password in the OS keyring",
-		Long: "Prompt for a source's password and store it in the OS keyring so harmos " +
-			"can unlock it without asking. For a Pleasant source this saves the shared " +
-			"harmos master password (which unlocks every Pleasant cache); for a local " +
-			"kdbx source it saves that file's own password. The password never touches " +
-			"the config file.",
+		Long: "Prompt for a source's password(s) and store them in the OS keyring so " +
+			"harmos never asks again. A Pleasant source saves the shared harmos master " +
+			"(if not already saved) and that source's server login password; a local " +
+			"kdbx source saves that file's own password. Nothing touches the config file.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfigAt(configPath)
@@ -31,7 +30,7 @@ func newSavePasswordCmd() *cobra.Command {
 				return fmt.Errorf("no profile named %q", args[0])
 			}
 			if p.Type == config.Pleasant {
-				return saveMaster(cmd.OutOrStdout())
+				return savePleasantPasswords(args[0], p.User, cmd.OutOrStdout())
 			}
 			return savePasswordFor(args[0], cmd.OutOrStdout())
 		},
@@ -71,5 +70,32 @@ func saveMaster(out io.Writer) error {
 		return fmt.Errorf("store in keyring: %w", err)
 	}
 	emitf(out, "saved the harmos master password in the keyring (unlocks all Pleasant sources)\n")
+	return nil
+}
+
+// savePleasantPasswords stores a Pleasant source's secrets: the shared master
+// (only when not already saved) and this source's server login password.
+func savePleasantPasswords(name, user string, out io.Writer) error {
+	if !onTTY() {
+		return fmt.Errorf("a terminal is required to read the passwords to save")
+	}
+	if _, ok, _ := keyring.FetchMaster(); !ok {
+		master, err := promptPassword("harmos master password to save: ")
+		if err != nil {
+			return err
+		}
+		if err := keyring.StoreMaster(master); err != nil {
+			return fmt.Errorf("store master: %w", err)
+		}
+		emitf(out, "saved the harmos master password to the keyring\n")
+	}
+	srv, err := promptPassword(fmt.Sprintf("server password for %s to save: ", user))
+	if err != nil {
+		return err
+	}
+	if err := keyring.StoreServer(name, srv); err != nil {
+		return fmt.Errorf("store server password: %w", err)
+	}
+	emitf(out, "saved %q's server password to the keyring\n", name)
 	return nil
 }
