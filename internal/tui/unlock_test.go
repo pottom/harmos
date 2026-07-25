@@ -126,6 +126,44 @@ func TestUnlockWrongMasterRequeues(t *testing.T) {
 	}
 }
 
+func TestUnlockSkipExcludesSource(t *testing.T) {
+	gokeyring.MockInit()
+	t.Setenv("HARMOS_MASTER", "")
+	dir := t.TempDir()
+	cache := filepath.Join(dir, "work.kdbx")
+	own := filepath.Join(dir, "personal.kdbx")
+	makeKDBX(t, cache, "master", "db-prod")
+	makeKDBX(t, own, "ownpw", "router")
+
+	cfgPath := filepath.Join(dir, "config.toml")
+	if _, err := config.WritePleasantProfile(cfgPath, "work", "https://pps:10001", "u", cache, "", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := config.WriteKdbxProfile(cfgPath, "personal", own, "", false); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := config.Load(cfgPath)
+
+	m := up(NewLocked(cfg, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 22})
+	m = typeStr(m, "master")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})         // → personal step
+	nm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc}) // skip personal → open
+	m = runCmd(nm.(Model), cmd)
+
+	if m.locked {
+		t.Fatalf("skipping an optional source should still unlock (err=%q)", m.ulErr)
+	}
+	if len(m.excluded) != 1 || m.excluded[0].Source != "personal" {
+		t.Fatalf("skipped source should be recorded as excluded, got %+v", m.excluded)
+	}
+	if m.excluded[0].Reason != "skipped" {
+		t.Errorf("reason = %q, want skipped", m.excluded[0].Reason)
+	}
+	if !strings.Contains(m.View(), "unavailable") {
+		t.Error("the search line should flag the unavailable source")
+	}
+}
+
 func TestUnlockAutoWhenAllSaved(t *testing.T) {
 	gokeyring.MockInit()
 	t.Setenv("HARMOS_MASTER", "")

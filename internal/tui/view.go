@@ -10,6 +10,7 @@ import (
 
 	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/theme"
+	"github.com/pottom/harmos/internal/vault"
 )
 
 // display-width aware helpers (spec §8a — never len()).
@@ -55,14 +56,10 @@ func (m Model) View() string {
 	if m.help {
 		return m.helpView()
 	}
-	switch {
-	case m.tab == 1:
+	if m.tab == 1 {
 		return m.settingsView()
-	case m.detail:
-		return m.detailView()
-	default:
-		return m.vaultBody()
 	}
+	return m.vaultBody() // browse, search, and entry detail share this frame
 }
 
 // tabIndicator is the small "1 Vault · 2 Settings" marker shown bottom-right, the
@@ -87,6 +84,28 @@ func spread(left, right string, w int) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
+// modal renders a centered, content-sized panel with a hint beneath it — the
+// shared superfile-style frame for the save-password and sync screens (echoing
+// the unlock screen's look).
+func (m Model) modal(title, info string, lines []string, hint string) string {
+	inner := 0
+	for _, ln := range lines {
+		if d := dw(ln); d > inner {
+			inner = d
+		}
+	}
+	if t := dw(title) + dw(info) + 6; t > inner {
+		inner = t
+	}
+	boxW := max(40, min(inner+4, m.w-4))
+	panel := box(title, info, lines, boxW, len(lines)+2, true)
+	block := panel
+	if hint != "" {
+		block = lipgloss.JoinVertical(lipgloss.Center, panel, "", theme.Faded.Render(hint))
+	}
+	return lipgloss.Place(max(1, m.w), max(1, m.h), lipgloss.Center, lipgloss.Center, block)
+}
+
 // footer is the bottom line: a hint on the left, the tab indicator on the right,
 // with the hint truncated so the two never collide.
 func (m Model) footer(left string) string {
@@ -96,7 +115,11 @@ func (m Model) footer(left string) string {
 
 func (m Model) vaultBody() string {
 	searchLine := m.searchLine()
-	bottom := m.countdown() + "\n" + m.footer(m.hints())
+	hint := m.hints()
+	if m.detail {
+		hint = theme.Faded.Render("↵ copy password · ctrl+r reveal · esc back")
+	}
+	bottom := m.countdown() + "\n" + m.footer(hint)
 	panelsH := max(3, m.h-3) // search line + countdown + footer
 
 	leftW := min(42, max(18, m.w*2/5))
@@ -104,17 +127,20 @@ func (m Model) vaultBody() string {
 
 	flat := m.visible()
 	folders := box("Folders", cursorInfo(m.tsel, len(flat)),
-		m.treeLines(leftW-2, panelsH-2), leftW, panelsH, m.focus == 0 && !m.showResults())
+		m.treeLines(leftW-2, panelsH-2), leftW, panelsH, m.focus == 0 && !m.showResults() && !m.detail)
 
 	var right string
-	if m.showResults() {
+	switch {
+	case m.detail:
+		right = m.detailPane(rightW, panelsH)
+	case m.showResults():
 		right = box("Search results", fmt.Sprintf("%d", len(m.results)),
 			m.resultLines(rightW-2, panelsH-2), rightW, panelsH, true)
-	} else {
+	default:
 		f := m.currentFolder()
 		title, info := "Entries", ""
 		if f != nil {
-			title, info = f.name, fmt.Sprintf("%d", len(f.entries))
+			title, info = folderCrumb(flat, m.tsel), fmt.Sprintf("%d", len(f.entries))
 		}
 		right = box(title, info, m.entryLines(rightW-2, panelsH-2), rightW, panelsH, m.focus == 1)
 	}
@@ -143,7 +169,9 @@ func (m Model) settingsView() string {
 		return m.syncView()
 	}
 
-	panelsH := max(3, m.h-1)
+	// Same vertical frame as the Vault tab so nothing jumps when switching:
+	// header line, panels, a context line, then the hints footer.
+	panelsH := max(3, m.h-3)
 	leftW := 22
 	rightW := m.w - leftW - 1
 
@@ -159,7 +187,37 @@ func (m Model) settingsView() string {
 	}
 
 	panels := lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
-	return panels + "\n" + m.footer(m.settingsHint())
+	return m.settingsHeader() + "\n" + panels + "\n" + m.settingsContext() + "\n" + m.footer(m.settingsHint())
+}
+
+// settingsHeader mirrors the Vault tab's search line: the wordmark plus a source
+// count, so the top line sits at the same row on both tabs.
+func (m Model) settingsHeader() string {
+	left := brand() + theme.Faded.Render("  ·  settings")
+	right := theme.Faded.Render(plural(len(m.sources()), "source", "sources"))
+	return spread(left, right, m.w)
+}
+
+// settingsContext is the line above the hints — the counterpart to the Vault
+// countdown/provenance line. It shows the last action's status, else what the
+// current selection points at.
+func (m Model) settingsContext() string {
+	if m.setStatus != "" {
+		return theme.Ok.Render(trunc("  "+m.setStatus, m.w))
+	}
+	if m.setCat == catTheme {
+		return theme.Faded.Render(trunc("  active theme · "+m.themeName, m.w))
+	}
+	profs := m.sources()
+	if m.setSel < len(profs) {
+		p := profs[m.setSel]
+		loc := p.Path
+		if p.Type == config.Pleasant {
+			loc = p.URL
+		}
+		return theme.Faded.Render(trunc("  "+p.Name+" · "+loc, m.w))
+	}
+	return ""
 }
 
 // catLines renders the Settings category list (left pane).
@@ -220,9 +278,6 @@ func (m Model) sourceLines(w int, profs []config.Profile) []string {
 
 // settingsHint is the footer for the Settings tab, contextual to focus/category.
 func (m Model) settingsHint() string {
-	if m.setStatus != "" {
-		return theme.Ok.Render(m.setStatus)
-	}
 	switch {
 	case m.focus == 0:
 		return theme.Faded.Render("↑↓ pick · →/↵ open · 1 Vault")
@@ -264,6 +319,9 @@ func (m Model) searchLine() string {
 	right := theme.Faded.Render(plural(m.nSrc, "source", "sources"))
 	if m.showResults() {
 		right = theme.Dimmed.Render(plural(len(m.results), "match", "matches"))
+	}
+	if n := len(m.excluded); n > 0 && !m.showResults() {
+		right += theme.Bad.Render(fmt.Sprintf("  ⚠ %d unavailable", n))
 	}
 	return spread(left, right, m.w)
 }
@@ -368,40 +426,65 @@ func (m Model) resultLines(w, rows int) []string {
 }
 
 // detailView shows the selected entry inside a titled box.
-func (m Model) detailView() string {
-	searchLine := m.searchLine()
-	hint := theme.Faded.Render("↵ copy pw · ctrl+r reveal · ctrl+u user · ctrl+o url · esc back")
-	bottom := m.countdown() + "\n" + m.footer(hint)
-	boxH := max(3, m.h-3)
-
+// detailPane is the selected entry expanded into the right panel (a split with
+// the folder tree still on the left), sized to w×h.
+func (m Model) detailPane(w, h int) string {
 	e := m.selEntry()
 	if e == nil {
-		return searchLine + "\n" + box("Entry", "", nil, m.w, boxH, true) + "\n" + bottom
+		return box("Entry", "", nil, w, h, true)
 	}
-	inW := m.w - 2
-	field := func(l, v string, st lipgloss.Style) string {
-		return theme.Dimmed.Render(pad(l, 12)) + st.Render(trunc(v, max(4, inW-14)))
+	i := ic()
+	inW := w - 2
+
+	// one field row: icon + label on the left, the value in the middle, and a dim
+	// copy/reveal key tucked to the right.
+	rowW := inW - 2 // leave a 2-cell right margin, mirroring the left indent
+	row := func(icon, label, value string, vst lipgloss.Style, key string) string {
+		lead := "  " + theme.Acc.Render(icon) + "  " + theme.Dimmed.Render(pad(label, 9))
+		right := ""
+		if key != "" {
+			right = theme.Faded.Render(key)
+		}
+		avail := max(4, rowW-dw(lead)-dw(right)-1)
+		return spread(lead+vst.Render(trunc(value, avail)), right, rowW)
 	}
-	pw := theme.Acc.Render(strings.Repeat("•", 12)) + theme.Dimmed.Render("   ctrl+r reveal")
+
+	user, userKey, userSt := e.Username, "ctrl+u", theme.Strong
+	if user == "" {
+		user, userKey, userSt = "—", "", theme.Faded
+	}
+
+	pwVal, pwSt, pwKey := strings.Repeat("•", 12), theme.Acc, "ctrl+r"
 	if m.reveal {
-		pw = theme.Hi.Render(trunc(e.Password.Reveal(), max(4, inW-18))) + theme.Dimmed.Render("   ctrl+r hide")
+		pwVal, pwSt, pwKey = e.Password.Reveal(), theme.Hi, "ctrl+r"
 	}
-	loc := e.Source
-	if e.Path != "" {
-		loc += " · " + e.Path
-	}
+
 	b := []string{
 		"",
-		field("Username", e.Username, theme.Strong),
-		theme.Dimmed.Render(pad("Password", 12)) + pw,
+		row(i.user, "user", user, userSt, userKey),
+		row(i.keyfile, "password", pwVal, pwSt, pwKey),
 	}
 	if e.URL != "" {
-		b = append(b, field("URL", e.URL, theme.Dimmed))
+		b = append(b, row(i.link, "url", e.URL, theme.Dimmed, "ctrl+o"))
 	}
 	if len(e.Tags) > 0 {
-		b = append(b, field("Tags", strings.Join(e.Tags, ", "), theme.Dimmed))
+		b = append(b, row(i.tag, "tags", strings.Join(e.Tags, ", "), theme.Dimmed, ""))
 	}
-	return searchLine + "\n" + box(e.Title, loc, b, m.w, boxH, true) + "\n" + bottom
+
+	return box(breadcrumb(e), "", b, w, h, true)
+}
+
+// breadcrumb is the entry's full trail — "source › folder › … › title" — shown
+// in the detail panel's top border.
+func breadcrumb(e *vault.Entry) string {
+	crumbs := []string{e.Source}
+	for _, seg := range strings.Split(e.Path, "/") {
+		if seg != "" {
+			crumbs = append(crumbs, seg)
+		}
+	}
+	crumbs = append(crumbs, e.Title)
+	return strings.Join(crumbs, " › ")
 }
 
 func (m Model) countdown() string {
@@ -416,25 +499,31 @@ func (m Model) countdown() string {
 		}
 		return ""
 	}
-	what := theme.Dimmed.Render("copied ") + theme.Hi.Render(m.copiedWhat) + theme.Dimmed.Render(" · ")
-	total := int(m.timeout.Seconds())
-	if total < 1 {
-		total = 1
-	}
-	barW := m.w - 40
-	if barW < 6 {
-		return theme.Acc.Render(fmt.Sprintf(" %ds ", m.remaining)) + what + theme.Strong.Render(trunc(m.copied, max(4, m.w-20)))
-	}
-	filled := m.remaining * barW / total
-	if filled > barW {
-		filled = barW
-	}
 	sec := theme.Acc
 	if m.remaining <= 5 {
 		sec = theme.Bad
 	}
+	secTxt := sec.Render(fmt.Sprintf(" %2ds ", m.remaining))
+	prefix := theme.Dimmed.Render("copied ") + theme.Hi.Render(m.copiedWhat) + theme.Dimmed.Render(" · ")
+
+	// The label (seconds + "copied X · <where>") comes first in the budget; the bar
+	// gets what's left, capped so it never crowds the label off the line.
+	const barMax = 32
+	fixed := dw(secTxt) + dw(prefix) + 3 // leading space, a gap, the ▐ cap
+	barW := min(barMax, m.w-fixed-dw(m.copied))
+	if barW < 6 {
+		// no room for a bar — just seconds + label, truncated to fit
+		provW := max(4, m.w-dw(secTxt)-dw(prefix)-1)
+		return secTxt + prefix + theme.Strong.Render(trunc(m.copied, provW))
+	}
+	total := int(m.timeout.Seconds())
+	if total < 1 {
+		total = 1
+	}
+	filled := min(m.remaining*barW/total, barW)
 	bar := theme.Acc.Render("▐"+strings.Repeat("█", filled)) + theme.Faded.Render(strings.Repeat("░", barW-filled))
-	return " " + bar + sec.Render(fmt.Sprintf(" %2ds ", m.remaining)) + " " + what + theme.Strong.Render(trunc(m.copied, max(4, 26)))
+	provW := max(4, m.w-dw(bar)-dw(secTxt)-dw(prefix)-3)
+	return " " + bar + secTxt + " " + prefix + theme.Strong.Render(trunc(m.copied, provW))
 }
 
 func (m Model) hints() string {
@@ -443,9 +532,11 @@ func (m Model) hints() string {
 	case m.searchMode:
 		full = "type to filter · ↑↓ pick · ↵ apply · esc cancel"
 	case m.showResults():
-		full = "↑↓ results · ↵ details · / edit · ctrl+y copy · esc clear"
+		full = "↑↓ results · ↵ copy pw · → details · g folder · / edit · esc clear"
+	case m.focus == 1:
+		full = "↑↓ move · ↵ copy pw · → details · ← back · / search · q quit · ?"
 	default:
-		full = "↑↓ move · →/⇥ into · ← back · ↵ open · / search · q quit · ?"
+		full = "↑↓ move · →/⇥ into · ← collapse · ↵ open folder · / search · q quit · ?"
 	}
 	return theme.Faded.Render(trunc(full, m.w))
 }
@@ -518,6 +609,12 @@ func (m Model) helpView() string {
 		fmt.Fprint(&b, "\n\n"+theme.Acc.Render(g.title))
 		for _, r := range g.rows {
 			fmt.Fprint(&b, "\n"+theme.Strong.Render(padLeft(r[0], keyW))+"    "+theme.Dimmed.Render(r[1]))
+		}
+	}
+	if len(m.excluded) > 0 {
+		fmt.Fprint(&b, "\n\n"+theme.Bad.Render("Unavailable sources"))
+		for _, ex := range m.excluded {
+			fmt.Fprint(&b, "\n"+theme.Strong.Render(padLeft(ex.Source, keyW))+"    "+theme.Faded.Render(trunc(ex.Reason, max(10, m.w/2))))
 		}
 	}
 

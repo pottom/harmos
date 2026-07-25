@@ -54,6 +54,7 @@ func NewLocked(cfg *config.Config, configPath string, timeout time.Duration) Mod
 	m := New(nil, configPath, timeout)
 	m.locked = true
 	m.cfg = cfg
+	m.ulSkip = map[string]bool{}
 
 	pi := textinput.New()
 	pi.Prompt = ""
@@ -195,6 +196,9 @@ func (m Model) submitStep(skip bool) (tea.Model, tea.Cmd) {
 			}
 		} else {
 			st.done = false // left unanswered → source will be excluded
+			if st.name != "" {
+				m.ulSkip[st.name] = true
+			}
 		}
 		m.ulIdx++
 		m.ulInput.SetValue("")
@@ -247,6 +251,11 @@ func (m Model) onUnlockDone(msg unlockDoneMsg) (tea.Model, tea.Cmd) {
 	var masterBad bool
 	var other []session.Excluded
 	for _, ex := range res.Excluded {
+		// A source the user deliberately skipped stays out — never re-prompted.
+		if m.ulSkip[ex.Source] {
+			other = append(other, session.Excluded{Source: ex.Source, Reason: "skipped"})
+			continue
+		}
 		if !ex.BadCredential {
 			other = append(other, ex)
 			continue
@@ -278,7 +287,7 @@ func (m Model) onUnlockDone(msg unlockDoneMsg) (tea.Model, tea.Cmd) {
 	}
 
 	m = m.intoBrowsing(res.Entries)
-	m.ulExcl = other // remembered for a later provenance line; browsing starts clean
+	m.excluded = other // surfaced in the search line + help while browsing
 	return m, nil
 }
 
