@@ -325,9 +325,10 @@ func (m Model) unlockView() string {
 	}
 	inW := boxW - 2
 
+	i := ic()
 	nameW, typW := 12, 9
 	badgeW := 18 // "● cache Nd — stale"
-	locW := max(8, inW-2-nameW-typW-badgeW-3)
+	locW := max(8, inW-4-nameW-typW-badgeW-3)
 
 	lines := []string{"  " + theme.Faded.Render("one master password opens every cache"), ""}
 	for _, s := range m.ulStats {
@@ -338,7 +339,11 @@ func (m Model) unlockView() string {
 		case badgeAsk:
 			dot, st = "○", theme.Faded
 		}
-		row := "  " + theme.Strong.Render(pad(trunc(s.name, nameW), nameW)) + " " +
+		icon := i.kdbx
+		if s.typ == "pleasant" {
+			icon = i.pps
+		}
+		row := "  " + theme.Acc.Render(icon) + " " + theme.Strong.Render(pad(trunc(s.name, nameW), nameW)) + " " +
 			theme.Dimmed.Render(pad(s.typ, typW)) + " " +
 			theme.Dimmed.Render(pad(trunc(s.loc, locW), locW)) + " " +
 			st.Render(dot+" "+s.badge)

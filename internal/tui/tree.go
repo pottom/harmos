@@ -154,8 +154,8 @@ func (m Model) gotoResultFolder() Model {
 
 // folderCrumb builds the "source › … › folder" trail for the row at sel by
 // walking back through the flattened tree: a node's parent is the nearest
-// earlier row one level shallower.
-func folderCrumb(flat []treeLine, sel int) string {
+// earlier row one level shallower. The source (first crumb) gets its type icon.
+func (m Model) folderCrumb(flat []treeLine, sel int) string {
 	if sel < 0 || sel >= len(flat) {
 		return ""
 	}
@@ -167,5 +167,9 @@ func folderCrumb(flat []treeLine, sel int) string {
 			depth--
 		}
 	}
-	return strings.Join(crumbs, " › ")
+	trail := strings.Join(crumbs, " › ")
+	if si, ok := m.sourceIcon(crumbs[0]); ok {
+		return si + " " + trail
+	}
+	return trail
 }
