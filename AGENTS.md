@@ -105,7 +105,7 @@ If two readers ever appear, that is an architecture violation, not a feature. Th
 - **Honor the server.** Respect the offline package `Expiry`; check `IsOfflineAvailable` and `IsCommentRequired`. Every offline fetch is assumed audited; sync is always explicit and user-initiated, never on a timer or in the background.
 - **Clipboard is concealed.** Copied passwords must set the platform's "do not record / do not sync" pasteboard hints (spec §9); a plain timeout is not enough.
 - **License.** MIT. `NOTICE` states the non-affiliation. Third-party trademarks ("Pleasant Password Server", "KeePass") used nominatively only.
-- **Themes, not hardcoded colors.** Every visual token lives in a theme; the default theme is chosen in M4, not hardcoded in the render path. Non-color cues accompany every color-coded state so meaning survives `mono`, `NO_COLOR`, and colorblindness.
+- **Themes, not hardcoded colors.** Every visual token lives in `internal/theme` as a light/dark pair; `theme.Apply` rebuilds the package-level styles the TUI renders through, never hardcoded in the render path. Ten built-ins ship (charm default, brass, nord, dracula, gruvbox, solarized, tokyonight, catppuccin, rosepine, everforest); a config `theme = "<name>"` or a custom `themes/<name>.toml` selects one, and the Settings tab previews live. Non-color cues accompany every color-coded state so meaning survives `mono`, `NO_COLOR`, and colorblindness.
 - **Language is Go, and the reason is load-bearing** (spec §4a): only Go has a mature, permissively-licensed kdbx *writer*. Do not re-litigate this; the accepted costs (cgo for macOS clipboard, best-effort memory zeroing) are documented, not open questions.
 
 ## Global Workflow
