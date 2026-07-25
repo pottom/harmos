@@ -44,15 +44,16 @@ type Model struct {
 	help       bool
 	w, h       int
 
-	configPath string          // for the Settings tab
-	setSel     int             // selected row in the Settings sources table
-	setKeyring map[string]bool // profile name → has a saved keyring password
-	setMode    int             // setList / setRemove / …
-	setCat     int             // selected Settings category (left pane): catSources / catTheme
-	setStatus  string          // last action result, shown in the Settings footer
-	rmToggle   int             // remove overlay: 0 delete-file, 1 forget-pw, 2 confirm
-	rmFile     bool            // remove overlay: also delete the local file
-	rmPw       bool            // remove overlay: also forget the keyring password
+	configPath string                 // for the Settings tab
+	srcType    map[string]config.Type // source name → type, for tree/breadcrumb icons
+	setSel     int                    // selected row in the Settings sources table
+	setKeyring map[string]bool        // profile name → has a saved keyring password
+	setMode    int                    // setList / setRemove / …
+	setCat     int                    // selected Settings category (left pane): catSources / catTheme
+	setStatus  string                 // last action result, shown in the Settings footer
+	rmToggle   int                    // remove overlay: 0 delete-file, 1 forget-pw, 2 confirm
+	rmFile     bool                   // remove overlay: also delete the local file
+	rmPw       bool                   // remove overlay: also forget the keyring password
 
 	form        []formField // add/edit form fields
 	formFocus   int         // focused form row (len(form) = the Save button)
@@ -106,9 +107,15 @@ func New(entries []vault.Entry, configPath string, timeout time.Duration) Model 
 	}
 	roots := buildTree(entries)
 	themeName := "charm"
+	srcType := map[string]config.Type{}
 	if configPath != "" {
-		if cfg, err := config.Load(configPath); err == nil && cfg.Theme != "" {
-			themeName = cfg.Theme
+		if cfg, err := config.Load(configPath); err == nil {
+			if cfg.Theme != "" {
+				themeName = cfg.Theme
+			}
+			for _, p := range cfg.Profiles {
+				srcType[p.Name] = p.Type
+			}
 		}
 	}
 	return Model{
@@ -118,6 +125,7 @@ func New(entries []vault.Entry, configPath string, timeout time.Duration) Model 
 		tsel:       firstFolderWithEntries(roots),
 		input:      ti,
 		configPath: configPath,
+		srcType:    srcType,
 		themeName:  themeName,
 		timeout:    timeout,
 	}

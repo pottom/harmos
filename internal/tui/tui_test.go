@@ -337,7 +337,7 @@ func TestGotoFolderFromResults(t *testing.T) {
 	if f == nil {
 		t.Fatal("g should select a folder in the tree")
 	}
-	if got := folderCrumb(m.visible(), m.tsel); got != want.Source+" › "+strings.ReplaceAll(want.Path, "/", " › ") {
+	if got := m.folderCrumb(m.visible(), m.tsel); got != want.Source+" › "+strings.ReplaceAll(want.Path, "/", " › ") {
 		t.Errorf("landed on %q, want the entry's folder (%s · %s)", got, want.Source, want.Path)
 	}
 	if e := m.selEntry(); e == nil || e.Title != want.Title {

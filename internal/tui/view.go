@@ -140,7 +140,7 @@ func (m Model) vaultBody() string {
 		f := m.currentFolder()
 		title, info := "Entries", ""
 		if f != nil {
-			title, info = folderCrumb(flat, m.tsel), fmt.Sprintf("%d", len(f.entries))
+			title, info = m.folderCrumb(flat, m.tsel), fmt.Sprintf("%d", len(f.entries))
 		}
 		right = box(title, info, m.entryLines(rightW-2, panelsH-2), rightW, panelsH, m.focus == 1)
 	}
@@ -301,6 +301,21 @@ func brand() string {
 	return theme.Acc.Bold(true).Render("har") + theme.Hi.Bold(true).Render("mos")
 }
 
+// sourceIcon returns the type glyph for a source (pps server / kdbx file), as in
+// the Settings sources pane. ok is false when the source's type isn't known
+// (e.g. no config), so the caller can keep the folder icon.
+func (m Model) sourceIcon(name string) (string, bool) {
+	i := ic()
+	switch m.srcType[name] {
+	case config.Pleasant:
+		return i.pps, true
+	case config.Kdbx:
+		return i.kdbx, true
+	default:
+		return "", false
+	}
+}
+
 // plural formats a count with a singular/plural word.
 func plural(n int, one, many string) string {
 	w := many
@@ -343,6 +358,11 @@ func (m Model) treeLines(w, rows int) []string {
 		icon := i.folder
 		if len(n.children) > 0 && n.expanded {
 			icon = i.folderOpen
+		}
+		if flat[k].depth == 0 { // a source root — mark it by type, like Settings
+			if si, ok := m.sourceIcon(n.name); ok {
+				icon = si
+			}
 		}
 		count := ""
 		if len(n.entries) > 0 {
@@ -471,12 +491,12 @@ func (m Model) detailPane(w, h int) string {
 		b = append(b, row(i.tag, "tags", strings.Join(e.Tags, ", "), theme.Dimmed, ""))
 	}
 
-	return box(breadcrumb(e), "", b, w, h, true)
+	return box(m.breadcrumb(e), "", b, w, h, true)
 }
 
 // breadcrumb is the entry's full trail — "source › folder › … › title" — shown
-// in the detail panel's top border.
-func breadcrumb(e *vault.Entry) string {
+// in the detail panel's top border, with the source's type icon in front.
+func (m Model) breadcrumb(e *vault.Entry) string {
 	crumbs := []string{e.Source}
 	for _, seg := range strings.Split(e.Path, "/") {
 		if seg != "" {
@@ -484,7 +504,11 @@ func breadcrumb(e *vault.Entry) string {
 		}
 	}
 	crumbs = append(crumbs, e.Title)
-	return strings.Join(crumbs, " › ")
+	trail := strings.Join(crumbs, " › ")
+	if si, ok := m.sourceIcon(e.Source); ok {
+		return si + " " + trail
+	}
+	return trail
 }
 
 func (m Model) countdown() string {
