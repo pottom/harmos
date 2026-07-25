@@ -17,6 +17,8 @@ import (
 	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/keyring"
 	"github.com/pottom/harmos/internal/search"
+	"github.com/pottom/harmos/internal/secret"
+	"github.com/pottom/harmos/internal/session"
 	"github.com/pottom/harmos/internal/vault"
 )
 
@@ -72,6 +74,19 @@ type Model struct {
 	themeSel  int    // theme picker: selected index into theme.Names()
 	themeOrig string // theme picker: name to revert to on cancel
 
+	// Unlock phase (locked == true until every source is opened).
+	locked   bool
+	cfg      *config.Config  // the config being unlocked (nil once browsing)
+	ulInput  textinput.Model // masked credential input
+	ulSteps  []ulStep        // remaining credentials to collect
+	ulIdx    int             // current step
+	ulMaster secret.Secret   // the shared master, once resolved
+	ulHasM   bool            // master resolved (env/keyring/typed)
+	ulStats  []srcStat       // per-source status rows for the unlock table
+	ulErr    string          // inline error (wrong password)
+	ulBusy   bool            // an open attempt (Argon2) is running
+	ulExcl   []session.Excluded // non-credential sources dropped from the last open
+
 	timeout    time.Duration
 	copied     string
 	copiedWhat string
@@ -123,7 +138,28 @@ func Run(entries []vault.Entry, configPath string, timeout time.Duration) error 
 	return err
 }
 
-func (m Model) Init() tea.Cmd { return textinput.Blink }
+func (m Model) Init() tea.Cmd {
+	// A locked model with nothing left to ask (every credential came from env or
+	// the keyring) opens straight away — no unlock screen flash for saved users.
+	if m.locked && len(m.ulSteps) == 0 {
+		return tea.Batch(textinput.Blink, m.openCmd())
+	}
+	return textinput.Blink
+}
+
+// intoBrowsing rebuilds the browsing surface from freshly opened entries and
+// leaves the unlock phase.
+func (m Model) intoBrowsing(entries []vault.Entry) Model {
+	m.matcher = search.New(entries)
+	m.roots = buildTree(entries)
+	m.nSrc = len(m.roots)
+	m.tsel = firstFolderWithEntries(m.roots)
+	m.locked = false
+	m.cfg = nil
+	m.ulSteps = nil
+	m.ulBusy = false
+	return m
+}
 
 func tick() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
@@ -251,6 +287,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clearedMsg:
 		return m, nil
 
+	case unlockDoneMsg:
+		return m.onUnlockDone(msg)
+
 	case syncProgressMsg:
 		m.syncPhase = msg.phase
 		if msg.done > 0 || msg.total > 0 {
@@ -273,6 +312,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		key := msg.String()
 		if key == "ctrl+c" {
 			return m, tea.Sequence(clearClip, tea.Quit)
+		}
+		// The unlock phase owns every key until every source is open.
+		if m.locked {
+			return m.updateUnlock(key, msg)
 		}
 		if key == "?" && !m.searchMode {
 			m.help = !m.help
@@ -454,6 +497,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	var cmd tea.Cmd
+	if m.locked {
+		m.ulInput, cmd = m.ulInput.Update(msg)
+		return m, cmd
+	}
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
 }

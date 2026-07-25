@@ -49,6 +49,9 @@ func (m Model) View() string {
 	if m.w < 40 || m.h < 10 {
 		return m.tooSmall()
 	}
+	if m.locked {
+		return m.unlockView()
+	}
 	if m.help {
 		return m.helpView()
 	}
