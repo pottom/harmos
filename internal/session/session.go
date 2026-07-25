@@ -19,6 +19,9 @@ import (
 type Excluded struct {
 	Source string
 	Reason string
+	// BadCredential is true when the source failed on a wrong password/keyfile
+	// (retryable with a fresh prompt) rather than a missing or corrupt file.
+	BadCredential bool
 }
 
 // Result is the combined, read-only view of every source that opened.
@@ -45,7 +48,7 @@ func Open(cfg *config.Config, ask AskFunc) *Result {
 	for _, p := range cfg.Profiles {
 		v, err := openOne(p, ask)
 		if err != nil {
-			res.Excluded = append(res.Excluded, Excluded{p.Name, err.Error()})
+			res.Excluded = append(res.Excluded, Excluded{p.Name, err.Error(), vault.IsBadCredential(err)})
 			continue
 		}
 		res.Entries = append(res.Entries, v.Entries...)
