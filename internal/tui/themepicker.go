@@ -52,25 +52,27 @@ func (m Model) updateThemePane(key string) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) themeLines(w int) []string {
+	// The saved/active theme gets the ● mark. While previewing in the picker
+	// (focus 1) the live theme is themeName, so the saved one is themeOrig;
+	// otherwise themeName itself is what's active.
+	saved := m.themeName
+	if m.focus == 1 {
+		saved = m.themeOrig
+	}
 	var out []string
 	for i, n := range theme.Names() {
-		if i == m.themeSel {
-			cur := "  "
-			if n == m.themeOrig {
-				cur = theme.Ok.Render("● ")
-			}
-			if m.focus == 1 {
-				out = append(out, theme.SelRow.Width(w).Render(trunc("▸ "+n, w)))
-				continue
-			}
-			out = append(out, cur+theme.Hi.Render(n))
-			continue
-		}
 		mark := "  "
-		if n == m.themeOrig {
+		if n == saved {
 			mark = theme.Ok.Render("● ")
 		}
-		out = append(out, mark+theme.Strong.Render(n))
+		switch {
+		case m.focus == 1 && i == m.themeSel:
+			out = append(out, theme.SelRow.Width(w).Render(trunc("▸ "+n, w)))
+		case n == saved:
+			out = append(out, mark+theme.Hi.Render(n))
+		default:
+			out = append(out, mark+theme.Strong.Render(n))
+		}
 	}
 	return out
 }

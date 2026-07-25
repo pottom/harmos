@@ -42,6 +42,7 @@ func (m Model) startPrompt() Model {
 	ti := textinput.New()
 	ti.Prompt = ""
 	ti.EchoMode = textinput.EchoPassword
+	ti.EchoCharacter = '•'
 	ti.Width = 40
 	ti.Focus()
 	m.promptInput = ti
@@ -90,17 +91,19 @@ func (m Model) updatePrompt(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) promptView() string {
+	i := ic()
 	label := ""
 	if len(m.promptQueue) > 0 {
 		label = m.promptQueue[0].label
 	}
 	lines := []string{
+		"  " + theme.Faded.Render("saved in your OS keyring · "+m.promptName),
 		"",
-		theme.Dimmed.Render(label+": ") + m.promptInput.View(),
+		"  " + theme.Hi.Render(i.saved) + "  " + theme.Strong.Render(label),
+		"  " + m.promptInput.View(),
 	}
 	if len(m.promptQueue) > 1 {
-		lines = append(lines, "", theme.Faded.Render(fmt.Sprintf("(%d more to enter)", len(m.promptQueue)-1)))
+		lines = append(lines, "", "  "+theme.Faded.Render(fmt.Sprintf("%d more to enter", len(m.promptQueue)-1)))
 	}
-	body := box("Save password", m.promptName, lines, m.w, max(3, m.h-1), true)
-	return body + "\n" + m.footer(theme.Faded.Render("↵ save · esc cancel"))
+	return m.modal("harmos", "save password", lines, "↵ save · esc cancel")
 }

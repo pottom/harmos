@@ -11,10 +11,12 @@ type iconSet struct {
 	entry, keyfile      string
 	kdbx, pps           string
 	saved, search, none string
+	user, link, tag     string
 }
 
 // Nerd Font glyphs (private-use codepoints) — render as boxes without a Nerd
-// Font, hence the HARMOS_NERDFONT=0 fallback.
+// Font, hence the HARMOS_NERDFONT=0 fallback. Written as \uXXXX escapes: pasted
+// glyphs get mangled by editors.
 var nerdIcons = iconSet{
 	folder:     "\uf07b",
 	folderOpen: "\uf07c",
@@ -25,18 +27,24 @@ var nerdIcons = iconSet{
 	saved:      "\uf023",
 	search:     "\uf002",
 	none:       "\uf068",
+	user:       "\uf007",
+	link:       "\uf0c1",
+	tag:        "\uf02b",
 }
 
 var plainIcons = iconSet{
-	folder:     "▸", // ▸
-	folderOpen: "▾", // ▾
-	entry:      "•", // •
-	keyfile:    "⚷", // ⚷
-	kdbx:       "▪", // ▪
-	pps:        "◆", // ◆
-	saved:      "✓", // ✓
-	search:     "⌕", // ⌕
-	none:       "—", // —
+	folder:     "▸", // triangle-right
+	folderOpen: "▾", // triangle-down
+	entry:      "•", // bullet
+	keyfile:    "⚷", // chiron / keyfile
+	kdbx:       "▪", // small square
+	pps:        "◆", // diamond
+	saved:      "✓", // check
+	search:     "⌕", // telephone recorder / search
+	none:       "—", // em dash
+	user:       "@",
+	link:       "↗", // up-right arrow
+	tag:        "#",
 }
 
 func ic() iconSet {

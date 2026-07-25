@@ -253,15 +253,24 @@ func TestBrowseIntoDetails(t *testing.T) {
 	if m.focus != 1 {
 		t.Fatalf("tab should move focus to the table, focus=%d", m.focus)
 	}
-	m = up(m, tea.KeyMsg{Type: tea.KeyEnter}) // open details
-	if !m.detail {
-		t.Fatal("enter on an entry should open the details screen")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter}) // ↵ copies the password, does not open details
+	if m.detail {
+		t.Error("↵ on an entry should copy the password, not open the details screen")
 	}
-	if e := m.selEntry(); e == nil {
+	m = up(m, tea.KeyMsg{Type: tea.KeyRight}) // → opens details
+	if !m.detail {
+		t.Fatal("→ on an entry should open the details screen")
+	}
+	e := m.selEntry()
+	if e == nil {
 		t.Fatal("details screen has no selected entry")
 	}
-	if !strings.Contains(m.View(), "Username") {
-		t.Error("details should show the Username field")
+	view := m.View()
+	if !strings.Contains(view, "user") || !strings.Contains(view, "password") {
+		t.Error("details should show the user and password fields")
+	}
+	if e.Username != "" && !strings.Contains(view, e.Username) {
+		t.Errorf("details should show the username %q", e.Username)
 	}
 	// reveal toggles, esc leaves
 	m = up(m, tea.KeyMsg{Type: tea.KeyCtrlR})
@@ -271,6 +280,68 @@ func TestBrowseIntoDetails(t *testing.T) {
 	m = up(m, tea.KeyMsg{Type: tea.KeyEsc})
 	if m.detail {
 		t.Error("esc should leave the details screen")
+	}
+}
+
+// Copying several entries in a row must not stack overlapping countdown tick
+// loops (which made the timer run 2×, 3×… too fast).
+func TestCountdownDoesNotStack(t *testing.T) {
+	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = typeStr(m, "db") // db-prod, db-staging
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if len(m.results) < 2 {
+		t.Fatalf("need at least two results, got %d", len(m.results))
+	}
+
+	nm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // copy the first
+	m = nm.(Model)
+	if m.remaining == 0 {
+		t.Skip("clipboard unavailable in this environment")
+	}
+	if cmd == nil {
+		t.Fatal("the first copy should start the countdown tick loop")
+	}
+
+	m = up(m, tea.KeyMsg{Type: tea.KeyDown})           // select another result
+	nm, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // copy again while counting down
+	m = nm.(Model)
+	if cmd != nil {
+		t.Error("a copy while the countdown is running must not start a second tick loop")
+	}
+	// one tick still decrements by exactly one second
+	before := m.remaining
+	nm, _ = m.Update(tickMsg(time.Now()))
+	m = nm.(Model)
+	if m.remaining != before-1 {
+		t.Errorf("a single tick should drop the timer by 1, got %d → %d", before, m.remaining)
+	}
+}
+
+// g on a search result leaves the search and lands on that entry's folder.
+func TestGotoFolderFromResults(t *testing.T) {
+	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = typeStr(m, "router")                  // personal · Net · router
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter}) // apply filter, leave the box
+	if !m.showResults() || len(m.results) == 0 {
+		t.Fatalf("expected results for 'router', got %d", len(m.results))
+	}
+	want := m.results[m.sel].Entry
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+
+	if m.searching() {
+		t.Error("g should clear the search")
+	}
+	f := m.currentFolder()
+	if f == nil {
+		t.Fatal("g should select a folder in the tree")
+	}
+	if got := folderCrumb(m.visible(), m.tsel); got != want.Source+" › "+strings.ReplaceAll(want.Path, "/", " › ") {
+		t.Errorf("landed on %q, want the entry's folder (%s · %s)", got, want.Source, want.Path)
+	}
+	if e := m.selEntry(); e == nil || e.Title != want.Title {
+		t.Errorf("should select the entry %q in the folder", want.Title)
 	}
 }
 

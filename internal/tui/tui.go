@@ -85,7 +85,9 @@ type Model struct {
 	ulStats  []srcStat       // per-source status rows for the unlock table
 	ulErr    string          // inline error (wrong password)
 	ulBusy   bool            // an open attempt (Argon2) is running
-	ulExcl   []session.Excluded // non-credential sources dropped from the last open
+	ulSkip   map[string]bool // sources the user chose to skip (esc)
+
+	excluded []session.Excluded // sources that could not be opened, shown while browsing
 
 	timeout    time.Duration
 	copied     string
@@ -261,8 +263,15 @@ func (m *Model) copySel(what string) tea.Cmd {
 	}
 	m.copied = e.Source + " · " + e.Path
 	m.copiedWhat = what
+	// A countdown already running means a tick loop is live: just refresh the
+	// timer and let that single loop carry it. Starting another tick() here would
+	// stack overlapping loops, and the countdown would run 2×, 3×… too fast.
+	running := m.remaining > 0
 	if m.remaining = int(m.timeout.Seconds()); m.remaining < 1 {
 		m.remaining = 1
+	}
+	if running {
+		return nil
 	}
 	return tick()
 }
@@ -414,8 +423,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "enter":
 				if m.sel < len(m.results) {
-					m.detail, m.reveal = true, false
+					return m, m.copySel("password") // ↵ copies straight from the results
 				}
+			case "right", "tab":
+				if m.sel < len(m.results) {
+					m.detail, m.reveal = true, false // → opens the entry details
+				}
+			case "g":
+				return m.gotoResultFolder(), nil
 			case "esc":
 				m.input.SetValue("")
 				m.results = nil
@@ -467,6 +482,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else if len(folder.entries) > 0 {
 					m.focus, m.esel = 1, 0
 				}
+			} else if m.focus == 1 && folder != nil && m.esel < len(folder.entries) {
+				m.detail, m.reveal = true, false // → opens the entry details
 			}
 		case "left":
 			if m.focus == 1 {
@@ -480,7 +497,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					folder.expanded = !folder.expanded
 				}
 			} else if folder != nil && m.esel < len(folder.entries) {
-				m.detail, m.reveal = true, false
+				return m, m.copySel("password") // ↵ copies straight from the list
 			}
 		case "esc":
 			if m.focus == 1 {

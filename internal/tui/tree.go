@@ -88,3 +88,84 @@ func visibleTree(roots []*node) []treeLine {
 	}
 	return out
 }
+
+// gotoResultFolder leaves the search and reveals the selected result's folder in
+// the tree — expanding the source and every folder on the way — then selects the
+// entry there. It's the "g" (goto folder) action from the results list.
+func (m Model) gotoResultFolder() Model {
+	if m.sel < 0 || m.sel >= len(m.results) {
+		return m
+	}
+	e := m.results[m.sel].Entry
+
+	m.searchMode = false
+	m.input.Blur()
+	m.input.SetValue("")
+	m.results = nil
+	m.sel = 0
+
+	var cur *node
+	for _, r := range m.roots {
+		if r.name == e.Source {
+			cur = r
+			break
+		}
+	}
+	if cur == nil {
+		return m
+	}
+	cur.expanded = true
+	for _, seg := range strings.Split(e.Path, "/") {
+		if seg == "" {
+			continue
+		}
+		var next *node
+		for _, c := range cur.children {
+			if c.name == seg {
+				next = c
+				break
+			}
+		}
+		if next == nil {
+			break
+		}
+		next.expanded = true
+		cur = next
+	}
+
+	for i, tl := range visibleTree(m.roots) {
+		if tl.node == cur {
+			m.tsel = i
+			break
+		}
+	}
+	m.esel = 0
+	for i := range cur.entries {
+		if cur.entries[i].Title == e.Title && cur.entries[i].Username == e.Username {
+			m.esel = i
+			break
+		}
+	}
+	if len(cur.entries) > 0 {
+		m.focus = 1 // land on the entry in the table
+	}
+	return m
+}
+
+// folderCrumb builds the "source › … › folder" trail for the row at sel by
+// walking back through the flattened tree: a node's parent is the nearest
+// earlier row one level shallower.
+func folderCrumb(flat []treeLine, sel int) string {
+	if sel < 0 || sel >= len(flat) {
+		return ""
+	}
+	depth := flat[sel].depth
+	crumbs := []string{flat[sel].node.name}
+	for i := sel - 1; i >= 0 && depth > 0; i-- {
+		if flat[i].depth == depth-1 {
+			crumbs = append([]string{flat[i].node.name}, crumbs...)
+			depth--
+		}
+	}
+	return strings.Join(crumbs, " › ")
+}
