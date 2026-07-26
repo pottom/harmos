@@ -12,7 +12,7 @@ type iconSet struct {
 	kdbx, pps           string
 	saved, search, none string
 	user, link, tag     string
-	clock               string
+	clock, note         string
 }
 
 // Nerd Font glyphs (private-use codepoints) — render as boxes without a Nerd
@@ -32,6 +32,7 @@ var nerdIcons = iconSet{
 	link:       "\uf0c1",
 	tag:        "\uf02b",
 	clock:      "\uf017",
+	note:       "\uf15c",
 }
 
 var plainIcons = iconSet{
@@ -48,6 +49,7 @@ var plainIcons = iconSet{
 	link:       "↗", // up-right arrow
 	tag:        "#",
 	clock:      "◷", // clock / totp
+	note:       "≡", // notes
 }
 
 func ic() iconSet {
