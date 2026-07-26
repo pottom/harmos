@@ -374,6 +374,33 @@ func TestDetailNotes(t *testing.T) {
 	}
 }
 
+// The detail split lists custom fields, masking protected ones until ctrl+r.
+func TestDetailCustomFields(t *testing.T) {
+	ents := []vault.Entry{{
+		Source: "s", Path: "p", Title: "cf", Password: secret.New("p"),
+		Custom: []vault.Field{
+			{Name: "Environment", Value: "production"},
+			{Name: "Recovery", Value: "8842", Protected: true},
+		},
+	}}
+	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 18})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = typeStr(m, "cf")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRight})
+	view := m.View()
+	if !strings.Contains(view, "Environment") || !strings.Contains(view, "production") {
+		t.Error("detail should list custom fields")
+	}
+	if strings.Contains(view, "8842") {
+		t.Error("a protected custom field must be masked before reveal")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyCtrlR})
+	if !strings.Contains(m.View(), "8842") {
+		t.Error("ctrl+r should reveal protected custom fields")
+	}
+}
+
 // g on a search result leaves the search and lands on that entry's folder.
 func TestGotoFolderFromResults(t *testing.T) {
 	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})

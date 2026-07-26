@@ -506,6 +506,26 @@ func (m Model) detailPane(w, h int) string {
 	if len(e.Tags) > 0 {
 		b = append(b, row(i.tag, "tags", strings.Join(e.Tags, ", "), theme.Dimmed, ""))
 	}
+	if len(e.Custom) > 0 {
+		b = append(b, "", "  "+theme.Acc.Render(i.entry)+"  "+theme.Dimmed.Render("fields"))
+		nameW := 0
+		for _, f := range e.Custom {
+			nameW = max(nameW, dw(f.Name))
+		}
+		nameW = min(nameW, 22)
+		for _, f := range e.Custom {
+			val, vst := f.Value, theme.Strong
+			if f.Protected {
+				if m.reveal {
+					vst = theme.Hi
+				} else {
+					val, vst = strings.Repeat("•", 8), theme.Acc
+				}
+			}
+			name := theme.Dimmed.Render(pad(trunc(f.Name, nameW), nameW))
+			b = append(b, "     "+name+"  "+vst.Render(trunc(val, max(4, rowW-7-nameW))))
+		}
+	}
 	if e.Notes != "" {
 		b = append(b, "", "  "+theme.Acc.Render(i.note)+"  "+theme.Dimmed.Render("notes"))
 		notes := strings.ReplaceAll(e.Notes, "\r\n", "\n")

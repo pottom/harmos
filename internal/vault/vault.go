@@ -35,8 +35,41 @@ type Entry struct {
 	URL      string
 	Tags     []string
 	Password secret.Secret
-	TOTP     string // the otpauth:// URI from the "otp" field, if any
-	Notes    string // the free-form Notes field, if any
+	TOTP     string  // the otpauth:// URI from the "otp" field, if any
+	Notes    string  // the free-form Notes field, if any
+	Custom   []Field // extra string fields beyond the standard ones
+}
+
+// Field is one custom string field on an entry (a KeePass key/value pair that is
+// not one of the standard fields). Protected fields (e.g. secondary secrets) are
+// masked in the UI.
+type Field struct {
+	Name      string
+	Value     string
+	Protected bool
+}
+
+// stdField reports whether a KeePass field key is a standard/internal one that
+// harmos surfaces through a dedicated Entry field (or hides), rather than as a
+// generic custom field. pps.Id and pps.TOTPSecret are harmos-internal.
+func stdField(key string) bool {
+	switch key {
+	case "Title", "UserName", "Password", "URL", "Notes", "otp",
+		"pps.Id", "pps.TOTPSecret":
+		return true
+	}
+	return false
+}
+
+// customLabel drops the harmos/Pleasant prefixes so a custom field reads by its
+// bare name (pps.cuf.Environment → Environment).
+func customLabel(key string) string {
+	for _, p := range []string{"pps.cuf.", "pps.caf."} {
+		if rest, ok := strings.CutPrefix(key, p); ok {
+			return rest
+		}
+	}
+	return key
 }
 
 // Vault is a read-only view of one opened kdbx.
@@ -113,6 +146,7 @@ func (v *Vault) walk(g gokeepasslib.Group, prefix string) {
 			Password: secret.New(e.GetPassword()),
 			TOTP:     e.GetContent("otp"),
 			Notes:    e.GetContent("Notes"),
+			Custom:   customFields(e),
 		})
 	}
 	for _, sub := range g.Groups {
@@ -122,6 +156,23 @@ func (v *Vault) walk(g gokeepasslib.Group, prefix string) {
 		}
 		v.walk(sub, child)
 	}
+}
+
+// customFields collects an entry's non-standard string fields, in file order,
+// with their protected flag (content is already decrypted by this point).
+func customFields(e *gokeepasslib.Entry) []Field {
+	var out []Field
+	for _, vd := range e.Values {
+		if stdField(vd.Key) {
+			continue
+		}
+		out = append(out, Field{
+			Name:      customLabel(vd.Key),
+			Value:     vd.Value.Content,
+			Protected: vd.Value.Protected.Bool,
+		})
+	}
+	return out
 }
 
 func splitTags(s string) []string {
