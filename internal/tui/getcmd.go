@@ -37,7 +37,7 @@ func (m Model) getCommand(e *vault.Entry) string {
 	if arg := m.configArg(); arg != "" {
 		b += " " + arg
 	}
-	return b
+	return b + " --quiet"
 }
 
 // pathRepeats reports whether more than one entry shares the full path, so the

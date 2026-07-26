@@ -17,12 +17,12 @@ func TestGetCommand(t *testing.T) {
 	}
 	m := New(ents, "", 30*time.Second)
 
-	if got := m.getCommand(&ents[0]); got != "harmos get --path '4ig/F/S/ANDOC'" {
+	if got := m.getCommand(&ents[0]); got != "harmos get --path '4ig/F/S/ANDOC' --quiet" {
 		t.Errorf("unique entry: got %q", got)
 	}
 	got := m.getCommand(&ents[1])
-	if !strings.Contains(got, "--path '4ig/F/Atlas'") || !strings.Contains(got, "--user 'a'") {
-		t.Errorf("duplicate path should add --user, got %q", got)
+	if !strings.Contains(got, "--path '4ig/F/Atlas'") || !strings.Contains(got, "--user 'a'") || !strings.HasSuffix(got, "--quiet") {
+		t.Errorf("duplicate path should add --user and --quiet, got %q", got)
 	}
 }
 

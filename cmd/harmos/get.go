@@ -19,7 +19,7 @@ import (
 
 func newGetCmd() *cobra.Command {
 	var configPath, selPath, selUser string
-	var doCopy, showOTP bool
+	var doCopy, showOTP, quiet bool
 	cmd := &cobra.Command{
 		Use:   "get [query]",
 		Short: "Print (or --copy) the matching password; refuses to guess when ambiguous",
@@ -29,7 +29,7 @@ func newGetCmd() *cobra.Command {
 			if len(args) == 1 {
 				query = args[0]
 			}
-			return runGet(configPath, query, selPath, selUser, doCopy, showOTP, cmd.OutOrStdout())
+			return runGet(configPath, query, selPath, selUser, doCopy, showOTP, quiet, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().StringVar(&configPath, "config", "", "config file (default: $XDG_CONFIG_HOME/harmos/config.toml)")
@@ -37,10 +37,11 @@ func newGetCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&showOTP, "otp", false, "print (or --copy) the current TOTP code instead of the password")
 	cmd.Flags().StringVar(&selPath, "path", "", "exact 'source/folder/title' selector — unambiguous, for scripts")
 	cmd.Flags().StringVar(&selUser, "user", "", "with --path, disambiguate duplicate entries by username")
+	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "print only the value — no provenance line on stderr")
 	return cmd
 }
 
-func runGet(configPath, query, selPath, selUser string, doCopy, showOTP bool, out io.Writer) error {
+func runGet(configPath, query, selPath, selUser string, doCopy, showOTP, quiet bool, out io.Writer) error {
 	res, cfg, err := openAll(configPath)
 	if err != nil {
 		return err
@@ -54,7 +55,7 @@ func runGet(configPath, query, selPath, selUser string, doCopy, showOTP bool, ou
 		if err != nil {
 			return err
 		}
-		return emitEntry(best, selPath, doCopy, showOTP, cfg, out)
+		return emitEntry(best, selPath, doCopy, showOTP, quiet, cfg, out)
 	}
 	if query == "" {
 		return fmt.Errorf("give a query or --path")
@@ -66,7 +67,7 @@ func runGet(configPath, query, selPath, selUser string, doCopy, showOTP bool, ou
 		return fmt.Errorf("no entry matches %q", query)
 
 	case len(hits) == 1 || hits[0].Score < hits[1].Score:
-		return emitEntry(hits[0].Entry, query, doCopy, showOTP, cfg, out)
+		return emitEntry(hits[0].Entry, query, doCopy, showOTP, quiet, cfg, out)
 
 	default:
 		// ambiguous — never guess in a scriptable command (spec §8b).
@@ -106,22 +107,24 @@ func resolveByPath(entries []vault.Entry, sel, user string) (vault.Entry, error)
 }
 
 // emitEntry prints or copies the entry's password (or TOTP), the shared tail of
-// the fuzzy and --path resolution paths.
-func emitEntry(e vault.Entry, ref string, doCopy, showOTP bool, cfg *config.Config, out io.Writer) error {
+// the fuzzy and --path resolution paths. quiet drops the stderr provenance line.
+func emitEntry(e vault.Entry, ref string, doCopy, showOTP, quiet bool, cfg *config.Config, out io.Writer) error {
 	if showOTP {
-		return emitOTP(e, ref, doCopy, cfg.ClipboardTimeout.Duration, out)
+		return emitOTP(e, ref, doCopy, quiet, cfg.ClipboardTimeout.Duration, out)
 	}
 	if doCopy {
-		return copyConcealed([]byte(e.Password.Reveal()), e.Source+" · "+e.Path, cfg.ClipboardTimeout.Duration)
+		return copyConcealed([]byte(e.Password.Reveal()), e.Source+" · "+e.Path, quiet, cfg.ClipboardTimeout.Duration)
 	}
 	// password → stdout, provenance → stderr, so pw=$(harmos get …) is clean.
 	emitf(out, "%s\n", e.Password.Reveal())
-	fmt.Fprintf(os.Stderr, "%s · %s · %s\n", e.Source, e.Path, e.Username)
+	if !quiet {
+		fmt.Fprintf(os.Stderr, "%s · %s · %s\n", e.Source, e.Path, e.Username)
+	}
 	return nil
 }
 
 // emitOTP prints (or copies) the entry's current TOTP code.
-func emitOTP(e vault.Entry, query string, doCopy bool, timeout time.Duration, out io.Writer) error {
+func emitOTP(e vault.Entry, query string, doCopy, quiet bool, timeout time.Duration, out io.Writer) error {
 	if e.TOTP == "" {
 		return fmt.Errorf("%q has no TOTP", query)
 	}
@@ -132,25 +135,29 @@ func emitOTP(e vault.Entry, query string, doCopy bool, timeout time.Duration, ou
 	now := time.Now()
 	code := k.Code(now)
 	if doCopy {
-		return copyConcealed([]byte(code), e.Source+" · "+e.Path+" (TOTP)", timeout)
+		return copyConcealed([]byte(code), e.Source+" · "+e.Path+" (TOTP)", quiet, timeout)
 	}
 	// code → stdout, provenance → stderr, so otp=$(harmos get --otp x) is clean.
 	emitf(out, "%s\n", code)
-	fmt.Fprintf(os.Stderr, "%s · %s · TOTP valid %ds\n", e.Source, e.Path, k.Remaining(now))
+	if !quiet {
+		fmt.Fprintf(os.Stderr, "%s · %s · TOTP valid %ds\n", e.Source, e.Path, k.Remaining(now))
+	}
 	return nil
 }
 
 // copyConcealed puts a value on the concealed clipboard, then clears it after the
 // timeout or on interrupt — and never clobbers a value the user copied since
-// (spec §9).
-func copyConcealed(value []byte, label string, timeout time.Duration) error {
+// (spec §9). quiet drops the status line.
+func copyConcealed(value []byte, label string, quiet bool, timeout time.Duration) error {
 	if err := clip.Copy(value); err != nil {
 		return err
 	}
 	for i := range value { // best-effort wipe of our local copy
 		value[i] = 0
 	}
-	fmt.Fprintf(os.Stderr, "copied %s — clears in %s (or on ctrl-c)\n", label, timeout)
+	if !quiet {
+		fmt.Fprintf(os.Stderr, "copied %s — clears in %s (or on ctrl-c)\n", label, timeout)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
