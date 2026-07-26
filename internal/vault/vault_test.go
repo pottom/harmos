@@ -33,6 +33,9 @@ func makeKDBX(t *testing.T, path string, creds *gokeepasslib.DBCredentials) {
 		val("URL", "https://db"),
 		pval("otp", "otpauth://totp/db-prod?secret=GEZDGNBVGY3TQOJQ&digits=6&period=30"),
 		val("Notes", "primary box\nrotate quarterly"),
+		val("pps.cuf.Environment", "prod"), // custom field → "Environment"
+		pval("Recovery", "r3c0v3ry"),       // protected custom field
+		val("pps.Id", "srv-123"),           // internal — must be hidden
 	)
 	e.Tags = "infra;prod"
 	infra := gokeepasslib.NewGroup()
@@ -98,6 +101,25 @@ func assertOneEntry(t *testing.T, v *Vault) {
 	}
 	if !strings.Contains(e.Notes, "rotate quarterly") {
 		t.Errorf("Notes field not read: %q", e.Notes)
+	}
+	// custom fields: pps.cuf.Environment surfaces as "Environment"; the protected
+	// Recovery field keeps its flag; pps.Id and the standard fields are hidden.
+	var envOK, recOK bool
+	for _, f := range e.Custom {
+		switch f.Name {
+		case "pps.Id", "Title", "Password", "otp":
+			t.Errorf("internal/standard field %q leaked into Custom", f.Name)
+		case "Environment":
+			envOK = f.Value == "prod"
+		case "Recovery":
+			recOK = f.Protected && f.Value == "r3c0v3ry"
+		}
+	}
+	if !envOK {
+		t.Error("pps.cuf.Environment should surface as a custom field named Environment")
+	}
+	if !recOK {
+		t.Error("protected Recovery field should be a protected custom field")
 	}
 	if len(e.Tags) != 2 {
 		t.Errorf("tags = %v, want 2", e.Tags)
