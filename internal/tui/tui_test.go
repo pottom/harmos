@@ -318,6 +318,45 @@ func TestCountdownDoesNotStack(t *testing.T) {
 	}
 }
 
+// A TOTP entry shows a live code row in the detail split and starts a refresh
+// tick; a non-TOTP entry does neither.
+func TestDetailTOTP(t *testing.T) {
+	ents := []vault.Entry{
+		{Source: "s", Path: "p", Title: "hasotp", Password: secret.New("p"),
+			TOTP: "otpauth://totp/s:x?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&digits=6"},
+		{Source: "s", Path: "p", Title: "plain", Password: secret.New("p")},
+	}
+	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 16})
+
+	// open the TOTP entry via search
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = typeStr(m, "hasotp")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+	nm, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = nm.(Model)
+	if !m.detail {
+		t.Fatal("→ should open the detail split")
+	}
+	if cmd == nil {
+		t.Error("opening a TOTP entry should start the refresh tick")
+	}
+	if !strings.Contains(m.View(), "totp") {
+		t.Error("the detail should show a totp row")
+	}
+
+	// a plain entry: no tick
+	m = up(m, tea.KeyMsg{Type: tea.KeyEsc}) // back to results
+	m = up(m, tea.KeyMsg{Type: tea.KeyEsc}) // clear search → tree
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = typeStr(m, "plain")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+	nm, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = nm.(Model)
+	if cmd != nil {
+		t.Error("a non-TOTP entry should not start a refresh tick")
+	}
+}
+
 // g on a search result leaves the search and lands on that entry's folder.
 func TestGotoFolderFromResults(t *testing.T) {
 	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})

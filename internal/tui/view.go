@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/pottom/harmos/internal/config"
+	"github.com/pottom/harmos/internal/otp"
 	"github.com/pottom/harmos/internal/theme"
 	"github.com/pottom/harmos/internal/vault"
 )
@@ -117,7 +119,11 @@ func (m Model) vaultBody() string {
 	searchLine := m.searchLine()
 	hint := m.hints()
 	if m.detail {
-		hint = theme.Faded.Render("↵ copy password · ctrl+r reveal · esc back")
+		h := "↵ copy password · ctrl+r reveal · esc back"
+		if e := m.selEntry(); e != nil && e.TOTP != "" {
+			h = "↵ copy password · ctrl+t copy totp · ctrl+r reveal · esc back"
+		}
+		hint = theme.Faded.Render(h)
 	}
 	bottom := m.countdown() + "\n" + m.footer(hint)
 	panelsH := max(3, m.h-3) // search line + countdown + footer
@@ -483,6 +489,16 @@ func (m Model) detailPane(w, h int) string {
 		"",
 		row(i.user, "user", user, userSt, userKey),
 		row(i.keyfile, "password", pwVal, pwSt, pwKey),
+	}
+	if e.TOTP != "" {
+		if k, err := otp.Parse(e.TOTP); err == nil {
+			now := time.Now()
+			code := k.Code(now)
+			if len(code) == 6 {
+				code = code[:3] + " " + code[3:] // 428 913
+			}
+			b = append(b, row(i.clock, "totp", code, theme.Hi, fmt.Sprintf("%ds · ctrl+t", k.Remaining(now))))
+		}
 	}
 	if e.URL != "" {
 		b = append(b, row(i.link, "url", e.URL, theme.Dimmed, "ctrl+o"))
