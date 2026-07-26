@@ -11,8 +11,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	gokeepasslib "github.com/tobischo/gokeepasslib/v3"
+	w "github.com/tobischo/gokeepasslib/v3/wrappers"
 
 	"github.com/pottom/harmos/internal/secret"
 )
@@ -38,7 +40,21 @@ type Entry struct {
 	TOTP     string  // the otpauth:// URI from the "otp" field, if any
 	Notes    string  // the free-form Notes field, if any
 	Custom   []Field // extra string fields beyond the standard ones
+
+	Created  time.Time    // zero if unset
+	Modified time.Time    // zero if unset
+	Expiry   time.Time    // zero unless the entry has an expiry set
+	Files    []Attachment // file attachments, if any
 }
+
+// Attachment is a file attached to an entry, decoded from the kdbx binary pool.
+type Attachment struct {
+	Name string
+	Data []byte
+}
+
+// Size is the attachment's byte length.
+func (a Attachment) Size() int { return len(a.Data) }
 
 // Field is one custom string field on an entry (a KeePass key/value pair that is
 // not one of the standard fields). Protected fields (e.g. secondary secrets) are
@@ -105,7 +121,7 @@ func Open(path, source string, creds Credentials) (*Vault, error) {
 	// The top-level group is the database root container; its own name is not
 	// part of entry paths (the source name provides the top-level identity).
 	for _, g := range db.Content.Root.Groups {
-		v.walk(g, "")
+		v.walk(db, g, "")
 	}
 	return v, nil
 }
@@ -133,7 +149,7 @@ func IsBadCredential(err error) bool {
 	return false
 }
 
-func (v *Vault) walk(g gokeepasslib.Group, prefix string) {
+func (v *Vault) walk(db *gokeepasslib.Database, g gokeepasslib.Group, prefix string) {
 	for i := range g.Entries {
 		e := &g.Entries[i]
 		v.Entries = append(v.Entries, Entry{
@@ -147,6 +163,10 @@ func (v *Vault) walk(g gokeepasslib.Group, prefix string) {
 			TOTP:     e.GetContent("otp"),
 			Notes:    e.GetContent("Notes"),
 			Custom:   customFields(e),
+			Created:  timeOf(e.Times.CreationTime),
+			Modified: timeOf(e.Times.LastModificationTime),
+			Expiry:   expiryOf(e.Times),
+			Files:    attachments(db, e),
 		})
 	}
 	for _, sub := range g.Groups {
@@ -154,8 +174,41 @@ func (v *Vault) walk(g gokeepasslib.Group, prefix string) {
 		if prefix != "" {
 			child = prefix + "/" + sub.Name
 		}
-		v.walk(sub, child)
+		v.walk(db, sub, child)
 	}
+}
+
+func timeOf(tw *w.TimeWrapper) time.Time {
+	if tw == nil {
+		return time.Time{}
+	}
+	return tw.Time
+}
+
+// expiryOf returns the entry's expiry only when the Expires flag is set.
+func expiryOf(td gokeepasslib.TimeData) time.Time {
+	if !td.Expires.Bool || td.ExpiryTime == nil {
+		return time.Time{}
+	}
+	return td.ExpiryTime.Time
+}
+
+// attachments decodes an entry's file attachments from the database binary pool.
+func attachments(db *gokeepasslib.Database, e *gokeepasslib.Entry) []Attachment {
+	var out []Attachment
+	for i := range e.Binaries {
+		ref := &e.Binaries[i]
+		bin := db.FindBinary(ref.Value.ID)
+		if bin == nil {
+			continue
+		}
+		data, err := bin.GetContentBytes()
+		if err != nil {
+			continue
+		}
+		out = append(out, Attachment{Name: ref.Name, Data: data})
+	}
+	return out
 }
 
 // customFields collects an entry's non-standard string fields, in file order,

@@ -100,7 +100,8 @@ type Model struct {
 	copiedWhat string
 	remaining  int
 
-	totpGen int // generation token for the live-TOTP refresh loop in detail view
+	totpGen int    // generation token for the live-TOTP refresh loop in detail view
+	flash   string // transient message (e.g. "saved attachment"), shown in the bottom line
 }
 
 // New builds the model over the given entries. configPath is the config file the
@@ -437,11 +438,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// ENTRY DETAILS — keys are commands.
 		if m.detail {
+			m.flash = "" // any key dismisses a transient message
 			switch key {
 			case "esc", "left":
 				m.detail, m.reveal = false, false
 			case "ctrl+r":
 				m.reveal = !m.reveal
+			case "s":
+				return m.saveAttachments()
 			case "ctrl+u":
 				return m, m.copySel("username")
 			case "ctrl+o":
