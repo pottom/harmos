@@ -55,6 +55,9 @@ func (m Model) View() string {
 	if m.locked {
 		return m.unlockView()
 	}
+	if m.attach != attachNone {
+		return m.attachView()
+	}
 	if m.help {
 		return m.helpView()
 	}

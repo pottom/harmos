@@ -102,6 +102,11 @@ type Model struct {
 
 	totpGen int    // generation token for the live-TOTP refresh loop in detail view
 	flash   string // transient message (e.g. "saved attachment"), shown in the bottom line
+
+	attach      int             // attachment-save modal: attachNone / attachPick / attachDest
+	attachSel   int             // selected attachment in the picker
+	attachAll   bool            // save all attachments vs the selected one
+	attachInput textinput.Model // destination-directory input
 }
 
 // New builds the model over the given entries. configPath is the config file the
@@ -372,6 +377,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.locked {
 			return m.updateUnlock(key, msg)
 		}
+		// The attachment-save modal owns every key while it is open.
+		if m.attach != attachNone {
+			return m.updateAttach(key, msg)
+		}
 		if key == "?" && !m.searchMode {
 			m.help = !m.help
 			return m, nil
@@ -445,7 +454,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "ctrl+r":
 				m.reveal = !m.reveal
 			case "s":
-				return m.saveAttachments()
+				if e := m.selEntry(); e != nil && len(e.Files) > 0 {
+					return m.openAttachments(), nil
+				}
 			case "ctrl+u":
 				return m, m.copySel("username")
 			case "ctrl+o":
