@@ -27,12 +27,28 @@ func (m Model) openAttachments() Model {
 	if e == nil || len(e.Files) == 0 {
 		return m
 	}
-	m.attachSel, m.attachAll = 0, false
+	m.attachSel = 0
+	m.attachCheck = make([]bool, len(e.Files))
 	if len(e.Files) == 1 {
 		return m.enterDest()
 	}
 	m.attach = attachPick
 	return m
+}
+
+// targetFiles is the attachment(s) a save will write: every checked file, or —
+// when nothing is checked — the one under the cursor.
+func (m Model) targetFiles(e *vault.Entry) []vault.Attachment {
+	var files []vault.Attachment
+	for i, on := range m.attachCheck {
+		if on && i < len(e.Files) {
+			files = append(files, e.Files[i])
+		}
+	}
+	if len(files) == 0 && m.attachSel < len(e.Files) {
+		files = []vault.Attachment{e.Files[m.attachSel]}
+	}
+	return files
 }
 
 // enterDest moves to the destination-directory prompt, prefilled with a sensible
@@ -68,11 +84,16 @@ func (m Model) updateAttach(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.attachSel < len(e.Files)-1 {
 				m.attachSel++
 			}
+		case " ": // toggle the file under the cursor
+			if m.attachSel < len(m.attachCheck) {
+				m.attachCheck[m.attachSel] = !m.attachCheck[m.attachSel]
+			}
+		case "a": // select all, or clear if all are already selected
+			on := !allChecked(m.attachCheck)
+			for i := range m.attachCheck {
+				m.attachCheck[i] = on
+			}
 		case "enter", "right":
-			m.attachAll = false
-			m = m.enterDest()
-		case "a":
-			m.attachAll = true
 			m = m.enterDest()
 		}
 		return m, nil
@@ -108,11 +129,7 @@ func (m Model) doSave(e *vault.Entry) Model {
 		m.flash = "could not use " + dir + ": " + err.Error()
 		return m
 	}
-	files := e.Files
-	if !m.attachAll {
-		files = e.Files[m.attachSel : m.attachSel+1]
-	}
-	saved, failed := saveFiles(files, dir)
+	saved, failed := saveFiles(m.targetFiles(e), dir)
 	m.flash = fmt.Sprintf("saved %s to %s", plural(saved, "file", "files"), dir)
 	if failed > 0 {
 		m.flash += fmt.Sprintf(" (%d failed)", failed)
@@ -186,9 +203,10 @@ func (m Model) attachView() string {
 		return m.vaultBody()
 	}
 	if m.attach == attachDest {
-		what := "all " + plural(len(e.Files), "file", "files")
-		if !m.attachAll && m.attachSel < len(e.Files) {
-			what = filepath.Base(e.Files[m.attachSel].Name)
+		targets := m.targetFiles(e)
+		what := plural(len(targets), "file", "files")
+		if len(targets) == 1 {
+			what = filepath.Base(targets[0].Name)
 		}
 		lines := []string{
 			"  " + theme.Faded.Render("save "+what+" to:"),
@@ -201,11 +219,32 @@ func (m Model) attachView() string {
 	var lines []string
 	for k, a := range e.Files {
 		size := humanBytes(int64(a.Size()))
+		box := "[ ] "
+		if k < len(m.attachCheck) && m.attachCheck[k] {
+			box = "[x] "
+		}
 		if k == m.attachSel {
-			lines = append(lines, theme.SelRow.Render(" ▸ "+a.Name+"  "+size+" "))
+			lines = append(lines, theme.SelRow.Render(" ▸ "+box+a.Name+"  "+size+" "))
 			continue
 		}
-		lines = append(lines, "   "+theme.Strong.Render(a.Name)+"  "+theme.Faded.Render(size))
+		mark := theme.Faded.Render("   " + box)
+		if k < len(m.attachCheck) && m.attachCheck[k] {
+			mark = "   " + theme.Ok.Render(box)
+		}
+		lines = append(lines, mark+theme.Strong.Render(a.Name)+"  "+theme.Faded.Render(size))
 	}
-	return m.modal("harmos", "attachments", lines, "↑↓ pick · ↵ choose folder · a all · esc cancel")
+	return m.modal("harmos", "attachments", lines, "↑↓ move · space select · a all · ↵ save · esc cancel")
+}
+
+// allChecked reports whether every attachment is selected (and at least one exists).
+func allChecked(check []bool) bool {
+	if len(check) == 0 {
+		return false
+	}
+	for _, on := range check {
+		if !on {
+			return false
+		}
+	}
+	return true
 }

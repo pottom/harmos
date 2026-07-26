@@ -104,8 +104,8 @@ type Model struct {
 	flash   string // transient message (e.g. "saved attachment"), shown in the bottom line
 
 	attach      int             // attachment-save modal: attachNone / attachPick / attachDest
-	attachSel   int             // selected attachment in the picker
-	attachAll   bool            // save all attachments vs the selected one
+	attachSel   int             // cursor position in the picker
+	attachCheck []bool          // per-attachment selection (space toggles)
 	attachInput textinput.Model // destination-directory input
 }
 

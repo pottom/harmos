@@ -87,9 +87,10 @@ func TestSaveAllAttachments(t *testing.T) {
 	})
 
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}) // all → destination
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}) // select all
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})                     // → destination
 	m = typeInto(m, dir)
-	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter}) // save
 
 	if !strings.Contains(m.flash, "saved 2 files") {
 		t.Errorf("expected a two-file save confirmation, got %q", m.flash)
@@ -99,5 +100,36 @@ func TestSaveAllAttachments(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "dup (2).txt")); err != nil {
 		t.Error("duplicate-named attachment not uniquified")
+	}
+}
+
+// space selects a subset; enter saves exactly those.
+func TestSaveMultiSelect(t *testing.T) {
+	dir := t.TempDir()
+	m := openFileEntry(t, []vault.Attachment{
+		{Name: "a.txt", Data: []byte("A")},
+		{Name: "b.txt", Data: []byte("B")},
+		{Name: "c.txt", Data: []byte("C")},
+	})
+
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}) // picker
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}}) // check a.txt
+	m = up(m, tea.KeyMsg{Type: tea.KeyDown})
+	m = up(m, tea.KeyMsg{Type: tea.KeyDown})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}}) // check c.txt
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})                     // → destination
+	m = typeInto(m, dir)
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter}) // save
+
+	if !strings.Contains(m.flash, "saved 2 files") {
+		t.Errorf("expected two files saved, got %q", m.flash)
+	}
+	for _, name := range []string{"a.txt", "c.txt"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("%s should have been saved", name)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "b.txt")); err == nil {
+		t.Error("b.txt was not selected and must not be saved")
 	}
 }
