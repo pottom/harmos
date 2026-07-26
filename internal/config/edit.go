@@ -116,11 +116,21 @@ func RemoveProfile(path, name string) (int, error) {
 // place if present, else inserting it before the first table — leaving the rest
 // of the file verbatim.
 func SetTopLevelKey(path, key, value string) error {
+	return setTopLevel(path, key, fmt.Sprintf("%s = %q", key, value))
+}
+
+// SetTopLevelBool sets a top-level boolean key (unquoted TOML).
+func SetTopLevelBool(path, key string, v bool) error {
+	return setTopLevel(path, key, fmt.Sprintf("%s = %t", key, v))
+}
+
+// setTopLevel updates key in place before the first table, or inserts newLine
+// there if it's absent.
+func setTopLevel(path, key, newLine string) error {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	newLine := fmt.Sprintf("%s = %q", key, value)
 	lines := strings.Split(string(content), "\n")
 
 	firstTable := len(lines)

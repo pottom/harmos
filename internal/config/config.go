@@ -65,7 +65,8 @@ type Profile struct {
 // Config is the whole configuration file.
 type Config struct {
 	Default          string    `toml:"default"`
-	Theme            string    `toml:"theme"` // built-in name or a themes/<name>.toml
+	Theme            string    `toml:"theme"`    // built-in name or a themes/<name>.toml
+	NerdFont         *bool     `toml:"nerdfont"` // nil = default on; set false for terminals without a Nerd Font
 	ClipboardTimeout Duration  `toml:"clipboard_timeout"`
 	Profiles         []Profile `toml:"profile"`
 }

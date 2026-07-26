@@ -24,9 +24,10 @@ const (
 const (
 	catSources = iota
 	catTheme
+	catIcons
 )
 
-var settingsCats = []string{"Sources", "Theme"}
+var settingsCats = []string{"Sources", "Theme", "Icons"}
 
 // updateSettings handles keys while the Settings tab is active: modal overlays
 // first, then the two-pane list (left = category, right = its content).
@@ -44,10 +45,31 @@ func (m Model) updateSettings(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.focus == 0 {
 		return m.updateSettingsNav(key)
 	}
-	if m.setCat == catTheme {
+	switch m.setCat {
+	case catTheme:
 		return m.updateThemePane(key)
+	case catIcons:
+		return m.updateIconsPane(key)
 	}
 	return m.updateSourcesPane(key)
+}
+
+// updateIconsPane toggles Nerd Font glyphs live and persists the choice.
+func (m Model) updateIconsPane(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "left", "esc":
+		m.focus = 0
+	case " ", "enter":
+		nerd = !nerd
+		if err := config.SetTopLevelBool(m.configPath, "nerdfont", nerd); err != nil {
+			m.setStatus = "could not save: " + err.Error()
+		} else if nerd {
+			m.setStatus = "Nerd Font icons on"
+		} else {
+			m.setStatus = "Nerd Font icons off"
+		}
+	}
+	return m, nil
 }
 
 // updateSettingsNav is the left pane: pick a category.
@@ -67,6 +89,9 @@ func (m Model) updateSettingsNav(key string) (tea.Model, tea.Cmd) {
 		return m.enterCategory(), nil
 	case "t":
 		m.setCat = catTheme
+		return m.enterCategory(), nil
+	case "i":
+		m.setCat = catIcons
 		return m.enterCategory(), nil
 	}
 	return m, nil

@@ -196,6 +196,8 @@ func (m Model) settingsView() string {
 	switch m.setCat {
 	case catTheme:
 		right = box("Theme  ·  live preview", m.themeName, m.themeLines(rightW-2), rightW, panelsH, m.focus == 1)
+	case catIcons:
+		right = box("Icons", onOff(nerd), m.iconsLines(rightW-2), rightW, panelsH, m.focus == 1)
 	default:
 		profs := m.sources()
 		right = box("Sources", fmt.Sprintf("%d", len(profs)), m.sourceLines(rightW-2, profs), rightW, panelsH, m.focus == 1)
@@ -222,6 +224,9 @@ func (m Model) settingsContext() string {
 	}
 	if m.setCat == catTheme {
 		return theme.Faded.Render(trunc("  active theme · "+m.themeName, m.w))
+	}
+	if m.setCat == catIcons {
+		return theme.Faded.Render(trunc("  Nerd Font icons · "+onOff(nerd), m.w))
 	}
 	profs := m.sources()
 	if m.setSel < len(profs) {
@@ -298,8 +303,39 @@ func (m Model) settingsHint() string {
 		return theme.Faded.Render("↑↓ pick · →/↵ open · 1 Vault")
 	case m.setCat == catTheme:
 		return theme.Faded.Render("↑↓ preview · ↵ save · ← back")
+	case m.setCat == catIcons:
+		return theme.Faded.Render("space toggle Nerd Font · ← back")
 	default:
 		return theme.Faded.Render("↑↓ select · a add · e edit · s sync · p save-pw · x clear-pw · d remove · ← back")
+	}
+}
+
+// onOff renders a boolean as "on"/"off".
+func onOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
+}
+
+// iconsLines is the Icons category pane: the current state plus a live glyph
+// preview, so the user can tell whether their terminal has a Nerd Font.
+func (m Model) iconsLines(_ int) []string {
+	i := ic()
+	state, st := "off", theme.Faded
+	if nerd {
+		state, st = "on", theme.Ok
+	}
+	preview := i.pps + "  " + i.kdbx + "  " + i.folder + "  " + i.keyfile + "  " + i.user + "  " + i.link + "  " + i.tag + "  " + i.clock
+	return []string{
+		"  " + theme.Dimmed.Render("Nerd Font icons  ") + st.Render(state),
+		"",
+		"  " + theme.Dimmed.Render("preview") + "   " + theme.Acc.Render(preview),
+		"",
+		"  " + theme.Faded.Render("Turn off if the icons show as boxes (□) —"),
+		"  " + theme.Faded.Render("your terminal has no Nerd Font."),
+		"",
+		"  " + theme.Faded.Render("HARMOS_NERDFONT overrides this when set."),
 	}
 }
 
@@ -674,6 +710,7 @@ func (m Model) helpView() string {
 				{"p / x", "Save / clear a keyring password"},
 				{"d", "Remove a source"},
 				{"t", "Change the color theme (live)"},
+				{"i", "Toggle Nerd Font icons"},
 			}},
 		}
 	} else {

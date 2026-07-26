@@ -1,10 +1,28 @@
 package tui
 
-import "os"
+import (
+	"os"
 
-// nerd reports whether to use Nerd Font glyphs. On by default; set HARMOS_NERDFONT=0
-// to fall back to plain Unicode on terminals without a Nerd Font.
-var nerd = os.Getenv("HARMOS_NERDFONT") != "0"
+	"github.com/pottom/harmos/internal/config"
+)
+
+// nerd reports whether to use Nerd Font glyphs. On by default; resolved at model
+// build time from the environment, then the config, then the default (see
+// resolveNerd). The Settings > Icons toggle flips it live.
+var nerd = true
+
+// resolveNerd decides whether to use Nerd Font glyphs: HARMOS_NERDFONT wins if
+// set (=0 off), else the config's nerdfont setting, else on. This lets a user on
+// a terminal without a Nerd Font turn the glyphs off and have it stick.
+func resolveNerd(cfg *config.Config) bool {
+	if v, ok := os.LookupEnv("HARMOS_NERDFONT"); ok {
+		return v != "0"
+	}
+	if cfg != nil && cfg.NerdFont != nil {
+		return *cfg.NerdFont
+	}
+	return true
+}
 
 type iconSet struct {
 	folder, folderOpen  string
