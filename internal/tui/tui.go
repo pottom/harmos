@@ -121,8 +121,10 @@ func New(entries []vault.Entry, configPath string, timeout time.Duration) Model 
 	roots := buildTree(entries)
 	themeName := "charm"
 	srcType := map[string]config.Type{}
+	var loaded *config.Config
 	if configPath != "" {
 		if cfg, err := config.Load(configPath); err == nil {
+			loaded = cfg
 			if cfg.Theme != "" {
 				themeName = cfg.Theme
 			}
@@ -131,6 +133,7 @@ func New(entries []vault.Entry, configPath string, timeout time.Duration) Model 
 			}
 		}
 	}
+	nerd = resolveNerd(loaded) // env > config > default
 	return Model{
 		matcher:    search.New(entries),
 		roots:      roots,
