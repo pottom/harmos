@@ -2,13 +2,58 @@ package main
 
 import (
 	"bytes"
+	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/vault"
 )
+
+// captureStderr runs fn with os.Stderr redirected to a buffer and returns what
+// it wrote.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	fn()
+	_ = w.Close()
+	os.Stderr = old
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	return buf.String()
+}
+
+func TestEmitEntryQuiet(t *testing.T) {
+	e := vault.Entry{Source: "s", Path: "p", Username: "u", Password: secret.New("pw")}
+
+	var out bytes.Buffer
+	stderr := captureStderr(t, func() {
+		_ = emitEntry(e, "ref", false, false, true, &config.Config{}, &out)
+	})
+	if stderr != "" {
+		t.Errorf("--quiet should write nothing to stderr, got %q", stderr)
+	}
+	if strings.TrimSpace(out.String()) != "pw" {
+		t.Errorf("stdout should be just the password, got %q", out.String())
+	}
+
+	// without --quiet, the provenance line is on stderr
+	out.Reset()
+	stderr = captureStderr(t, func() {
+		_ = emitEntry(e, "ref", false, false, false, &config.Config{}, &out)
+	})
+	if !strings.Contains(stderr, "s · p · u") {
+		t.Errorf("non-quiet should print provenance to stderr, got %q", stderr)
+	}
+}
 
 func TestResolveByPath(t *testing.T) {
 	ents := []vault.Entry{
@@ -36,7 +81,7 @@ func TestEmitOTP(t *testing.T) {
 		TOTP: "otpauth://totp/s:x?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&digits=6&period=30",
 	}
 	var buf bytes.Buffer
-	if err := emitOTP(e, "x", false, time.Second, &buf); err != nil {
+	if err := emitOTP(e, "x", false, false, time.Second, &buf); err != nil {
 		t.Fatal(err)
 	}
 	code := strings.TrimSpace(buf.String())
@@ -52,7 +97,7 @@ func TestEmitOTP(t *testing.T) {
 
 func TestEmitOTPNoTOTP(t *testing.T) {
 	var buf bytes.Buffer
-	if err := emitOTP(vault.Entry{Source: "s"}, "x", false, time.Second, &buf); err == nil {
+	if err := emitOTP(vault.Entry{Source: "s"}, "x", false, false, time.Second, &buf); err == nil {
 		t.Error("emitOTP on an entry without a TOTP should error")
 	}
 }
