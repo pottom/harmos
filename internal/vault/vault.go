@@ -47,6 +47,15 @@ type Entry struct {
 	Files    []Attachment // file attachments, if any
 }
 
+// FullPath is the entry's unambiguous "source/folder/title" selector — the same
+// trail shown as a breadcrumb, joined with "/". Used by `harmos get --path`.
+func (e Entry) FullPath() string {
+	if e.Path == "" {
+		return e.Source + "/" + e.Title
+	}
+	return e.Source + "/" + e.Path + "/" + e.Title
+}
+
 // Attachment is a file attached to an entry, decoded from the kdbx binary pool.
 type Attachment struct {
 	Name string

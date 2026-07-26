@@ -466,6 +466,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.copySel("URL")
 			case "ctrl+t":
 				return m, m.copySel("totp")
+			case "c":
+				return m.copyGetCommand()
 			case "enter", "ctrl+y":
 				return m, m.copySel("password")
 			}
@@ -474,10 +476,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// RESULTS BROWSE — a filter is applied; arrows walk the ranked list.
 		if m.showResults() {
+			m.flash = "" // any key dismisses a transient message
 			switch key {
 			case "/":
 				m.searchMode = true
 				return m, m.input.Focus()
+			case "c":
+				return m.copyGetCommand()
 			case "up", "ctrl+p":
 				if m.sel > 0 {
 					m.sel--
@@ -513,6 +518,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// TREE BROWSE — the base surface. Letters are free for future hotkeys.
+		m.flash = "" // any key dismisses a transient message
 		folder := m.currentFolder()
 		switch key {
 		case "/":
@@ -520,6 +526,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.searchMode = true
 			m.refilter()
 			return m, m.input.Focus()
+		case "c":
+			if m.focus == 1 { // an entry is selected in the table
+				return m.copyGetCommand()
+			}
 		case "up", "ctrl+p":
 			if m.focus == 0 {
 				if m.tsel > 0 {

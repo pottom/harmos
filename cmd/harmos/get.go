@@ -11,34 +11,54 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/pottom/harmos/internal/clip"
+	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/otp"
 	"github.com/pottom/harmos/internal/search"
 	"github.com/pottom/harmos/internal/vault"
 )
 
 func newGetCmd() *cobra.Command {
-	var configPath string
+	var configPath, selPath, selUser string
 	var doCopy, showOTP bool
 	cmd := &cobra.Command{
-		Use:   "get <query>",
+		Use:   "get [query]",
 		Short: "Print (or --copy) the matching password; refuses to guess when ambiguous",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runGet(configPath, args[0], doCopy, showOTP, cmd.OutOrStdout())
+			query := ""
+			if len(args) == 1 {
+				query = args[0]
+			}
+			return runGet(configPath, query, selPath, selUser, doCopy, showOTP, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().StringVar(&configPath, "config", "", "config file (default: $XDG_CONFIG_HOME/harmos/config.toml)")
 	cmd.Flags().BoolVar(&doCopy, "copy", false, "copy to the clipboard (concealed), auto-cleared after the timeout")
 	cmd.Flags().BoolVar(&showOTP, "otp", false, "print (or --copy) the current TOTP code instead of the password")
+	cmd.Flags().StringVar(&selPath, "path", "", "exact 'source/folder/title' selector — unambiguous, for scripts")
+	cmd.Flags().StringVar(&selUser, "user", "", "with --path, disambiguate duplicate entries by username")
 	return cmd
 }
 
-func runGet(configPath, query string, doCopy, showOTP bool, out io.Writer) error {
+func runGet(configPath, query, selPath, selUser string, doCopy, showOTP bool, out io.Writer) error {
 	res, cfg, err := openAll(configPath)
 	if err != nil {
 		return err
 	}
 	warnExcluded(res)
+
+	// --path is an exact selector for scripts (the copy-command action in the TUI
+	// emits it); it never fuzzy-matches or guesses.
+	if selPath != "" {
+		best, err := resolveByPath(res.Entries, selPath, selUser)
+		if err != nil {
+			return err
+		}
+		return emitEntry(best, selPath, doCopy, showOTP, cfg, out)
+	}
+	if query == "" {
+		return fmt.Errorf("give a query or --path")
+	}
 
 	hits := search.New(res.Entries).Match(query)
 	switch {
@@ -46,18 +66,7 @@ func runGet(configPath, query string, doCopy, showOTP bool, out io.Writer) error
 		return fmt.Errorf("no entry matches %q", query)
 
 	case len(hits) == 1 || hits[0].Score < hits[1].Score:
-		// a unique best — safe to return.
-		best := hits[0].Entry
-		if showOTP {
-			return emitOTP(best, query, doCopy, cfg.ClipboardTimeout.Duration, out)
-		}
-		if doCopy {
-			return copyConcealed([]byte(best.Password.Reveal()), best.Source+" · "+best.Path, cfg.ClipboardTimeout.Duration)
-		}
-		// password → stdout, provenance → stderr, so pw=$(harmos get x) is clean.
-		emitf(out, "%s\n", best.Password.Reveal())
-		fmt.Fprintf(os.Stderr, "%s · %s · %s\n", best.Source, best.Path, best.Username)
-		return nil
+		return emitEntry(hits[0].Entry, query, doCopy, showOTP, cfg, out)
 
 	default:
 		// ambiguous — never guess in a scriptable command (spec §8b).
@@ -70,6 +79,45 @@ func runGet(configPath, query string, doCopy, showOTP bool, out io.Writer) error
 		}
 		return fmt.Errorf("refusing to guess; qualify the query")
 	}
+}
+
+// resolveByPath finds the one entry whose full path matches sel exactly (and
+// username, if given). It errors — rather than guessing — when zero or several
+// match.
+func resolveByPath(entries []vault.Entry, sel, user string) (vault.Entry, error) {
+	var hits []vault.Entry
+	for _, e := range entries {
+		if e.FullPath() == sel && (user == "" || e.Username == user) {
+			hits = append(hits, e)
+		}
+	}
+	switch len(hits) {
+	case 0:
+		return vault.Entry{}, fmt.Errorf("no entry at %q", sel)
+	case 1:
+		return hits[0], nil
+	default:
+		fmt.Fprintf(os.Stderr, "ambiguous: %q matches several entries — add --user:\n", sel)
+		for _, e := range hits {
+			fmt.Fprintf(os.Stderr, "  --user %q\n", e.Username)
+		}
+		return vault.Entry{}, fmt.Errorf("refusing to guess; add --user")
+	}
+}
+
+// emitEntry prints or copies the entry's password (or TOTP), the shared tail of
+// the fuzzy and --path resolution paths.
+func emitEntry(e vault.Entry, ref string, doCopy, showOTP bool, cfg *config.Config, out io.Writer) error {
+	if showOTP {
+		return emitOTP(e, ref, doCopy, cfg.ClipboardTimeout.Duration, out)
+	}
+	if doCopy {
+		return copyConcealed([]byte(e.Password.Reveal()), e.Source+" · "+e.Path, cfg.ClipboardTimeout.Duration)
+	}
+	// password → stdout, provenance → stderr, so pw=$(harmos get …) is clean.
+	emitf(out, "%s\n", e.Password.Reveal())
+	fmt.Fprintf(os.Stderr, "%s · %s · %s\n", e.Source, e.Path, e.Username)
+	return nil
 }
 
 // emitOTP prints (or copies) the entry's current TOTP code.
