@@ -131,7 +131,7 @@ func (m Model) vaultBody() string {
 				parts = append(parts, "s save files")
 			}
 		}
-		parts = append(parts, "ctrl+r reveal", "esc back")
+		parts = append(parts, "c copy get-cmd", "ctrl+r reveal", "esc back")
 		hint = theme.Faded.Render(strings.Join(parts, " · "))
 	}
 	bottom := m.countdown() + "\n" + m.footer(hint)
@@ -667,9 +667,9 @@ func (m Model) hints() string {
 	case m.searchMode:
 		full = "type to filter · ↑↓ pick · ↵ apply · esc cancel"
 	case m.showResults():
-		full = "↑↓ results · ↵ copy pw · → details · g folder · / edit · esc clear"
+		full = "↑↓ results · ↵ copy pw · → details · c get-cmd · g folder · / edit · esc clear"
 	case m.focus == 1:
-		full = "↑↓ move · ↵ copy pw · → details · ← back · / search · q quit · ?"
+		full = "↑↓ move · ↵ copy pw · → details · c get-cmd · ← back · / search · ?"
 	default:
 		full = "↑↓ move · →/⇥ into · ← collapse · ↵ open folder · / search · q quit · ?"
 	}
