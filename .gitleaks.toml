@@ -1,0 +1,12 @@
+title = "harmos gitleaks config"
+
+# Use the upstream default rules, plus a narrow allowlist below.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic TOTP secrets in tests are not real credentials. Every otpauth:// URI and base32 secret in the test suite derives from the public RFC 6238 seed (ASCII \"12345678901234567890\" → base32 GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ). Real infra secrets never enter the repo."
+regexes = [
+  # the RFC 6238 base32 test seed and its truncations, used across the otp/get/vault/tui tests
+  '''GEZDGNBV[A-Z2-7]*''',
+]
