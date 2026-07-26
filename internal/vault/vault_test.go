@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	gokeepasslib "github.com/tobischo/gokeepasslib/v3"
 	w "github.com/tobischo/gokeepasslib/v3/wrappers"
@@ -38,6 +39,10 @@ func makeKDBX(t *testing.T, path string, creds *gokeepasslib.DBCredentials) {
 		val("pps.Id", "srv-123"),           // internal — must be hidden
 	)
 	e.Tags = "infra;prod"
+	e.Times = gokeepasslib.NewTimeData()
+	e.Times.LastModificationTime = &w.TimeWrapper{Time: time.Date(2026, 1, 15, 9, 0, 0, 0, time.UTC)}
+	bin := db.AddBinary([]byte("attachment-bytes"))
+	e.Binaries = append(e.Binaries, bin.CreateReference("notes.txt"))
 	infra := gokeepasslib.NewGroup()
 	infra.Name = "Infra"
 	infra.Entries = []gokeepasslib.Entry{e}
@@ -120,6 +125,12 @@ func assertOneEntry(t *testing.T, v *Vault) {
 	}
 	if !recOK {
 		t.Error("protected Recovery field should be a protected custom field")
+	}
+	if e.Modified.IsZero() || e.Modified.Year() != 2026 {
+		t.Errorf("modified time not read: %v", e.Modified)
+	}
+	if len(e.Files) != 1 || e.Files[0].Name != "notes.txt" || string(e.Files[0].Data) != "attachment-bytes" {
+		t.Errorf("attachment not read: %+v", e.Files)
 	}
 	if len(e.Tags) != 2 {
 		t.Errorf("tags = %v, want 2", e.Tags)

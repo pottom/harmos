@@ -119,11 +119,17 @@ func (m Model) vaultBody() string {
 	searchLine := m.searchLine()
 	hint := m.hints()
 	if m.detail {
-		h := "↵ copy password · ctrl+r reveal · esc back"
-		if e := m.selEntry(); e != nil && e.TOTP != "" {
-			h = "↵ copy password · ctrl+t copy totp · ctrl+r reveal · esc back"
+		parts := []string{"↵ copy password"}
+		if e := m.selEntry(); e != nil {
+			if e.TOTP != "" {
+				parts = append(parts, "ctrl+t copy totp")
+			}
+			if len(e.Files) > 0 {
+				parts = append(parts, "s save files")
+			}
 		}
-		hint = theme.Faded.Render(h)
+		parts = append(parts, "ctrl+r reveal", "esc back")
+		hint = theme.Faded.Render(strings.Join(parts, " · "))
 	}
 	bottom := m.countdown() + "\n" + m.footer(hint)
 	panelsH := max(3, m.h-3) // search line + countdown + footer
@@ -526,6 +532,26 @@ func (m Model) detailPane(w, h int) string {
 			b = append(b, "     "+name+"  "+vst.Render(trunc(val, max(4, rowW-7-nameW))))
 		}
 	}
+	if !e.Modified.IsZero() {
+		b = append(b, row(i.clock, "modified", e.Modified.Format("2006-01-02"), theme.Dimmed, ""))
+	}
+	if !e.Expiry.IsZero() {
+		date := e.Expiry.Format("2006-01-02")
+		txt, st := "expires "+date, theme.Dimmed
+		switch d := time.Until(e.Expiry); {
+		case d < 0:
+			txt, st = "expired "+date, theme.Bad
+		case d < 14*24*time.Hour:
+			txt, st = "expires "+date+" · soon", theme.Bad
+		}
+		b = append(b, row(i.clock, "expiry", txt, st, ""))
+	}
+	if len(e.Files) > 0 {
+		b = append(b, "", "  "+theme.Acc.Render(i.kdbx)+"  "+theme.Dimmed.Render("attachments · s saves them"))
+		for _, a := range e.Files {
+			b = append(b, "     "+theme.Strong.Render(trunc(a.Name, rowW-16))+"  "+theme.Faded.Render(humanBytes(int64(a.Size()))))
+		}
+	}
 	if e.Notes != "" {
 		b = append(b, "", "  "+theme.Acc.Render(i.note)+"  "+theme.Dimmed.Render("notes"))
 		notes := strings.ReplaceAll(e.Notes, "\r\n", "\n")
@@ -556,6 +582,9 @@ func (m Model) breadcrumb(e *vault.Entry) string {
 
 func (m Model) countdown() string {
 	if m.remaining <= 0 {
+		if m.flash != "" {
+			return theme.Ok.Render(trunc("  "+m.flash, m.w))
+		}
 		// idle: show where the selected entry lives, rather than a dead line
 		if e := m.selEntry(); e != nil {
 			loc := e.Source
