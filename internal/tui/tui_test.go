@@ -357,6 +357,23 @@ func TestDetailTOTP(t *testing.T) {
 	}
 }
 
+// The detail split shows the Notes field, wrapped.
+func TestDetailNotes(t *testing.T) {
+	ents := []vault.Entry{{
+		Source: "s", Path: "p", Title: "withnotes", Password: secret.New("p"),
+		Notes: "line one here\nsecond line of the note",
+	}}
+	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 18})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = typeStr(m, "withnotes")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRight})
+	view := m.View()
+	if !strings.Contains(view, "notes") || !strings.Contains(view, "second line") {
+		t.Error("the detail should show the notes field")
+	}
+}
+
 // g on a search result leaves the search and lands on that entry's folder.
 func TestGotoFolderFromResults(t *testing.T) {
 	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})

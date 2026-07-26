@@ -32,6 +32,7 @@ func makeKDBX(t *testing.T, path string, creds *gokeepasslib.DBCredentials) {
 		pval("Password", "secret-pw"),
 		val("URL", "https://db"),
 		pval("otp", "otpauth://totp/db-prod?secret=GEZDGNBVGY3TQOJQ&digits=6&period=30"),
+		val("Notes", "primary box\nrotate quarterly"),
 	)
 	e.Tags = "infra;prod"
 	infra := gokeepasslib.NewGroup()
@@ -94,6 +95,9 @@ func assertOneEntry(t *testing.T, v *Vault) {
 	}
 	if !strings.HasPrefix(e.TOTP, "otpauth://totp/") {
 		t.Errorf("otp field not read into TOTP: %q", e.TOTP)
+	}
+	if !strings.Contains(e.Notes, "rotate quarterly") {
+		t.Errorf("Notes field not read: %q", e.Notes)
 	}
 	if len(e.Tags) != 2 {
 		t.Errorf("tags = %v, want 2", e.Tags)

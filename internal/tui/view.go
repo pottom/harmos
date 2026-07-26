@@ -506,6 +506,13 @@ func (m Model) detailPane(w, h int) string {
 	if len(e.Tags) > 0 {
 		b = append(b, row(i.tag, "tags", strings.Join(e.Tags, ", "), theme.Dimmed, ""))
 	}
+	if e.Notes != "" {
+		b = append(b, "", "  "+theme.Acc.Render(i.note)+"  "+theme.Dimmed.Render("notes"))
+		notes := strings.ReplaceAll(e.Notes, "\r\n", "\n")
+		for _, ln := range strings.Split(ansi.Wrap(notes, rowW-2, " -"), "\n") {
+			b = append(b, "     "+theme.Faded.Render(ln))
+		}
+	}
 
 	return box(m.breadcrumb(e), "", b, w, h, true)
 }
