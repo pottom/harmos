@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	gokeepasslib "github.com/tobischo/gokeepasslib/v3"
@@ -30,6 +31,7 @@ func makeKDBX(t *testing.T, path string, creds *gokeepasslib.DBCredentials) {
 		val("UserName", "svc"),
 		pval("Password", "secret-pw"),
 		val("URL", "https://db"),
+		pval("otp", "otpauth://totp/db-prod?secret=GEZDGNBVGY3TQOJQ&digits=6&period=30"),
 	)
 	e.Tags = "infra;prod"
 	infra := gokeepasslib.NewGroup()
@@ -89,6 +91,9 @@ func assertOneEntry(t *testing.T, v *Vault) {
 	}
 	if e.Password.Reveal() != "secret-pw" {
 		t.Error("password did not round-trip")
+	}
+	if !strings.HasPrefix(e.TOTP, "otpauth://totp/") {
+		t.Errorf("otp field not read into TOTP: %q", e.TOTP)
 	}
 	if len(e.Tags) != 2 {
 		t.Errorf("tags = %v, want 2", e.Tags)

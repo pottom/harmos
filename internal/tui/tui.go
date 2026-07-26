@@ -16,6 +16,7 @@ import (
 	"github.com/pottom/harmos/internal/clip"
 	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/keyring"
+	"github.com/pottom/harmos/internal/otp"
 	"github.com/pottom/harmos/internal/search"
 	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/session"
@@ -24,6 +25,10 @@ import (
 
 type tickMsg time.Time
 type clearedMsg struct{}
+
+// totpTickMsg drives the once-a-second refresh of a live TOTP code in the detail
+// view; the int is a generation token so only the latest open keeps ticking.
+type totpTickMsg int
 
 // Model is the TUI state machine (see docs/design/harmos-tui-interaction.md).
 type Model struct {
@@ -94,6 +99,8 @@ type Model struct {
 	copied     string
 	copiedWhat string
 	remaining  int
+
+	totpGen int // generation token for the live-TOTP refresh loop in detail view
 }
 
 // New builds the model over the given entries. configPath is the config file the
@@ -173,6 +180,21 @@ func (m Model) intoBrowsing(entries []vault.Entry) Model {
 
 func tick() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
+
+func totpTick(gen int) tea.Cmd {
+	return tea.Tick(time.Second, func(time.Time) tea.Msg { return totpTickMsg(gen) })
+}
+
+// openDetail enters the entry-detail split. If the entry carries a TOTP it starts
+// a fresh once-a-second refresh loop so the code and its countdown stay live.
+func (m Model) openDetail() (tea.Model, tea.Cmd) {
+	m.detail, m.reveal = true, false
+	if e := m.selEntry(); e != nil && e.TOTP != "" {
+		m.totpGen++
+		return m, totpTick(m.totpGen)
+	}
+	return m, nil
 }
 
 // clearClip clears the concealed clipboard unless the user copied something else
@@ -260,6 +282,12 @@ func (m *Model) copySel(what string) tea.Cmd {
 		val = e.Username
 	case "URL":
 		val = e.URL
+	case "totp":
+		k, err := otp.Parse(e.TOTP)
+		if err != nil {
+			return nil
+		}
+		val, what = k.Code(time.Now()), "TOTP"
 	default:
 		val, what = e.Password.Reveal(), "password"
 	}
@@ -302,6 +330,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case clearedMsg:
+		return m, nil
+
+	case totpTickMsg:
+		// keep re-rendering while the latest detail view shows a TOTP entry
+		if int(msg) == m.totpGen && m.detail {
+			if e := m.selEntry(); e != nil && e.TOTP != "" {
+				return m, totpTick(m.totpGen)
+			}
+		}
 		return m, nil
 
 	case unlockDoneMsg:
@@ -409,6 +446,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.copySel("username")
 			case "ctrl+o":
 				return m, m.copySel("URL")
+			case "ctrl+t":
+				return m, m.copySel("totp")
 			case "enter", "ctrl+y":
 				return m, m.copySel("password")
 			}
@@ -435,7 +474,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "right", "tab":
 				if m.sel < len(m.results) {
-					m.detail, m.reveal = true, false // → opens the entry details
+					return m.openDetail() // → opens the entry details
 				}
 			case "g":
 				return m.gotoResultFolder(), nil
@@ -449,6 +488,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.copySel("username")
 			case "ctrl+o":
 				return m, m.copySel("URL")
+			case "ctrl+t":
+				return m, m.copySel("totp")
 			}
 			return m, nil
 		}
@@ -491,7 +532,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.focus, m.esel = 1, 0
 				}
 			} else if m.focus == 1 && folder != nil && m.esel < len(folder.entries) {
-				m.detail, m.reveal = true, false // → opens the entry details
+				return m.openDetail() // → opens the entry details
 			}
 		case "left":
 			if m.focus == 1 {
@@ -517,6 +558,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.copySel("username")
 		case "ctrl+o":
 			return m, m.copySel("URL")
+		case "ctrl+t":
+			return m, m.copySel("totp")
 		}
 		return m, nil
 	}

@@ -35,6 +35,7 @@ type Entry struct {
 	URL      string
 	Tags     []string
 	Password secret.Secret
+	TOTP     string // the otpauth:// URI from the "otp" field, if any
 }
 
 // Vault is a read-only view of one opened kdbx.
@@ -109,6 +110,7 @@ func (v *Vault) walk(g gokeepasslib.Group, prefix string) {
 			URL:      e.GetContent("URL"),
 			Tags:     splitTags(e.Tags),
 			Password: secret.New(e.GetPassword()),
+			TOTP:     e.GetContent("otp"),
 		})
 	}
 	for _, sub := range g.Groups {
