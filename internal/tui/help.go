@@ -111,10 +111,11 @@ func (m Model) keyList(w int) []string {
 			row("⇥", "to the password list"),
 			"",
 			head("GENERATE — LIST"),
-			row("↑↓←→", "move in the grid"),
+			row("↑↓ jk", "move in the list"),
 			row("↵ ^y", "copy the password"),
 			row("r", "regenerate the batch"),
 			row("esc ⇥", "back to options"),
+			row("click", "select · dbl/right copies"),
 		)
 	default:
 		out = append(out,

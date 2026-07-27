@@ -94,15 +94,15 @@ func TestGenerateNoClassesErrors(t *testing.T) {
 	}
 }
 
-func TestGenerateGridCopyKeepsState(t *testing.T) {
+func TestGenerateListCopyKeepsState(t *testing.T) {
 	m := genTab()
-	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the grid
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the list
 	if m.focus != 1 {
-		t.Fatal("tab should move focus to the grid")
+		t.Fatal("tab should move focus to the list")
 	}
-	m = up(m, tea.KeyMsg{Type: tea.KeyRight}) // move selection
+	m = up(m, tea.KeyMsg{Type: tea.KeyDown}) // move selection
 	if m.genSel != 1 {
-		t.Errorf("→ should move the grid cursor, got %d", m.genSel)
+		t.Errorf("↓ should move the list cursor, got %d", m.genSel)
 	}
 	// enter copies; it must not panic or lose the selection (clipboard may be
 	// unavailable in CI, so we don't assert the countdown started).
@@ -113,5 +113,19 @@ func TestGenerateGridCopyKeepsState(t *testing.T) {
 	m = up(m, tea.KeyMsg{Type: tea.KeyEsc}) // back to options
 	if m.focus != 0 {
 		t.Error("esc should return to the options pane")
+	}
+}
+
+// A left-click selects a password row; a double-click copies; syntax colouring
+// never changes the underlying text.
+func TestGenerateMouseAndColor(t *testing.T) {
+	m := genTab()
+	// click the third visible password row (y = panel row 2 → index 2)
+	m = up(m, click(genLeftW+5, 4))
+	if m.focus != 1 || m.genSel != 2 {
+		t.Errorf("click should select the row under the cursor, got focus=%d sel=%d", m.focus, m.genSel)
+	}
+	if got := ansi.Strip(colorizePw("aB3!xZ")); got != "aB3!xZ" {
+		t.Errorf("colourising must not change the text, got %q", got)
 	}
 }
