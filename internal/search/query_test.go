@@ -117,6 +117,24 @@ func TestFuzzyIsTightAndLastResort(t *testing.T) {
 	}
 }
 
+// Search matches attachment file names, bare and via the file: scope.
+func TestSearchAttachmentNames(t *testing.T) {
+	m := New([]vault.Entry{
+		{Title: "jump-host", Files: []vault.Attachment{{Name: "id.ppk"}, {Name: "readme.txt"}}},
+		{Title: "other"},
+	})
+	res := m.Match("id.ppk")
+	if len(res) != 1 || res[0].Entry.Title != "jump-host" || res[0].Field != "file" {
+		t.Errorf("bare attachment-name match failed: %+v", res)
+	}
+	if got := titles(m.Match("file:readme")); len(got) != 1 || got[0] != "jump-host" {
+		t.Errorf("file: scope should match the attachment name, got %v", got)
+	}
+	if got := m.Match("file:nope"); len(got) != 0 {
+		t.Errorf("file: scope should not match a missing name, got %v", titles(got))
+	}
+}
+
 // A term scoped to a field also drives the AND across different fields.
 func TestQueryScopedAND(t *testing.T) {
 	m := New([]vault.Entry{

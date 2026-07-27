@@ -165,6 +165,7 @@ func (m Model) searchGuide(w int) []string {
 		ex("tag:prod", "the tags"),
 		ex("notes:rotated", "the notes"),
 		ex("field:token", "any custom field"),
+		ex("file:id.ppk", "an attachment file name"),
 		"",
 		head("EXCLUDE  (-)"),
 		ex("db -stage", "has “db”, not “stage”"),

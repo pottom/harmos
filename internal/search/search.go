@@ -28,6 +28,7 @@ const (
 	scoreURL    = 60 // url contains query
 	scoreField  = 65 // a custom field name/value contains query
 	scoreNotes  = 70 // notes contain query
+	scoreFile   = 72 // an attachment's file name contains query
 	scoreFuzzy  = 75 // title contains query as a (tight) subsequence — the weakest,
 	//                   last-resort signal, below every real substring match, or a
 	//                   loose "p…p…k" would bury the entries that actually match.
@@ -56,9 +57,9 @@ type idxField struct {
 }
 
 type indexed struct {
-	v                                   vault.Entry
-	title, user, url, path, tags, notes string // lowercased once, never in the loop
-	fields                              []idxField
+	v                                          vault.Entry
+	title, user, url, path, tags, notes, files string // lowercased once, never in the loop
+	fields                                     []idxField
 }
 
 // Matcher holds the flattened, pre-lowercased entries.
@@ -79,6 +80,10 @@ func New(entries []vault.Entry) *Matcher {
 				protected: f.Protected,
 			}
 		}
+		names := make([]string, len(e.Files))
+		for j, f := range e.Files {
+			names[j] = f.Name
+		}
 		es[i] = indexed{
 			v:      e,
 			title:  strings.ToLower(e.Title),
@@ -87,6 +92,7 @@ func New(entries []vault.Entry) *Matcher {
 			path:   strings.ToLower(e.Path),
 			tags:   strings.ToLower(strings.Join(e.Tags, " ")),
 			notes:  strings.ToLower(e.Notes),
+			files:  strings.ToLower(strings.Join(names, " ")),
 			fields: fields,
 		}
 	}

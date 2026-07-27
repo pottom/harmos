@@ -138,6 +138,8 @@ func normField(s string) (string, bool) {
 		return "path", true
 	case "field":
 		return "field", true
+	case "file", "attachment", "attachments":
+		return "file", true
 	}
 	return "", false
 }
@@ -217,6 +219,9 @@ func termScore(t qterm, e indexed) (tier int, field string, idx []int, ok bool) 
 		if strings.Contains(e.notes, v) {
 			return scoreNotes, "notes", nil, true
 		}
+		if strings.Contains(e.files, v) {
+			return scoreFile, "file", nil, true
+		}
 		if ix, hit := titleFuzzy(e.title, v); hit { // last resort
 			return scoreFuzzy, "", ix, true
 		}
@@ -243,6 +248,10 @@ func termScore(t qterm, e indexed) (tier int, field string, idx []int, ok bool) 
 	case "field":
 		if f, hit := fieldMatch(e, v); hit {
 			return scoreField, f, nil, true
+		}
+	case "file":
+		if strings.Contains(e.files, v) {
+			return scoreFile, "file", nil, true
 		}
 	}
 	return noMatch, "", nil, false
