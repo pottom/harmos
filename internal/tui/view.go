@@ -671,7 +671,11 @@ func (m Model) detailPane(w, h int) string {
 	lines := m.detailLines(e, w)
 	visible := max(1, h-2)
 	scroll := clampScroll(m.detailScroll, len(lines), visible)
-	return boxV(m.breadcrumb(e), "", lines[scroll:min(scroll+visible, len(lines))], w, h, true, len(lines), scroll, 0)
+	title := m.breadcrumb(e)
+	if q := m.input.Value(); q != "" { // highlight the query in the breadcrumb too
+		title = highlight(title, q, theme.Strong)
+	}
+	return boxV(title, "", lines[scroll:min(scroll+visible, len(lines))], w, h, true, len(lines), scroll, 0)
 }
 
 // detailViewport is the width and visible-line count of the detail pane, matching
