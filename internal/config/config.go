@@ -69,6 +69,15 @@ type Config struct {
 	NerdFont         *bool     `toml:"nerdfont"` // nil = default on; set false for terminals without a Nerd Font
 	ClipboardTimeout Duration  `toml:"clipboard_timeout"`
 	Profiles         []Profile `toml:"profile"`
+
+	// Password generator preferences (nil / 0 = built-in default).
+	GenLength  int   `toml:"gen_length"`
+	GenLower   *bool `toml:"gen_lower"`
+	GenUpper   *bool `toml:"gen_upper"`
+	GenDigit   *bool `toml:"gen_digit"`
+	GenSymbol  *bool `toml:"gen_symbol"`
+	GenNoAmbig *bool `toml:"gen_no_ambiguous"`
+	GenOneEach *bool `toml:"gen_one_each"`
 }
 
 // DefaultClipboardTimeout is used when the file omits clipboard_timeout.

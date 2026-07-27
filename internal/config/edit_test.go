@@ -6,6 +6,47 @@ import (
 	"testing"
 )
 
+func TestSetGeneratorRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	// a config with a source, so Load succeeds
+	if _, err := WriteKdbxProfile(path, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetGenerator(path, 24, true, false, true, false, true, false); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GenLength != 24 {
+		t.Errorf("length = %d, want 24", cfg.GenLength)
+	}
+	for name, got := range map[string]*bool{
+		"lower": cfg.GenLower, "upper": cfg.GenUpper, "digit": cfg.GenDigit,
+		"symbol": cfg.GenSymbol, "no_ambiguous": cfg.GenNoAmbig, "one_each": cfg.GenOneEach,
+	} {
+		if got == nil {
+			t.Errorf("%s should be set", name)
+		}
+	}
+	if *cfg.GenLower != true || *cfg.GenUpper != false || *cfg.GenOneEach != false {
+		t.Error("boolean values round-tripped wrong")
+	}
+	// updating again rewrites in place (no duplicate keys)
+	if err := SetGenerator(path, 30, true, true, true, true, false, false); err != nil {
+		t.Fatal(err)
+	}
+	cfg2, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg2.GenLength != 30 || cfg2.Profile("own") == nil {
+		t.Errorf("second write broke the file: len=%d own=%v", cfg2.GenLength, cfg2.Profile("own"))
+	}
+}
+
 func TestWriteRemoveProfile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
