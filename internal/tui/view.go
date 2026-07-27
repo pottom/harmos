@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 
 	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/otp"
+	"github.com/pottom/harmos/internal/search"
 	"github.com/pottom/harmos/internal/theme"
 	"github.com/pottom/harmos/internal/vault"
 )
@@ -56,6 +58,54 @@ func highlight(s, q string, base lipgloss.Style) string {
 		b.WriteString(theme.Hi.Render(rest[i:j]))
 		rest = rest[j:]
 	}
+}
+
+// highlightTerms renders s in base with every case-insensitive occurrence of any
+// term emphasized — grep --color over a whole query (all its AND/OR terms), not
+// just the raw input. Overlapping hits are merged so nested terms don't double up.
+func highlightTerms(s string, terms []string, base lipgloss.Style) string {
+	if len(terms) == 0 {
+		return base.Render(s)
+	}
+	ls := strings.ToLower(s)
+	type span struct{ a, b int }
+	var spans []span
+	for _, t := range terms {
+		if t == "" {
+			continue
+		}
+		for from := 0; ; {
+			i := strings.Index(ls[from:], t)
+			if i < 0 {
+				break
+			}
+			a := from + i
+			spans = append(spans, span{a, a + len(t)})
+			from = a + len(t)
+		}
+	}
+	if len(spans) == 0 {
+		return base.Render(s)
+	}
+	sort.Slice(spans, func(i, j int) bool { return spans[i].a < spans[j].a })
+
+	var b strings.Builder
+	pos := 0
+	for _, sp := range spans {
+		if sp.b <= pos { // fully inside an already-emphasized run
+			continue
+		}
+		if sp.a > pos {
+			b.WriteString(base.Render(s[pos:sp.a]))
+			pos = sp.a
+		}
+		b.WriteString(theme.Hi.Render(s[pos:sp.b]))
+		pos = sp.b
+	}
+	if pos < len(s) {
+		b.WriteString(base.Render(s[pos:]))
+	}
+	return b.String()
 }
 
 func (m Model) View() string {
@@ -529,7 +579,7 @@ func (m Model) resultLines(w, rows int) []string {
 	avail := max(1, rows-1)
 	start := windowStart(m.sel, avail, len(m.results))
 	end := min(start+avail, len(m.results))
-	q := m.input.Value()
+	terms := search.HighlightTerms(m.input.Value())
 	locW := max(4, w-titleW-3)
 	for k := start; k < end; k++ {
 		r := m.results[k]
@@ -552,7 +602,7 @@ func (m Model) resultLines(w, rows int) []string {
 			bw := dw(r.Field) + 3
 			locCell = theme.Dimmed.Render(trunc(loc, max(4, locW-bw))) + theme.Faded.Render(" · ") + theme.Acc.Render(r.Field)
 		}
-		out = append(out, theme.Faded.Render(i.entry+" ")+highlight(pad(trunc(e.Title, titleW-2), titleW-2), q, theme.Strong)+" "+locCell)
+		out = append(out, theme.Faded.Render(i.entry+" ")+highlightTerms(pad(trunc(e.Title, titleW-2), titleW-2), terms, theme.Strong)+" "+locCell)
 	}
 	return out
 }
@@ -567,8 +617,8 @@ func (m Model) detailLines(e *vault.Entry, w int) []string {
 
 	// one field row: icon + label on the left, the value in the middle, and a dim
 	// copy/reveal key tucked to the right.
-	q := m.input.Value() // active query: highlight matches in the fields, grep-style
-	rowW := inW - 2      // leave a 2-cell right margin, mirroring the left indent
+	terms := search.HighlightTerms(m.input.Value()) // active query: highlight field matches, grep-style
+	rowW := inW - 2                                 // leave a 2-cell right margin, mirroring the left indent
 	row := func(icon, label, value string, vst lipgloss.Style, key string) string {
 		lead := "  " + theme.Acc.Render(icon) + "  " + theme.Dimmed.Render(pad(label, 9))
 		right := ""
@@ -576,7 +626,7 @@ func (m Model) detailLines(e *vault.Entry, w int) []string {
 			right = theme.Faded.Render(key)
 		}
 		avail := max(4, rowW-dw(lead)-dw(right)-1)
-		return spread(lead+highlight(trunc(value, avail), q, vst), right, rowW)
+		return spread(lead+highlightTerms(trunc(value, avail), terms, vst), right, rowW)
 	}
 
 	user, userKey, userSt := e.Username, "ctrl+u", theme.Strong
@@ -627,7 +677,7 @@ func (m Model) detailLines(e *vault.Entry, w int) []string {
 				}
 			}
 			name := theme.Dimmed.Render(pad(trunc(f.Name, nameW), nameW))
-			b = append(b, "     "+name+"  "+highlight(trunc(val, max(4, rowW-7-nameW)), q, vst))
+			b = append(b, "     "+name+"  "+highlightTerms(trunc(val, max(4, rowW-7-nameW)), terms, vst))
 		}
 	}
 	if !e.Modified.IsZero() {
@@ -654,7 +704,7 @@ func (m Model) detailLines(e *vault.Entry, w int) []string {
 		b = append(b, "", "  "+theme.Acc.Render(i.note)+"  "+theme.Dimmed.Render("notes"))
 		notes := strings.ReplaceAll(e.Notes, "\r\n", "\n")
 		for _, ln := range strings.Split(ansi.Wrap(notes, rowW-2, " -"), "\n") {
-			b = append(b, "     "+highlight(ln, q, theme.Faded))
+			b = append(b, "     "+highlightTerms(ln, terms, theme.Faded))
 		}
 	}
 
@@ -672,8 +722,8 @@ func (m Model) detailPane(w, h int) string {
 	visible := max(1, h-2)
 	scroll := clampScroll(m.detailScroll, len(lines), visible)
 	title := m.breadcrumb(e)
-	if q := m.input.Value(); q != "" { // highlight the query in the breadcrumb too
-		title = highlight(title, q, theme.Strong)
+	if terms := search.HighlightTerms(m.input.Value()); len(terms) > 0 { // highlight the query in the breadcrumb too
+		title = highlightTerms(title, terms, theme.Strong)
 	}
 	return boxV(title, "", lines[scroll:min(scroll+visible, len(lines))], w, h, true, len(lines), scroll, 0)
 }

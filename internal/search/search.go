@@ -11,7 +11,6 @@ package search
 import (
 	"sort"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/pottom/harmos/internal/vault"
 )
@@ -105,18 +104,18 @@ func FromVaults(vaults ...*vault.Vault) *Matcher {
 // entry, alphabetical by title. Ties within a tier break by shorter title (the
 // closer match), then alphabetically — stable and predictable.
 func (m *Matcher) Match(query string) []Result {
-	q := strings.ToLower(strings.TrimSpace(query))
+	q := Parse(query)
 
 	var res []Result
-	if q == "" {
+	if q.Empty() {
 		res = make([]Result, len(m.entries))
 		for i, e := range m.entries {
 			res[i] = Result{Entry: e.v, Score: scoreAll}
 		}
 	} else {
 		for _, e := range m.entries {
-			if score, matched, field := scoreEntry(e, q); score != noMatch {
-				res = append(res, Result{Entry: e.v, Score: score, Matched: matched, Field: field})
+			if ok, score, idx, field := q.eval(e); ok {
+				res = append(res, Result{Entry: e.v, Score: score, Matched: idx, Field: field})
 			}
 		}
 	}
@@ -136,43 +135,6 @@ func (m *Matcher) Match(query string) []Result {
 		return a.Entry.Title < b.Entry.Title
 	})
 	return res
-}
-
-func scoreEntry(e indexed, q string) (int, []int, string) {
-	qr := []rune(q)
-	switch {
-	case e.title == q:
-		return scoreExact, seq(0, len(qr)), ""
-	case strings.HasPrefix(e.title, q):
-		return scorePrefix, seq(0, len(qr)), ""
-	}
-	if i := strings.Index(e.title, q); i >= 0 {
-		start := utf8.RuneCountInString(e.title[:i])
-		return scoreSub, seq(start, len(qr)), ""
-	}
-	if pos, ok := subsequence(e.title, qr); ok {
-		return scoreFuzzy, pos, ""
-	}
-	switch {
-	case strings.Contains(e.user, q):
-		return scoreUser, nil, "user"
-	case strings.Contains(e.tags, q):
-		return scoreTags, nil, "tags"
-	case strings.Contains(e.path, q):
-		return scorePath, nil, "path"
-	case strings.Contains(e.url, q):
-		return scoreURL, nil, "url"
-	}
-	// custom fields: name always, value only when not protected (no secret leak).
-	for _, f := range e.fields {
-		if strings.Contains(f.name, q) || (!f.protected && strings.Contains(f.value, q)) {
-			return scoreField, nil, f.display
-		}
-	}
-	if strings.Contains(e.notes, q) {
-		return scoreNotes, nil, "notes"
-	}
-	return noMatch, nil, ""
 }
 
 // subsequence reports whether qr appears in s in order, and where (rune indices
