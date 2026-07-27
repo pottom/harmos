@@ -1,0 +1,108 @@
+package search
+
+import (
+	"testing"
+
+	"github.com/pottom/harmos/internal/vault"
+)
+
+func TestQueryAND(t *testing.T) {
+	m := New([]vault.Entry{
+		{Title: "db prod server"},
+		{Title: "db staging"},
+		{Title: "web prod"},
+	})
+	got := titles(m.Match("db prod"))
+	if len(got) != 1 || got[0] != "db prod server" {
+		t.Errorf("AND should need both terms, got %v", got)
+	}
+}
+
+func TestQueryOR(t *testing.T) {
+	m := New([]vault.Entry{{Title: "db"}, {Title: "web"}, {Title: "other"}})
+	got := titles(m.Match("db | web"))
+	if len(got) != 2 {
+		t.Errorf("OR should match db and web, got %v", got)
+	}
+}
+
+// (db AND prod) OR web
+func TestQueryMixedPrecedence(t *testing.T) {
+	m := New([]vault.Entry{
+		{Title: "db prod"}, // matches the AND group
+		{Title: "db only"}, // db but not prod → no
+		{Title: "web app"}, // matches the OR
+		{Title: "nope"},
+	})
+	got := titles(m.Match("db prod | web"))
+	if len(got) != 2 {
+		t.Errorf("mixed precedence, got %v", got)
+	}
+}
+
+func TestQueryFieldScope(t *testing.T) {
+	m := New([]vault.Entry{
+		{Title: "a", URL: "https://vault.example.com"},
+		{Title: "vault-thing"}, // "vault" is in the title, not the url
+	})
+	got := titles(m.Match("url:vault"))
+	if len(got) != 1 || got[0] != "a" {
+		t.Errorf("url: scope should only match the url field, got %v", got)
+	}
+}
+
+func TestQueryNegation(t *testing.T) {
+	m := New([]vault.Entry{
+		{Title: "ansible prod"},
+		{Title: "ansible recycle bin"},
+	})
+	got := titles(m.Match("ansible -recycle"))
+	if len(got) != 1 || got[0] != "ansible prod" {
+		t.Errorf("-recycle should exclude, got %v", got)
+	}
+}
+
+func TestQueryPhrase(t *testing.T) {
+	m := New([]vault.Entry{
+		{Title: "db prod"},
+		{Title: "prod db"}, // both words, but not the phrase
+	})
+	got := titles(m.Match(`"db prod"`))
+	if len(got) != 1 || got[0] != "db prod" {
+		t.Errorf("a quoted phrase should match the exact sequence, got %v", got)
+	}
+}
+
+func TestQueryTerms(t *testing.T) {
+	terms := HighlightTerms(`db url:vault -recycle "a b"`)
+	want := map[string]bool{"db": true, "vault": true, "a b": true}
+	if len(terms) != len(want) {
+		t.Fatalf("positive terms = %v, want %v", terms, want)
+	}
+	for _, tm := range terms {
+		if !want[tm] {
+			t.Errorf("unexpected highlight term %q", tm)
+		}
+	}
+}
+
+func TestQueryFieldBadge(t *testing.T) {
+	m := New([]vault.Entry{{Title: "x", URL: "https://runbook.x"}})
+	res := m.Match("runbook")
+	if len(res) != 1 || res[0].Field != "url" {
+		t.Errorf("badge should say url, got %+v", res)
+	}
+}
+
+// A term scoped to a field also drives the AND across different fields.
+func TestQueryScopedAND(t *testing.T) {
+	m := New([]vault.Entry{
+		{Title: "prod", URL: "https://vault.x"},
+		{Title: "prod", URL: "https://other.x"},  // no vault in url
+		{Title: "stage", URL: "https://vault.x"}, // no prod
+	})
+	got := titles(m.Match("prod url:vault"))
+	if len(got) != 1 {
+		t.Errorf("prod AND url:vault, got %v", got)
+	}
+}
