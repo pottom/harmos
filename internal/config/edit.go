@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -122,6 +123,69 @@ func SetTopLevelKey(path, key, value string) error {
 // SetTopLevelBool sets a top-level boolean key (unquoted TOML).
 func SetTopLevelBool(path, key string, v bool) error {
 	return setTopLevel(path, key, fmt.Sprintf("%s = %t", key, v))
+}
+
+// SetGenerator persists the password-generator preferences in one write.
+func SetGenerator(path string, length int, lower, upper, digit, symbol, noAmbig, oneEach bool) error {
+	return setTopLevelMany(path, map[string]string{
+		"gen_length":       strconv.Itoa(length),
+		"gen_lower":        strconv.FormatBool(lower),
+		"gen_upper":        strconv.FormatBool(upper),
+		"gen_digit":        strconv.FormatBool(digit),
+		"gen_symbol":       strconv.FormatBool(symbol),
+		"gen_no_ambiguous": strconv.FormatBool(noAmbig),
+		"gen_one_each":     strconv.FormatBool(oneEach),
+	})
+}
+
+// setTopLevelMany updates several top-level keys (before the first table) in a
+// single read-modify-write, inserting any that are absent. Creates the file if it
+// does not exist yet.
+func setTopLevelMany(path string, kv map[string]string) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			return err
+		}
+		content = nil
+	}
+	lines := strings.Split(string(content), "\n")
+
+	firstTable := len(lines)
+	seen := map[string]bool{}
+	for i, l := range lines {
+		t := strings.TrimSpace(l)
+		if strings.HasPrefix(t, "[") {
+			firstTable = i
+			break
+		}
+		if k, _, ok := parseKV(t); ok {
+			if v, want := kv[k]; want {
+				lines[i] = fmt.Sprintf("%s = %s", k, v)
+				seen[k] = true
+			}
+		}
+	}
+
+	missing := make([]string, 0, len(kv))
+	for k, v := range kv {
+		if !seen[k] {
+			missing = append(missing, fmt.Sprintf("%s = %s", k, v))
+		}
+	}
+	sort.Strings(missing) // deterministic order for inserted keys
+
+	out := make([]string, 0, len(lines)+len(missing)+1)
+	out = append(out, lines[:firstTable]...)
+	out = append(out, missing...)
+	if len(missing) > 0 && firstTable < len(lines) {
+		out = append(out, "")
+	}
+	out = append(out, lines[firstTable:]...)
+	return writeFileAtomic(path, []byte(strings.Join(out, "\n")))
 }
 
 // setTopLevel updates key in place before the first table, or inserts newLine

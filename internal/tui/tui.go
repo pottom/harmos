@@ -152,6 +152,7 @@ func New(entries []vault.Entry, configPath string, timeout time.Duration) Model 
 	}
 	nerd = resolveNerd(loaded) // env > config > default
 	return Model{
+		genOpts:    genOptsFromConfig(loaded),
 		matcher:    search.New(entries),
 		roots:      roots,
 		nSrc:       len(roots),
@@ -161,7 +162,6 @@ func New(entries []vault.Entry, configPath string, timeout time.Duration) Model 
 		srcType:    srcType,
 		themeName:  themeName,
 		timeout:    timeout,
-		genOpts:    pwgen.Default(),
 	}
 }
 

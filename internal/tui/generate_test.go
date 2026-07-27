@@ -1,13 +1,31 @@
 package tui
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/pottom/harmos/internal/config"
 )
+
+func TestGeneratorOptsPersist(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if _, err := config.WriteKdbxProfile(path, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SetGenerator(path, 28, true, true, false, false, true, false); err != nil {
+		t.Fatal(err)
+	}
+	m := New(nil, path, 30*time.Second)
+	if m.genOpts.Length != 28 || m.genOpts.Digit != false || m.genOpts.AvoidAmbig != true {
+		t.Errorf("saved generator options were not loaded: %+v", m.genOpts)
+	}
+}
 
 func genTab() Model {
 	m := New(nil, "", 30*time.Second)
@@ -106,9 +124,9 @@ func TestGenerateRerollAndCopy(t *testing.T) {
 	if len(m.genList) != 2 || m.genSel != 1 {
 		t.Fatalf("reroll should grow history and make the newest the hero, got n=%d sel=%d", len(m.genList), m.genSel)
 	}
-	m = up(m, tea.KeyMsg{Type: tea.KeyUp}) // browse to the previous roll
+	m = up(m, tea.KeyMsg{Type: tea.KeyDown}) // down the list = older roll
 	if m.genSel != 0 {
-		t.Errorf("↑ should move to the previous roll, got %d", m.genSel)
+		t.Errorf("↓ should move to the older roll, got %d", m.genSel)
 	}
 	// enter copies; it must not panic or lose the selection (clipboard may be
 	// unavailable in CI, so we don't assert the countdown started).
@@ -131,11 +149,12 @@ func TestGenerateMouseAndColor(t *testing.T) {
 	m = reroll(m) // 3 in history → a recent list of 2
 	heroBefore := m.genList[m.genSel]
 
-	_, recentStart, recent := m.genLayout(m.genVisRows())
-	if len(recent) == 0 {
+	_, listStart, order := m.genLayout(m.genVisRows())
+	if len(order) < 2 {
 		t.Fatal("expected a recent list after rerolling")
 	}
-	m = up(m, click(genLeftW+5, 2+recentStart)) // click the first recent entry
+	// order[0] is the current hero; click the second row to pick a different one.
+	m = up(m, click(genLeftW+5, 2+listStart+1))
 	if m.focus != 1 || m.genList[m.genSel] == heroBefore {
 		t.Errorf("clicking a recent entry should promote it (hero was %q, now %q)", heroBefore, m.genList[m.genSel])
 	}

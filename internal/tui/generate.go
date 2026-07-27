@@ -2,14 +2,56 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/pwgen"
 	"github.com/pottom/harmos/internal/theme"
 )
+
+// genOptsFromConfig builds the generator options from saved preferences, falling
+// back to the built-in defaults for anything unset.
+func genOptsFromConfig(cfg *config.Config) pwgen.Options {
+	o := pwgen.Default()
+	if cfg == nil {
+		return o
+	}
+	if cfg.GenLength >= pwgen.MinLength && cfg.GenLength <= pwgen.MaxLength {
+		o.Length = cfg.GenLength
+	}
+	setBool(&o.Lower, cfg.GenLower)
+	setBool(&o.Upper, cfg.GenUpper)
+	setBool(&o.Digit, cfg.GenDigit)
+	setBool(&o.Symbol, cfg.GenSymbol)
+	setBool(&o.AvoidAmbig, cfg.GenNoAmbig)
+	setBool(&o.OneEach, cfg.GenOneEach)
+	return o
+}
+
+func setBool(dst, src *bool) {
+	if src != nil {
+		*dst = *src
+	}
+}
+
+// saveGenOpts persists the current generator options (best-effort — a failed
+// write just means they aren't remembered next launch). It only writes when a
+// config file already exists, so toggling an option never creates one out of thin
+// air.
+func (m *Model) saveGenOpts() {
+	if m.configPath == "" {
+		return
+	}
+	if _, err := os.Stat(m.configPath); err != nil {
+		return
+	}
+	o := m.genOpts
+	_ = config.SetGenerator(m.configPath, o.Length, o.Lower, o.Upper, o.Digit, o.Symbol, o.AvoidAmbig, o.OneEach)
+}
 
 // The Generate tab (2) is a focused password generator: options on the left, and
 // on the right one prominent password with a strength meter, centred in the pane,
@@ -108,6 +150,7 @@ func (m *Model) adjustGen(d int) {
 	if m.genRow == genLength {
 		m.genOpts.Length = clampInt(m.genOpts.Length+d, pwgen.MinLength, pwgen.MaxLength)
 		m.resetGen()
+		m.saveGenOpts()
 	}
 }
 
@@ -127,18 +170,19 @@ func (m *Model) toggleGen() {
 	case genOneEach:
 		m.genOpts.OneEach = !m.genOpts.OneEach
 	}
+	m.saveGenOpts()
 }
 
 // updateGenList handles the right (password) pane.
 func (m Model) updateGenList(key string) (tea.Model, tea.Cmd) {
 	switch key {
-	case "up", "ctrl+p", "k":
-		if m.genSel > 0 {
-			m.genSel--
-		}
-	case "down", "ctrl+n", "j":
+	case "up", "ctrl+p", "k": // up the list = towards the newer rolls
 		if m.genSel < len(m.genList)-1 {
 			m.genSel++
+		}
+	case "down", "ctrl+n", "j": // down the list = towards the older rolls
+		if m.genSel > 0 {
+			m.genSel--
 		}
 	case "esc", "tab", "left", "h":
 		m.focus = 0
@@ -157,33 +201,37 @@ func (m Model) genVisRows() int {
 	return max(1, max(3, m.h-3)-2)
 }
 
-// genRecent returns the history indices other than the hero, newest first.
-func (m Model) genRecent() []int {
-	var out []int
-	for i := len(m.genList) - 1; i >= 0; i-- {
-		if i != m.genSel {
-			out = append(out, i)
-		}
+// genOrder returns the whole history newest-first (empty when there is nothing to
+// pick from — a single roll).
+func (m Model) genOrder() []int {
+	if len(m.genList) <= 1 {
+		return nil
+	}
+	out := make([]int, len(m.genList))
+	for i := range out {
+		out[i] = len(m.genList) - 1 - i
 	}
 	return out
 }
 
 // genLayout returns the vertical top-pad and the content row where the recent
-// list begins, so the renderer and the mouse hit-test agree.
-func (m Model) genLayout(rows int) (top, recentStart int, recent []int) {
-	recent = m.genRecent()
-	innerLen := genHeroInner
-	if len(recent) > 0 {
-		innerLen += 2 + len(recent) // blank + "recent" header + entries
-	}
-	top = max(0, (rows-innerLen)/2)
-	recentStart = top + genHeroInner + 2 // past the hero block + blank + header
-	return top, recentStart, recent
+// list begins, so the renderer and the mouse hit-test agree. The top-pad is fixed
+// for the *maximum* history, so the hero never drifts as rolls accumulate — the
+// list simply grows downward into the reserved space.
+func (m Model) genLayout(rows int) (top, listStart int, order []int) {
+	order = m.genOrder()
+	top = max(0, (rows-genInnerMax)/2)
+	listStart = top + genHeroInner + 2 // past the hero block + blank + header
+	return top, listStart, order
 }
 
 // genHeroInner is the number of lines in the hero block (password, blank, bar,
-// blank, affordance).
-const genHeroInner = 5
+// blank, affordance); genInnerMax reserves room for the fullest recent list so the
+// hero's position is stable.
+const (
+	genHeroInner = 7 // framed password (3) + blank + bar + blank + affordance
+	genInnerMax  = genHeroInner + 2 + (genHistMax - 1)
+)
 
 // handleGenClick routes a left-click in the Generate tab.
 func (m Model) handleGenClick(x, y int, dbl bool) (tea.Model, tea.Cmd) {
@@ -347,21 +395,37 @@ func (m Model) genPasswordLines(w, rows int) []string {
 	bits := o.EntropyBits()
 	label, lst := strengthLabel(bits)
 
-	inner := []string{
-		center(heroPassword(m.genList[m.genSel])),
+	// The hero sits in an accent-bordered box so the eye lands on it immediately.
+	frame := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(theme.Accent).
+		Padding(0, 3).
+		Render(heroPassword(m.genList[m.genSel]))
+	var inner []string
+	for _, ln := range strings.Split(frame, "\n") {
+		inner = append(inner, center(ln))
+	}
+	inner = append(inner,
 		"",
-		center(strengthBar(bits, 20) + "  " + theme.Strong.Render(fmt.Sprintf("%.0f bits", bits)) + " " + lst.Render("· "+label)),
+		center(strengthBar(bits, 20)+"  "+theme.Strong.Render(fmt.Sprintf("%.0f bits", bits))+" "+lst.Render("· "+label)),
 		"",
 		center(theme.Faded.Render("↵ copy    r reroll")),
-	}
-	if recent := m.genRecent(); len(recent) > 0 {
+	)
+	// The recent list shows the whole history, newest first, with a ▸ marking the
+	// current pick so ↑↓ navigation is visible.
+	if order := m.genOrder(); len(order) > 0 {
 		inner = append(inner, "", center(theme.Dimmed.Render("recent")))
-		for _, idx := range recent {
-			inner = append(inner, center(theme.Faded.Render(m.genList[idx])))
+		for _, idx := range order {
+			p := m.genList[idx]
+			if idx == m.genSel {
+				inner = append(inner, center(theme.Acc.Render("▸ ")+theme.Hi.Render(p)))
+			} else {
+				inner = append(inner, center("  "+theme.Faded.Render(p)))
+			}
 		}
 	}
 
-	top := max(0, (rows-len(inner))/2)
+	top := max(0, (rows-genInnerMax)/2) // fixed — the hero never drifts
 	out := make([]string, 0, top+len(inner))
 	for range top {
 		out = append(out, "")
