@@ -21,7 +21,9 @@ import (
 	"github.com/pottom/harmos/internal/search"
 	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/session"
+	"github.com/pottom/harmos/internal/updater"
 	"github.com/pottom/harmos/internal/vault"
+	"github.com/pottom/harmos/internal/version"
 )
 
 type tickMsg time.Time
@@ -48,8 +50,9 @@ type Model struct {
 	detail        bool // entry-details screen
 	reveal        bool
 	help          bool
-	helpScroll    int  // top line offset in the (scrollable) help overlay
-	treeCollapsed bool // the folder tree is collapsed to a thin rail (ctrl+b)
+	helpScroll    int    // top line offset in the (scrollable) help overlay
+	treeCollapsed bool   // the folder tree is collapsed to a thin rail (ctrl+b)
+	latest        string // a newer release tag found by the background check ("" = none)
 	w, h          int
 
 	configPath string                 // for the Settings tab
@@ -191,9 +194,28 @@ func (m Model) Init() tea.Cmd {
 	// A locked model with nothing left to ask (every credential came from env or
 	// the keyring) opens straight away — no unlock screen flash for saved users.
 	if m.locked && len(m.ulSteps) == 0 {
-		return tea.Batch(textinput.Blink, m.openCmd())
+		return tea.Batch(textinput.Blink, m.openCmd(), checkUpdateCmd())
 	}
-	return textinput.Blink
+	return tea.Batch(textinput.Blink, checkUpdateCmd())
+}
+
+// updateAvailableMsg carries a newer release tag found by the background check.
+type updateAvailableMsg struct{ tag string }
+
+// checkUpdateCmd asks GitHub (once, in the background) whether a newer release
+// exists and, if so, reports it. Any failure — offline, disabled, no releases —
+// is silent: an update hint is a nicety, never a nag.
+func checkUpdateCmd() tea.Cmd {
+	return func() tea.Msg {
+		if updater.Disabled() {
+			return nil
+		}
+		tag, err := updater.LatestTag()
+		if err != nil || !updater.IsNewer(version.Version, tag) {
+			return nil
+		}
+		return updateAvailableMsg{tag}
+	}
 }
 
 // intoBrowsing rebuilds the browsing surface from freshly opened entries and
@@ -374,6 +396,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case clearedMsg:
+		return m, nil
+
+	case updateAvailableMsg:
+		m.latest = msg.tag
+		version.LatestVersion = msg.tag
 		return m, nil
 
 	case totpTickMsg:
