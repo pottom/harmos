@@ -507,6 +507,48 @@ func TestMouseClick(t *testing.T) {
 	}
 }
 
+func rclick(x, y int) tea.MouseMsg {
+	return tea.MouseMsg{Button: tea.MouseButtonRight, Action: tea.MouseActionPress, X: x, Y: y}
+}
+
+// Right-clicking an entry selects it and copies its password without opening it.
+func TestRightClickCopies(t *testing.T) {
+	ents := []vault.Entry{
+		{Source: "s", Path: "f", Title: "a", Password: secret.New("p")},
+		{Source: "s", Path: "f", Title: "b", Password: secret.New("p")},
+		{Source: "s", Path: "f", Title: "c", Password: secret.New("p")},
+	}
+	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = up(m, rclick(50, 5)) // right-click entry "c" (row 2, Y=5)
+	if m.esel != 2 || m.focus != 1 {
+		t.Errorf("right-click should select the entry under it, got esel=%d focus=%d", m.esel, m.focus)
+	}
+	if m.detail {
+		t.Error("right-click must not open the detail")
+	}
+}
+
+// In the detail view, clicking the tree on the left leaves the entry and jumps.
+func TestDetailClickTreeExits(t *testing.T) {
+	ents := []vault.Entry{
+		{Source: "s", Path: "f", Title: "a", Password: secret.New("p")},
+		{Source: "s", Path: "f", Title: "b", Password: secret.New("p")},
+	}
+	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = up(m, click(50, 3)) // select entry
+	m = up(m, click(50, 3)) // double-click → open detail
+	if !m.detail {
+		t.Fatal("double-click should have opened the detail")
+	}
+	m = up(m, click(5, 2)) // click tree row 0 ("s") on the left
+	if m.detail {
+		t.Error("clicking the tree should leave the detail")
+	}
+	if m.tsel != 0 || m.focus != 0 {
+		t.Errorf("should jump to the clicked folder, got tsel=%d focus=%d", m.tsel, m.focus)
+	}
+}
+
 // Double-clicking a folder expands/collapses it (like Enter).
 func TestFolderDoubleClick(t *testing.T) {
 	ents := []vault.Entry{{Source: "s", Path: "parent/child", Title: "x", Password: secret.New("p")}}

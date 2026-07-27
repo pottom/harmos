@@ -399,6 +399,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Action == tea.MouseActionPress {
 				return m.handleClick(msg.X, msg.Y)
 			}
+		case tea.MouseButtonRight:
+			if msg.Action == tea.MouseActionPress {
+				return m.handleRightClick(msg.X, msg.Y)
+			}
 		}
 		return m, nil
 
