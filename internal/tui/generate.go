@@ -11,22 +11,26 @@ import (
 	"github.com/pottom/harmos/internal/theme"
 )
 
-// The Generate tab (3) is a pwgen-style password generator: options on the left,
-// a single-column list of freshly generated passwords on the right (mirroring the
-// vault's entry table). Read-only w.r.t. the vault — it only copies to the
-// concealed clipboard. All randomness is crypto/rand (see internal/pwgen).
+// The Generate tab (2) is a focused password generator: options on the left, and
+// on the right one prominent password with a strength meter, centred in the pane,
+// plus a short "recent" list of this session's earlier rolls. Read-only w.r.t.
+// the vault — it only copies to the concealed clipboard. All randomness is
+// crypto/rand (see internal/pwgen). There is deliberately no "count": every
+// password from the same settings is equivalent, so one at a time + reroll is the
+// honest model (what 1Password / Bitwarden do).
 
-// genLeftW is the fixed width of the options pane; the list takes the rest.
-const genLeftW = 34
+const (
+	genLeftW   = 34 // width of the options pane; the password pane takes the rest
+	genHistMax = 10 // how many recent rolls to keep
+)
 
 // genRowLayout maps a visual row in the options pane to its field index (-1 for a
 // blank spacer), so a mouse click lands on the right option.
-var genRowLayout = []int{genLength, genCount, -1, genLower, genUpper, genDigit, genSymbol, -1, genAmbig, genOneEach, -1, genDo}
+var genRowLayout = []int{genLength, -1, genLower, genUpper, genDigit, genSymbol, -1, genAmbig, genOneEach, -1, genDo}
 
 // Option rows in the left pane, in display order.
 const (
 	genLength = iota
-	genCount
 	genLower
 	genUpper
 	genDigit
@@ -37,17 +41,27 @@ const (
 	genRowCount
 )
 
-// regen fills genList with genCount fresh passwords, or records the error.
-func (m *Model) regen() {
-	ps, err := pwgen.Many(m.genOpts, m.genCount)
+// reroll generates one password with the current options and makes it the hero,
+// keeping a bounded recent history.
+func (m *Model) reroll() {
+	p, err := pwgen.Generate(m.genOpts)
 	if err != nil {
-		m.genErr, m.genList = err.Error(), nil
+		m.genErr = err.Error()
 		return
 	}
-	m.genErr, m.genList = "", ps
-	if m.genSel >= len(ps) {
-		m.genSel = 0
+	m.genErr = ""
+	m.genList = append(m.genList, p)
+	if len(m.genList) > genHistMax {
+		m.genList = m.genList[len(m.genList)-genHistMax:]
 	}
+	m.genSel = len(m.genList) - 1
+}
+
+// resetGen clears the history and rolls a fresh hero — used on entry and whenever
+// the options change, so the recent list always reflects the current settings.
+func (m *Model) resetGen() {
+	m.genList, m.genSel = nil, 0
+	m.reroll()
 }
 
 func (m Model) updateGenerate(key string) (tea.Model, tea.Cmd) {
@@ -74,30 +88,26 @@ func (m Model) updateGenOptions(key string) (tea.Model, tea.Cmd) {
 		m.adjustGen(+1)
 	case " ":
 		if m.genRow == genDo {
-			m.regen()
+			m.resetGen()
 			m.focus = 1
 			return m, nil
 		}
 		m.toggleGen()
-		m.regen()
+		m.resetGen()
 	case "tab":
 		m.focus = 1
 	case "enter", "g":
-		m.regen()
+		m.resetGen()
 		m.focus = 1
 	}
 	return m, nil
 }
 
-// adjustGen changes the length or count by d (clamped), on their rows only.
+// adjustGen changes the length by d (clamped) on the Length row.
 func (m *Model) adjustGen(d int) {
-	switch m.genRow {
-	case genLength:
+	if m.genRow == genLength {
 		m.genOpts.Length = clampInt(m.genOpts.Length+d, pwgen.MinLength, pwgen.MaxLength)
-		m.regen()
-	case genCount:
-		m.genCount = clampInt(m.genCount+d, pwgen.MinCount, pwgen.MaxCount)
-		m.regen()
+		m.resetGen()
 	}
 }
 
@@ -119,42 +129,63 @@ func (m *Model) toggleGen() {
 	}
 }
 
-// updateGenList handles the right (password list) pane.
+// updateGenList handles the right (password) pane.
 func (m Model) updateGenList(key string) (tea.Model, tea.Cmd) {
-	n := len(m.genList)
 	switch key {
 	case "up", "ctrl+p", "k":
 		if m.genSel > 0 {
 			m.genSel--
 		}
 	case "down", "ctrl+n", "j":
-		if m.genSel < n-1 {
+		if m.genSel < len(m.genList)-1 {
 			m.genSel++
 		}
-	case "pgup":
-		m.genSel = max(0, m.genSel-m.genVisRows())
-	case "pgdown":
-		m.genSel = clampIndex(m.genSel+m.genVisRows(), n)
 	case "esc", "tab", "left", "h":
 		m.focus = 0
-	case "r", "g":
-		m.regen()
+	case "r", "g", " ":
+		m.reroll()
 	case "enter", "ctrl+y", "c":
-		if m.genSel < n {
+		if m.genSel < len(m.genList) {
 			return m, m.copyString(m.genList[m.genSel], "password", "generated")
 		}
 	}
 	return m, nil
 }
 
-// genVisRows is the number of password rows visible in the list pane.
+// genVisRows is the number of content rows in the password pane.
 func (m Model) genVisRows() int {
 	return max(1, max(3, m.h-3)-2)
 }
 
-// handleGenClick routes a left-click in the Generate tab: option rows on the
-// left, password rows on the right. A double-click on an already-selected option
-// activates it (toggle / generate); on a selected password it copies.
+// genRecent returns the history indices other than the hero, newest first.
+func (m Model) genRecent() []int {
+	var out []int
+	for i := len(m.genList) - 1; i >= 0; i-- {
+		if i != m.genSel {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// genLayout returns the vertical top-pad and the content row where the recent
+// list begins, so the renderer and the mouse hit-test agree.
+func (m Model) genLayout(rows int) (top, recentStart int, recent []int) {
+	recent = m.genRecent()
+	innerLen := genHeroInner
+	if len(recent) > 0 {
+		innerLen += 2 + len(recent) // blank + "recent" header + entries
+	}
+	top = max(0, (rows-innerLen)/2)
+	recentStart = top + genHeroInner + 2 // past the hero block + blank + header
+	return top, recentStart, recent
+}
+
+// genHeroInner is the number of lines in the hero block (password, blank, bar,
+// blank, affordance).
+const genHeroInner = 5
+
+// handleGenClick routes a left-click in the Generate tab.
 func (m Model) handleGenClick(x, y int, dbl bool) (tea.Model, tea.Cmd) {
 	panelsH := max(3, m.h-3)
 	if y < 2 || y > panelsH-1 {
@@ -168,47 +199,43 @@ func (m Model) handleGenClick(x, y int, dbl bool) (tea.Model, tea.Cmd) {
 			m.genRow, m.focus = field, 0
 			if dbl && already {
 				if field == genDo {
-					m.regen()
+					m.resetGen()
 					m.focus = 1
 				} else {
 					m.toggleGen()
-					m.regen()
+					m.resetGen()
 				}
 			}
 		}
 		return m, nil
 	}
-	// passwords pane: the hero block up top, then the "more" alternatives.
+	// password pane: the hero block, then the recent list.
 	m.focus = 1
-	if row < genHeroRows { // clicked the hero — double-click copies
-		if dbl && m.genSel < len(m.genList) {
+	_, recentStart, recent := m.genLayout(m.genVisRows())
+	if ri := row - recentStart; ri >= 0 && ri < len(recent) {
+		m.genSel = recent[ri] // pick a recent one
+		if dbl {
 			return m, m.copyString(m.genList[m.genSel], "password", "generated")
 		}
 		return m, nil
 	}
-	if target := m.genSel + 1 + (row - genHeroRows); target < len(m.genList) {
-		if dbl {
-			m.genSel = target
-			return m, m.copyString(m.genList[target], "password", "generated")
-		}
-		m.genSel = target // promote the alternative to the hero
+	if dbl && m.genSel < len(m.genList) { // double-click the hero copies it
+		return m, m.copyString(m.genList[m.genSel], "password", "generated")
 	}
 	return m, nil
 }
 
-// handleGenRightClick copies the password under the cursor (the hero, or an
-// alternative row) — a quick copy, mirroring the vault's right-click.
+// handleGenRightClick copies the password under the cursor (the hero, or a recent
+// entry) — a quick copy, mirroring the vault's right-click.
 func (m Model) handleGenRightClick(x, y int) (tea.Model, tea.Cmd) {
 	panelsH := max(3, m.h-3)
 	if y < 2 || y > panelsH-1 || x <= genLeftW-1 || len(m.genList) == 0 {
 		return m, nil
 	}
 	m.focus = 1
-	row := y - 2
-	if row >= genHeroRows {
-		if target := m.genSel + 1 + (row - genHeroRows); target < len(m.genList) {
-			m.genSel = target
-		}
+	_, recentStart, recent := m.genLayout(m.genVisRows())
+	if ri := (y - 2) - recentStart; ri >= 0 && ri < len(recent) {
+		m.genSel = recent[ri]
 	}
 	return m, m.copyString(m.genList[m.genSel], "password", "generated")
 }
@@ -218,9 +245,8 @@ func (m Model) generateView() string {
 	rightW := m.w - genLeftW - 1
 
 	left := box("Options", "", m.genOptionLines(genLeftW-2), genLeftW, panelsH, m.focus == 0)
-
 	right := box("Password", cursorInfo(m.genSel, len(m.genList)),
-		m.genHeroLines(rightW-2, m.genVisRows()), rightW, panelsH, m.focus == 1)
+		m.genPasswordLines(rightW-2, m.genVisRows()), rightW, panelsH, m.focus == 1)
 
 	ctx := m.genContext()
 	if m.remaining > 0 { // a copy countdown takes over the context line, as in the vault
@@ -237,23 +263,21 @@ func (m Model) genHeader() string {
 	return spread(left, right, m.w)
 }
 
-// genContext is the line above the hints: the strength of the current settings,
-// or an error.
+// genContext is the line above the hints: the current settings, or an error.
 func (m Model) genContext() string {
 	if m.genErr != "" {
 		return theme.Bad.Render(trunc("  "+m.genErr, m.w))
 	}
 	o := m.genOpts
-	txt := fmt.Sprintf("  %d chars · pool %d · ≈%.0f bits", o.Length, o.PoolSize(), o.EntropyBits())
-	return theme.Faded.Render(trunc(txt, m.w))
+	return theme.Faded.Render(trunc(fmt.Sprintf("  %d chars · pool %d", o.Length, o.PoolSize()), m.w))
 }
 
 // genHint is the footer, contextual to the focused pane.
 func (m Model) genHint() string {
 	if m.focus == 0 {
-		return theme.Faded.Render("↑↓ move · space toggle · ←/→ adjust · ↵ generate · ⇥ list")
+		return theme.Faded.Render("↑↓ move · space toggle · ←/→ length · ↵ generate · ⇥ password")
 	}
-	return theme.Faded.Render("↑↓ move · ↵ copy · r regenerate · esc options · click/right-click")
+	return theme.Faded.Render("↑↓ recent · ↵ copy · r reroll · esc options · click/right-click")
 }
 
 // genOptionLines renders the left options pane.
@@ -273,8 +297,7 @@ func (m Model) genOptionLines(w int) []string {
 			theme.Strong.Render(pad(label, 10))+theme.Hi.Render(v)+theme.Faded.Render("−/+"))
 	}
 	chk := func(idx int, label string, on bool, extra string) {
-		mark := "[ ]"
-		markSt := theme.Faded
+		mark, markSt := "[ ]", theme.Faded
 		if on {
 			mark, markSt = "[x]", theme.Ok
 		}
@@ -288,7 +311,6 @@ func (m Model) genOptionLines(w int) []string {
 	}
 
 	num(genLength, "Length", o.Length)
-	num(genCount, "Count", m.genCount)
 	out = append(out, "")
 	chk(genLower, "a–z", o.Lower, "")
 	chk(genUpper, "A–Z", o.Upper, "")
@@ -306,45 +328,45 @@ func (m Model) genOptionLines(w int) []string {
 	return out
 }
 
-// genHeroRows is the number of content rows above the "more" alternatives — used
-// by the renderer and the mouse hit-test to stay in sync.
-const genHeroRows = 8
-
-// genHeroLines renders the selected password as a prominent "hero" — grouped into
-// 4-char chunks, syntax-coloured, with a strength bar — then a short list of the
-// following passwords as pickable alternatives.
-func (m Model) genHeroLines(w, rows int) []string {
+// genPasswordLines renders the hero password (grouped, syntax-coloured, with a
+// strength bar) and the recent list, centred in the w×rows pane.
+func (m Model) genPasswordLines(w, rows int) []string {
+	center := func(s string) string {
+		if d := dw(s); d < w {
+			return strings.Repeat(" ", (w-d)/2) + s
+		}
+		return s
+	}
 	if m.genErr != "" {
-		return []string{"", "", "   " + theme.Bad.Render(m.genErr)}
+		return []string{"", center(theme.Bad.Render(m.genErr))}
 	}
 	if len(m.genList) == 0 {
-		return []string{"", "", "   " + theme.Faded.Render("press ↵ to generate")}
+		return []string{"", center(theme.Faded.Render("press ↵ to generate"))}
 	}
 	o := m.genOpts
 	bits := o.EntropyBits()
 	label, lst := strengthLabel(bits)
-	bar := strengthBar(bits, 18)
 
-	out := []string{
+	inner := []string{
+		center(heroPassword(m.genList[m.genSel])),
 		"",
-		"   " + heroPassword(m.genList[m.genSel]),
+		center(strengthBar(bits, 20) + "  " + theme.Strong.Render(fmt.Sprintf("%.0f bits", bits)) + " " + lst.Render("· "+label)),
 		"",
-		"   " + bar + "  " + theme.Strong.Render(fmt.Sprintf("%.0f bits", bits)) + " " + lst.Render("· "+label),
-		"",
-		"   " + theme.Faded.Render("↵ copy    r reroll"),
-		"",
+		center(theme.Faded.Render("↵ copy    r reroll")),
 	}
-	// Alternatives: the passwords following the hero, muted so it stands out.
-	alts := 0
-	out = append(out, "   "+theme.Dimmed.Render("more"))
-	for i := m.genSel + 1; i < len(m.genList) && len(out) < rows; i++ {
-		out = append(out, "   "+theme.Faded.Render("· "+trunc(m.genList[i], max(8, w-6))))
-		alts++
+	if recent := m.genRecent(); len(recent) > 0 {
+		inner = append(inner, "", center(theme.Dimmed.Render("recent")))
+		for _, idx := range recent {
+			inner = append(inner, center(theme.Faded.Render(m.genList[idx])))
+		}
 	}
-	if alts == 0 {
-		out[len(out)-1] = "" // no room / no more: drop the "more" header
+
+	top := max(0, (rows-len(inner))/2)
+	out := make([]string, 0, top+len(inner))
+	for range top {
+		out = append(out, "")
 	}
-	return out
+	return append(out, inner...)
 }
 
 // heroPassword groups a password into 4-char chunks and syntax-colours each.
@@ -384,8 +406,7 @@ func strengthLabel(bits float64) (string, lipgloss.Style) {
 
 // colorizePw renders a password with its character classes in distinct theme
 // colours — letters plain, digits in accent, symbols emphasised — so a password
-// reads at a glance and fits the vault's colour language. Runs of the same class
-// are batched into one styled span.
+// reads at a glance. Runs of the same class are batched into one styled span.
 func colorizePw(s string) string {
 	class := func(r rune) int {
 		switch {

@@ -114,13 +114,12 @@ type Model struct {
 	clickX, clickY int       // last left-click cell, for double-click detection
 	clickAt        time.Time //
 
-	// Generate tab (3): a pwgen-style password generator.
-	genOpts  pwgen.Options // character classes + length
-	genCount int           // how many to generate
-	genList  []string      // the current batch
-	genSel   int           // selected password in the grid
-	genRow   int           // selected option row (left pane)
-	genErr   string        // last generation error (e.g. no classes enabled)
+	// Generate tab (2): a pwgen-style password generator.
+	genOpts pwgen.Options // character classes + length
+	genList []string      // this session's recent rolls (newest last)
+	genSel  int           // the hero password (index into genList)
+	genRow  int           // selected option row (left pane)
+	genErr  string        // last generation error (e.g. no classes enabled)
 }
 
 // doubleClick is the window within which a second click on the same cell counts
@@ -163,7 +162,6 @@ func New(entries []vault.Entry, configPath string, timeout time.Duration) Model 
 		themeName:  themeName,
 		timeout:    timeout,
 		genOpts:    pwgen.Default(),
-		genCount:   50,
 	}
 }
 
@@ -467,7 +465,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "2": // 2 = Generate (displayed second; internal tab index 2)
 				m.tab, m.detail, m.focus = 2, false, 0
 				if len(m.genList) == 0 {
-					m.regen() // first visit: fill the list so the pane isn't empty
+					m.resetGen() // first visit: roll a password so the pane isn't empty
 				}
 				return m, nil
 			case "3": // 3 = Settings (displayed last; internal tab index 1)
