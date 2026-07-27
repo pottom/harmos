@@ -127,15 +127,14 @@ func (m Model) View() string {
 	return m.vaultBody() // browse, search, and entry detail share this frame
 }
 
-// tabIndicator is the small "1 Vault · 2 Settings" marker shown bottom-right, the
-// active tab in accent.
+// tabIndicator is the small "Vault · Settings" marker shown bottom-right, the
+// active tab in accent (switched with 1/2).
 func (m Model) tabIndicator() string {
 	tab := func(n int, name string) string {
-		s := fmt.Sprintf("%d %s", n+1, name)
 		if m.tab == n {
-			return theme.Acc.Render(s)
+			return theme.Acc.Render(name)
 		}
-		return theme.Faded.Render(s)
+		return theme.Faded.Render(name)
 	}
 	return tab(0, "Vault") + theme.Faded.Render(" · ") + tab(1, "Settings")
 }
@@ -851,80 +850,4 @@ func (m Model) tooSmall() string {
 		theme.Faded.Render("Widen the window."),
 	)
 	return lipgloss.Place(max(1, m.w), max(1, m.h), lipgloss.Center, lipgloss.Center, msg)
-}
-
-// padLeft right-aligns s within width w (display-width aware).
-func padLeft(s string, w int) string {
-	if d := dw(s); d < w {
-		return strings.Repeat(" ", w-d) + s
-	}
-	return trunc(s, w)
-}
-
-type helpGroup struct {
-	title string
-	rows  [][2]string
-}
-
-func (m Model) helpView() string {
-	var groups []helpGroup
-	if m.tab == 1 {
-		groups = []helpGroup{
-			{"Settings", [][2]string{
-				{"↑ / ↓", "Move in the sources list"},
-				{"a / e", "Add / edit a source"},
-				{"s", "Sync a Pleasant source"},
-				{"p / x", "Save / clear a keyring password"},
-				{"d", "Remove a source"},
-				{"t", "Change the color theme (live)"},
-				{"i", "Toggle Nerd Font icons"},
-			}},
-		}
-	} else {
-		groups = []helpGroup{
-			{"Navigate", [][2]string{
-				{"↑ / ↓", "Move — tree, table, results"},
-				{"→ / tab", "Enter folder · move to the table"},
-				{"←", "Collapse folder · back to the tree"},
-				{"enter", "Expand folder · open entry details"},
-			}},
-			{"Search", [][2]string{
-				{"/", "Search every source"},
-				{"enter", "Apply the filter, leave the box"},
-				{"esc", "Cancel search · clear the filter"},
-			}},
-			{"Entry under cursor", [][2]string{
-				{"ctrl+r", "Reveal the password (in details)"},
-				{"ctrl+y / u / o", "Copy password / username / URL"},
-			}},
-		}
-	}
-	groups = append(groups, helpGroup{"General", [][2]string{
-		{"1 / 2", "Switch tab — Vault / Settings"},
-		{"?", "Toggle this help"},
-		{"q / ctrl+c", "Quit — clears the clipboard"},
-	}})
-
-	const keyW = 14
-	var b strings.Builder
-	fmt.Fprint(&b, brand()+theme.Dimmed.Render("  ·  keys"))
-	for _, g := range groups {
-		fmt.Fprint(&b, "\n\n"+theme.Acc.Render(g.title))
-		for _, r := range g.rows {
-			fmt.Fprint(&b, "\n"+theme.Strong.Render(padLeft(r[0], keyW))+"    "+theme.Dimmed.Render(r[1]))
-		}
-	}
-	if len(m.excluded) > 0 {
-		fmt.Fprint(&b, "\n\n"+theme.Bad.Render("Unavailable sources"))
-		for _, ex := range m.excluded {
-			fmt.Fprint(&b, "\n"+theme.Strong.Render(padLeft(ex.Source, keyW))+"    "+theme.Faded.Render(trunc(ex.Reason, max(10, m.w/2))))
-		}
-	}
-
-	panel := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(theme.Accent).
-		Padding(1, 3).
-		Render(b.String())
-	return lipgloss.Place(max(1, m.w), max(1, m.h), lipgloss.Center, lipgloss.Center, panel)
 }

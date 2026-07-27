@@ -766,11 +766,12 @@ func TestTabsSwitch(t *testing.T) {
 func TestHelpToggles(t *testing.T) {
 	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
-	if !m.help || !strings.Contains(m.View(), "keys") {
-		t.Fatal("? should open help")
+	out := m.View()
+	if !m.help || !strings.Contains(out, "Search") || !strings.Contains(out, "help") {
+		t.Fatal("? should open the help screen with the search guide")
 	}
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 	if m.help {
-		t.Error("any key should close help")
+		t.Error("a non-navigation key should close help")
 	}
 }

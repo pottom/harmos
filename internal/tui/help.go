@@ -1,0 +1,183 @@
+package tui
+
+import (
+	"github.com/charmbracelet/lipgloss"
+
+	"github.com/pottom/harmos/internal/theme"
+)
+
+// The help overlay is a full-screen, two-pane reference in the same frame as the
+// Vault/Settings tabs: a compact key list on the left, and a scrollable search
+// manual on the right (the query language deserves worked examples, not a line).
+
+// helpLeftW is the width of the key-list pane; the search manual takes the rest.
+func helpLeftW(w int) int { return min(48, max(28, w*9/20)) }
+
+// helpViewport is the width and visible-line count of the (scrollable) search
+// manual pane, so scroll bounds match what is drawn.
+func (m Model) helpViewport() (w, visible int) {
+	panelsH := max(3, m.h-2) // header line + footer
+	return m.w - helpLeftW(m.w) - 1, max(1, panelsH-2)
+}
+
+// helpTotal is the line count of the taller pane — the scroll extent shared by
+// both panes. Line counts are width-independent, so any width gives the count.
+func (m Model) helpTotal() int {
+	return max(len(m.keyList(1<<30)), len(m.searchGuide(1<<30)))
+}
+
+// updateHelp scrolls the reference or closes the overlay.
+func (m Model) updateHelp(key string) Model {
+	_, vis := m.helpViewport()
+	total := m.helpTotal()
+	switch key {
+	case "up", "ctrl+p", "k":
+		m.helpScroll = max(0, m.helpScroll-1)
+	case "down", "ctrl+n", "j":
+		m.helpScroll = clampScroll(m.helpScroll+1, total, vis)
+	case "pgup":
+		m.helpScroll = max(0, m.helpScroll-max(1, vis-1))
+	case "pgdown", " ":
+		m.helpScroll = clampScroll(m.helpScroll+max(1, vis-1), total, vis)
+	case "home", "g":
+		m.helpScroll = 0
+	case "end", "G":
+		m.helpScroll = clampScroll(total, total, vis)
+	default: // esc, ?, q, enter, 1, 2, … → close
+		m.help = false
+		m.helpScroll = 0
+	}
+	return m
+}
+
+func (m Model) helpView() string {
+	panelsH := max(3, m.h-2)
+	leftW := helpLeftW(m.w)
+	rightW := m.w - leftW - 1
+
+	keys := m.keyList(leftW - 2)
+	guide := m.searchGuide(rightW - 2)
+	_, vis := m.helpViewport()
+	// One scroll offset drives both panes; each is clamped to its own length so the
+	// shorter pane simply parks at its end while the longer one keeps scrolling.
+	scroll := clampScroll(m.helpScroll, m.helpTotal(), vis)
+	lo := clampScroll(scroll, len(keys), vis)
+	ro := clampScroll(scroll, len(guide), vis)
+
+	left := boxV("Keys", "", keys[lo:min(lo+vis, len(keys))], leftW, panelsH, false, len(keys), lo, 0)
+	info := ""
+	if m.helpTotal() > vis {
+		info = "scroll ↑↓"
+	}
+	right := boxV("Search", info, guide[ro:min(ro+vis, len(guide))],
+		rightW, panelsH, true, len(guide), ro, 0)
+
+	header := spread(brand()+theme.Dimmed.Render("  ·  help"), m.tabIndicator(), m.w)
+	footer := theme.Faded.Render(trunc("↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · esc closes", m.w))
+	panels := lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
+	return header + "\n" + panels + "\n" + footer
+}
+
+// keyList is the left pane: the key bindings for the active tab, grouped.
+func (m Model) keyList(w int) []string {
+	kw := 9
+	head := func(s string) string { return "  " + theme.Acc.Render(s) }
+	row := func(k, d string) string {
+		return "  " + theme.Strong.Render(pad(k, kw)) + theme.Dimmed.Render(trunc(d, max(4, w-4-kw)))
+	}
+
+	var out []string
+	if m.tab == 1 {
+		out = append(out,
+			head("SETTINGS"),
+			row("↑↓ jk", "move in the list"),
+			row("→ ↵", "open a category"),
+			row("←", "back to categories"),
+			row("a / e", "add / edit a source"),
+			row("s", "sync a Pleasant source"),
+			row("p / x", "save / clear a password"),
+			row("d", "remove a source"),
+			row("t / i", "theme / Nerd Font icons"),
+			row("PgUp/Dn", "page the list"),
+		)
+	} else {
+		out = append(out,
+			head("NAVIGATE"),
+			row("↑↓ jk", "move: tree/table/results"),
+			row("→ ⇥", "into folder · to the table"),
+			row("←", "collapse · back to tree"),
+			row("↵", "expand · copy password"),
+			row("PgUp/Dn", "page any list"),
+			row("g", "results: go to the folder"),
+			"",
+			head("ENTRY DETAILS"),
+			row("→ ↵", "open details · copy pw"),
+			row("^r", "reveal the password"),
+			row("^y ^u", "copy password · username"),
+			row("^o ^t", "copy URL · TOTP code"),
+			row("c", "copy a get command"),
+			row("s", "save attachments"),
+			row("esc ←", "back"),
+		)
+	}
+	out = append(out,
+		"",
+		head("GENERAL"),
+		row("1 / 2", "switch Vault/Settings tab"),
+		row("/", "search every source"),
+		row("? q", "help · quit (clears clip)"),
+	)
+
+	if len(m.excluded) > 0 {
+		out = append(out, "", "  "+theme.Bad.Render("UNAVAILABLE"))
+		for _, ex := range m.excluded {
+			out = append(out, "  "+theme.Strong.Render(pad(trunc(ex.Source, kw), kw))+theme.Faded.Render(trunc(ex.Reason, max(4, w-4-kw))))
+		}
+	}
+	return out
+}
+
+// searchGuide is the right pane: the query language, with worked examples. w is
+// the inner width, used to fit and wrap the longer lines.
+func (m Model) searchGuide(w int) []string {
+	qw := 16
+	head := func(s string) string { return "  " + theme.Acc.Render(s) }
+	ex := func(q, d string) string {
+		return "  " + theme.Hi.Render(pad(q, qw)) + " " + theme.Dimmed.Render(trunc(d, max(4, w-4-qw)))
+	}
+	note := func(s string) string { return "  " + theme.Faded.Render(trunc(s, max(4, w-2))) }
+
+	return []string{
+		note("Press / to search every source. esc clears it."),
+		note("A query is terms joined by AND, OR and NOT."),
+		"",
+		head("BASICS"),
+		ex("db", "match “db” anywhere"),
+		ex("db prod", "AND — both terms must match"),
+		ex("db | web", "OR — either side matches"),
+		ex(`"db prod"`, "an exact phrase (spaces kept)"),
+		"",
+		head("SCOPE TO A FIELD"),
+		ex("title:db", "the title only"),
+		ex("user:svc", "the username"),
+		ex("url:vault", "the URL"),
+		ex("path:infra", "the folder path"),
+		ex("tag:prod", "the tags"),
+		ex("notes:rotated", "the notes"),
+		ex("field:token", "any custom field"),
+		"",
+		head("EXCLUDE  (-)"),
+		ex("db -stage", "has “db”, not “stage”"),
+		ex("db -user:root", "“db”, but not user root"),
+		"",
+		head("COMBINE"),
+		"  " + theme.Hi.Render("url:vault prod | web"),
+		note("   → (url:vault AND prod) OR web"),
+		"",
+		note("Matches are highlighted in the results, the"),
+		note("breadcrumb and the detail pane; a badge on each"),
+		note("result shows which field matched."),
+		note("Custom fields match by name always, by value"),
+		note("only when the value is not a protected secret."),
+	}
+}
