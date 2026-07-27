@@ -59,6 +59,7 @@ type Model struct {
 	setMode    int                    // setList / setRemove / …
 	setCat     int                    // selected Settings category (left pane): catSources / catTheme
 	setStatus  string                 // last action result, shown in the Settings footer
+	onboarding bool                   // launched with no config — first-run add-a-source flow
 	prefSel    int                    // selected row in the Preferences pane
 	staleAfter time.Duration          // Pleasant cache stale threshold (config-backed)
 	rmToggle   int                    // remove overlay: 0 delete-file, 1 forget-pw, 2 confirm

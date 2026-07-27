@@ -430,7 +430,15 @@ func (m Model) sourceLines(w int, profs []config.Source) []string {
 	locW := max(8, iw-nameW-typeW-kfW-statW-6)
 	out := []string{"  " + theme.Dimmed.Render(pad("NAME", nameW)+" "+pad("TYPE", typeW)+" "+pad("LOCATION", locW)+" "+pad("KEYFILE", kfW)+" STATUS")}
 	if len(profs) == 0 {
-		out = append(out, "", theme.Faded.Render("  no sources yet — press 'a' to add one"))
+		if m.onboarding {
+			out = append(out, "",
+				"  "+theme.Strong.Render("Welcome to harmos."),
+				"", "  "+theme.Faded.Render("Add your first source to get started:"),
+				"  "+theme.Faded.Render("a local KeePass ")+theme.Dimmed.Render(".kdbx")+theme.Faded.Render(" file, or a Pleasant Password Server."),
+				"", "  "+theme.Acc.Render("press 'a' to add one"))
+		} else {
+			out = append(out, "", theme.Faded.Render("  no sources yet — press 'a' to add one"))
+		}
 		return out
 	}
 	for k, p := range profs {

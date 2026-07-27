@@ -184,6 +184,21 @@ func TestSettingsSourceStatus(t *testing.T) {
 	}
 }
 
+// With no config, onboarding lands on Sources with a welcome, and 'a' opens the
+// add-source form.
+func TestOnboardingFlow(t *testing.T) {
+	m := New(nil, "", 30*time.Second)
+	m.tab, m.setCat, m.focus, m.onboarding = 1, catSources, 1, true
+	m = up(m, tea.WindowSizeMsg{Width: 90, Height: 20})
+	if !strings.Contains(ansi.Strip(m.View()), "Welcome to harmos") {
+		t.Error("onboarding should show a welcome message")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if m.setMode != setForm {
+		t.Errorf("'a' should open the add-source form, mode=%d", m.setMode)
+	}
+}
+
 // Tab toggles focus between the two Settings panes, like the other tabs.
 func TestSettingsTabToggles(t *testing.T) {
 	dir := t.TempDir()
