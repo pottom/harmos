@@ -636,11 +636,22 @@ func (m Model) entryLines(w, rows int) []string {
 	f := m.currentFolder()
 	i := ic()
 	// No password column: every entry has one, so a column of dots carries no
-	// information — it only stole width from the title, which is what actually
-	// identifies the entry. The freed space goes to the title.
+	// information. Title + Username by default; when the pane is wide enough (e.g.
+	// the tree is collapsed, or a big terminal) an extra URL column earns its keep.
+	urlCol := w >= 64
 	titleW := max(8, w*13/20)
 	userW := max(6, w-titleW-1)
-	out := []string{theme.Dimmed.Render(pad("Title", titleW) + " Username")}
+	urlW := 0
+	if urlCol {
+		titleW = max(8, w*2/5)
+		userW = max(6, w*3/10)
+		urlW = max(6, w-titleW-userW-2)
+	}
+	header := pad("Title", titleW) + " " + pad("Username", userW)
+	if urlCol {
+		header += " URL"
+	}
+	out := []string{theme.Dimmed.Render(header)}
 	if f == nil || len(f.entries) == 0 {
 		out = append(out, theme.Faded.Render("  (no entries here — open a sub-folder)"))
 		return out
@@ -651,13 +662,20 @@ func (m Model) entryLines(w, rows int) []string {
 	for k := start; k < end; k++ {
 		e := f.entries[k]
 		if k == m.esel && m.focus == 1 {
-			plain := pad(i.entry+" "+e.Title, titleW) + " " + e.Username
+			plain := pad(i.entry+" "+e.Title, titleW) + " " + pad(e.Username, userW)
+			if urlCol {
+				plain += " " + e.URL
+			}
 			out = append(out, theme.SelRow.Width(w).Render(trunc(plain, w)))
 			continue
 		}
-		out = append(out, theme.Faded.Render(i.entry+" ")+
-			theme.Strong.Render(pad(trunc(e.Title, titleW-2), titleW-2))+" "+
-			theme.Dimmed.Render(trunc(e.Username, userW)))
+		line := theme.Faded.Render(i.entry+" ") +
+			theme.Strong.Render(pad(trunc(e.Title, titleW-2), titleW-2)) + " " +
+			theme.Dimmed.Render(pad(trunc(e.Username, userW), userW))
+		if urlCol {
+			line += " " + theme.Dimmed.Render(trunc(e.URL, urlW))
+		}
+		out = append(out, line)
 	}
 	return out
 }
