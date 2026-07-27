@@ -47,6 +47,7 @@ type Model struct {
 	detail     bool // entry-details screen
 	reveal     bool
 	help       bool
+	helpScroll int // top line offset in the (scrollable) help overlay
 	w, h       int
 
 	configPath string                 // for the Settings tab
@@ -426,11 +427,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if key == "?" && !m.searchMode {
 			m.help = !m.help
+			m.helpScroll = 0
 			return m, nil
 		}
 		if m.help {
-			m.help = false
-			return m, nil
+			return m.updateHelp(key), nil
 		}
 		// q quits everywhere except while typing a search (where it's a character).
 		if key == "q" && !m.searchMode {
