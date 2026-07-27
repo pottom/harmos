@@ -486,7 +486,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Sequence(clearClip, tea.Quit)
 		}
 
-		// Tab switching (1 = Vault, 2 = Settings, 3 = Generate) — not while typing a
+		// Tab switching (1 = Vault, 2 = Generate, 3 = Settings — display order, not the
+		// internal m.tab indices) — not while typing a
 		// search, and not while a Settings overlay (form/remove) is capturing keys.
 		inOverlay := m.searchMode || (m.tab == 1 && m.setMode != setList)
 		if !inOverlay {

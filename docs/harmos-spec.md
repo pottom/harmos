@@ -228,7 +228,7 @@ Deliberate, not decorated. **Not** the default Charm look (`#7D56F4`/`#FF5F87`, 
 
 **Cache age is structural**, not decoration — permanent in the status line, teal→red as it ages. Same for entry expiry.
 
-Screens: `unlock → syncing → browsing → detail`. `/`-less search (§8b). `?` shows keys. Passwords masked by default, revealed with an explicit keypress, never in the list view.
+Screens: `unlock → syncing → browsing → detail`. `/` opens search (§8b). `?` shows keys. Passwords masked by default, revealed with an explicit keypress, never in the list view.
 
 ## 8. Bubble Tea correctness
 
@@ -262,7 +262,7 @@ Breakpoints (a design decision; exact thresholds picked in M4 against real data)
 
 **Test it** with `teatest` at 200×50, 100×30, 80×24, 60×20, 40×12, 30×8, including a resize *sequence*. Golden-file the output.
 
-## 8b. Search — the primary interaction
+## 8b. Search — the primary interaction **[corrected]**
 
 95% of sessions are "get the X password into my clipboard, go away." Search *is* the TUI.
 
@@ -272,9 +272,13 @@ Breakpoints (a design decision; exact thresholds picked in M4 against real data)
 - Filter synchronously in `Update`, every keystroke, **no debounce**. If you ever measure >~5ms on the real corpus, *then* move to a `tea.Cmd` — measure first.
 - Search covers **all sources at once**, interleaved in one ranked list.
 
-**Typing searches** — no `/`, no mode, no dialog. `esc` clears and restores the full tree.
+**Search is a mode, entered with `/`** — *corrected against the build.* Bare letters stay free for hotkeys (`c` copies a `get` command, `g` jumps to a result's folder), which a type-to-search surface would consume. `esc` clears and restores the full tree.
 
-Ranking, best to worst: exact title (case-insensitive) → title prefix → title fuzzy (`sahilm/fuzzy`) → username → folder path/tags → url. Highlight matched runes in brass. Notes are **not** searched by default (opt-in modifier).
+Ranking, best to worst *(as shipped)*: exact title → title prefix → title substring → username → tags → folder path → url → custom field → notes → attachment name → title fuzzy. Highlight matched runes in brass.
+
+Two corrections to the original ranking. **Fuzzy is the last resort, not the third tier** — a loose subsequence (`ppk` scattered across `GRPPHVC04K`) outranking real substring hits is what makes a search feel useless; the shipped matcher is hand-written (no `sahilm/fuzzy`) and gates a subsequence on tightness. **Notes *are* searched by default**, ranked low rather than hidden behind a modifier — an opt-in nobody discovers is not a feature. Protected custom fields match by name only, so a search never surfaces a secret value.
+
+**Field scopes:** `title: user: url: notes: tag: path: field: file:` and `src:` (source). `src:` is a filter, not a ranking signal: it decides which entries are eligible and leaves the tier to the terms beside it.
 
 **The fast path.** `enter` on a result **copies the password immediately** and starts the countdown. `tab`/`→` opens detail. Because `enter` acts without confirmation, the confirmation line shows the **fully qualified target** (`client-a/Infra/db-prod`) so a wrong-source copy is visible instantly.
 

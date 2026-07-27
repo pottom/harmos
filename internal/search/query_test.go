@@ -135,6 +135,45 @@ func TestSearchAttachmentNames(t *testing.T) {
 	}
 }
 
+// src: narrows the results to one source, on its own and as an AND term next to
+// a real query — the "same entry in two sources" case the badge alone can't fix.
+func TestQuerySourceScope(t *testing.T) {
+	m := New([]vault.Entry{
+		{Source: "own", Title: "svc-admin"},
+		{Source: "work", Title: "svc-admin"},
+		{Source: "own", Title: "db prod"},
+	})
+
+	res := m.Match("src:own svc-admin")
+	if len(res) != 1 || res[0].Entry.Source != "own" {
+		t.Fatalf("src:own svc-admin should keep only the own entry, got %v", titles(res))
+	}
+	// The real term, not the filter, decides where the hit ranks and what the
+	// badge says.
+	if res[0].Score != scoreExact || res[0].Field != "" {
+		t.Errorf("score/badge should come from the title term, got %d/%q", res[0].Score, res[0].Field)
+	}
+
+	if got := titles(m.Match("src:own")); len(got) != 2 || got[0] != "db prod" {
+		t.Errorf("src:own alone should list that source alphabetically, got %v", got)
+	}
+	if got := titles(m.Match("source:work")); len(got) != 1 || got[0] != "svc-admin" {
+		t.Errorf("source: is the long form of src:, got %v", got)
+	}
+	if got := titles(m.Match("svc-admin -src:work")); len(got) != 1 {
+		t.Errorf("-src: should exclude a source, got %v", got)
+	}
+}
+
+// A source term filters; it is not something to look for inside an entry, so it
+// must not highlight (it would paint stray hits in unrelated titles).
+func TestQuerySourceIsNotHighlighted(t *testing.T) {
+	terms := HighlightTerms("src:own svc-admin")
+	if len(terms) != 1 || terms[0] != "svc-admin" {
+		t.Errorf("source term should not be highlighted, got %v", terms)
+	}
+}
+
 // A term scoped to a field also drives the AND across different fields.
 func TestQueryScopedAND(t *testing.T) {
 	m := New([]vault.Entry{

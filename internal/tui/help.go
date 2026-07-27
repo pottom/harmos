@@ -7,8 +7,9 @@ import (
 )
 
 // The help overlay is a full-screen, two-pane reference in the same frame as the
-// Vault/Settings tabs: a compact key list on the left, and a scrollable search
-// manual on the right (the query language deserves worked examples, not a line).
+// Vault/Generate/Settings tabs: a compact key list for the active tab on the
+// left, and a scrollable search manual on the right (the query language deserves
+// worked examples, not a line).
 
 // helpLeftW is the width of the key-list pane; the search manual takes the rest.
 func helpLeftW(w int) int { return min(48, max(28, w*9/20)) }
@@ -90,16 +91,25 @@ func (m Model) keyList(w int) []string {
 	switch m.tab {
 	case 1:
 		out = append(out,
-			head("SETTINGS"),
-			row("↑↓ jk", "move in the list"),
-			row("→ ↵", "open a category"),
-			row("←", "back to categories"),
+			head("CATEGORIES"),
+			row("↑↓", "move between categories"),
+			row("→ ↵ ⇥", "open the selected one"),
+			row("t / i", "straight to Theme / Icons"),
+			row("PgUp/Dn", "first / last category"),
+			"",
+			head("SOURCES"),
 			row("a / e", "add / edit a source"),
 			row("s", "sync a Pleasant source"),
 			row("p / x", "save / clear a password"),
 			row("d", "remove a source"),
-			row("t / i", "theme / Nerd Font icons"),
-			row("PgUp/Dn", "page the list"),
+			row("← esc ⇥", "back to the categories"),
+			"",
+			head("THEME · ICONS · PREFS"),
+			row("↑↓", "preview a theme live"),
+			row("↵", "save the previewed theme"),
+			row("space", "toggle Nerd Font icons"),
+			row("←/→ -/+", "adjust a preference"),
+			row("esc ⇥", "leave (an unsaved theme reverts)"),
 		)
 	case 2:
 		out = append(out,
@@ -107,42 +117,52 @@ func (m Model) keyList(w int) []string {
 			row("↑↓ jk", "move between options"),
 			row("space", "toggle a class / option"),
 			row("←/→ -/+", "adjust the length"),
-			row("↵ ⇥", "jump to the password"),
+			row("↵ ⇥ g", "jump to the password"),
 			"",
 			head("GENERATE — PASSWORD"),
 			row("↑↓ jk", "browse recent rolls"),
-			row("↵ ^y", "copy the password"),
-			row("r space", "reroll a new one"),
-			row("esc ⇥", "back to options"),
+			row("↵ ^y c", "copy the password"),
+			row("r g space", "reroll a new one"),
+			row("esc ⇥ ←", "back to options"),
 			row("click", "pick recent · dbl/right copies"),
 		)
 	default:
 		out = append(out,
 			head("NAVIGATE"),
-			row("↑↓ jk", "move: tree/table/results"),
-			row("→ ⇥", "into folder · to the table"),
-			row("←", "collapse · back to tree"),
-			row("↵", "expand · copy password"),
+			row("↑↓", "move: tree · table · results"),
+			row("⇥", "tree ⇄ table"),
+			row("→", "expand a folder · open an entry"),
+			row("←", "collapse · back to the tree"),
+			row("↵", "expand a folder · copy password"),
 			row("^b", "hide / show the folder tree"),
 			row("PgUp/Dn", "page any list"),
-			row("g", "results: go to the folder"),
 			"",
-			head("ENTRY DETAILS"),
-			row("→ ↵", "open details · copy pw"),
-			row("^r", "reveal the password"),
+			head("SEARCH RESULTS"),
+			row("↑↓", "move through the hits"),
+			row("→ ⇥", "open the entry details"),
+			row("↵", "copy the password"),
+			row("g", "jump to the entry's folder"),
+			row("esc", "clear the results"),
+			"",
+			head("ANY SELECTED ENTRY"),
 			row("^y ^u", "copy password · username"),
 			row("^o ^t", "copy URL · TOTP code"),
-			row("c", "copy a get command"),
+			row("c", "copy a harmos get command"),
+			"",
+			head("ENTRY DETAILS"),
+			row("^r", "reveal the password"),
 			row("s", "save attachments"),
+			row("↑↓", "scroll the pane"),
 			row("esc ←", "back"),
 		)
 	}
 	out = append(out,
 		"",
 		head("GENERAL"),
-		row("1 / 2", "switch Vault/Settings tab"),
+		row("1 2 3", "Vault · Generate · Settings"),
 		row("/", "search every source"),
 		row("? q", "help · quit (clears clip)"),
+		row("^p ^n", "up / down, anywhere"),
 	)
 
 	if len(m.excluded) > 0 {
@@ -166,7 +186,7 @@ func (m Model) searchGuide(w int) []string {
 
 	return []string{
 		note("Press / to search every source. esc clears it."),
-		note("A query is terms joined by AND, OR and NOT."),
+		note("AND is a space, OR is |, NOT is a leading -."),
 		"",
 		head("BASICS"),
 		ex("db", "match “db” anywhere"),
@@ -183,6 +203,7 @@ func (m Model) searchGuide(w int) []string {
 		ex("notes:rotated", "the notes"),
 		ex("field:token", "any custom field"),
 		ex("file:id.ppk", "an attachment file name"),
+		ex("src:own", "one source only (also source:)"),
 		"",
 		head("EXCLUDE  (-)"),
 		ex("db -stage", "has “db”, not “stage”"),

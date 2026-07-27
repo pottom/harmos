@@ -32,7 +32,8 @@ const (
 	scoreFuzzy  = 75 // title contains query as a (tight) subsequence — the weakest,
 	//                   last-resort signal, below every real substring match, or a
 	//                   loose "p…p…k" would bury the entries that actually match.
-	scoreAll = 80 // empty query: everything, alphabetical
+	scoreAll = 80 // no ranking signal — an empty query, or a filter-only match
+	//                   (src:) — everything that qualifies, alphabetical
 
 	noMatch = -1
 )
@@ -40,7 +41,8 @@ const (
 // Result is one ranked hit. Matched holds the rune indices in Entry.Title that
 // the query matched, for highlighting (nil for non-title matches). Field names
 // where the match was found — "" for a title match, else "user"/"tags"/"path"/
-// "url"/"notes" or a custom field's name — for a badge in the results list.
+// "url"/"notes"/"source" or a custom field's name — for a badge in the results
+// list.
 type Result struct {
 	Entry   vault.Entry
 	Score   int
@@ -57,9 +59,9 @@ type idxField struct {
 }
 
 type indexed struct {
-	v                                          vault.Entry
-	title, user, url, path, tags, notes, files string // lowercased once, never in the loop
-	fields                                     []idxField
+	v                                                  vault.Entry
+	title, user, url, path, tags, notes, files, source string // lowercased once, never in the loop
+	fields                                             []idxField
 }
 
 // Matcher holds the flattened, pre-lowercased entries.
@@ -93,6 +95,7 @@ func New(entries []vault.Entry) *Matcher {
 			tags:   strings.ToLower(strings.Join(e.Tags, " ")),
 			notes:  strings.ToLower(e.Notes),
 			files:  strings.ToLower(strings.Join(names, " ")),
+			source: strings.ToLower(e.Source),
 			fields: fields,
 		}
 	}

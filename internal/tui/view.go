@@ -148,7 +148,7 @@ func (m Model) View() string {
 }
 
 // tabIndicator is the small "Vault · Settings" marker shown bottom-right, the
-// active tab in accent (switched with 1/2).
+// active tab in accent (switched with 1/2/3).
 func (m Model) tabIndicator() string {
 	tab := func(n int, name string) string {
 		if m.tab == n {
@@ -816,6 +816,8 @@ func matchedFieldValue(e vault.Entry, field string) string {
 			names[i] = f.Name
 		}
 		return strings.Join(names, ", ")
+	case "source":
+		return "" // the Where column already names the source
 	case "":
 		return ""
 	default:
