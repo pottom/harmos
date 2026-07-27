@@ -89,6 +89,42 @@ func visibleTree(roots []*node) []treeLine {
 	return out
 }
 
+// matchCounts returns, per tree node, how many search hits it contains (its own
+// entries plus every descendant's), or nil when there's no active query. Used to
+// highlight folders with results and show a count in the tree.
+func (m Model) matchCounts() map[*node]int {
+	if !m.showResults() {
+		return nil
+	}
+	hit := make(map[string]struct{}, len(m.results))
+	for _, r := range m.results {
+		hit[entryKey(r.Entry)] = struct{}{}
+	}
+	counts := map[*node]int{}
+	var walk func(n *node) int
+	walk = func(n *node) int {
+		c := 0
+		for _, e := range n.entries {
+			if _, ok := hit[entryKey(e)]; ok {
+				c++
+			}
+		}
+		for _, ch := range n.children {
+			c += walk(ch)
+		}
+		counts[n] = c
+		return c
+	}
+	for _, r := range m.roots {
+		walk(r)
+	}
+	return counts
+}
+
+func entryKey(e vault.Entry) string {
+	return e.Source + "\x00" + e.Path + "\x00" + e.Title + "\x00" + e.Username
+}
+
 // gotoResultFolder leaves the search and reveals the selected result's folder in
 // the tree — expanding the source and every folder on the way — then selects the
 // entry there. It's the "g" (goto folder) action from the results list.

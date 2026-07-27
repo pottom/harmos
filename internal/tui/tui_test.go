@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	gokeyring "github.com/zalando/go-keyring"
 
 	"github.com/pottom/harmos/internal/config"
@@ -594,6 +595,64 @@ func TestEmptySearchShowsTree(t *testing.T) {
 	m = up(m, tea.KeyMsg{Type: tea.KeyBackspace}) // delete back to empty
 	if m.showResults() || len(m.results) != 0 {
 		t.Errorf("deleting to empty should return to the tree, got showResults=%v n=%d", m.showResults(), len(m.results))
+	}
+}
+
+// matchCounts tags each folder with how many hits it (and its descendants) hold.
+func TestMatchCounts(t *testing.T) {
+	ents := []vault.Entry{
+		{Source: "s", Path: "a", Title: "foo1", Password: secret.New("p")},
+		{Source: "s", Path: "a", Title: "foo2", Password: secret.New("p")},
+		{Source: "s", Path: "b", Title: "bar", Password: secret.New("p")},
+	}
+	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	if m.matchCounts() != nil {
+		t.Error("no counts without an active query")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = typeStr(m, "foo")
+
+	var root, a, b *node
+	for _, r := range m.roots {
+		if r.name == "s" {
+			root = r
+		}
+	}
+	for _, ch := range root.children {
+		switch ch.name {
+		case "a":
+			a = ch
+		case "b":
+			b = ch
+		}
+	}
+	c := m.matchCounts()
+	if c == nil {
+		t.Fatal("counts should be non-nil while searching")
+	}
+	if c[a] != 2 {
+		t.Errorf("folder a should hold 2 hits, got %d", c[a])
+	}
+	if c[b] != 0 {
+		t.Errorf("folder b should hold 0 hits, got %d", c[b])
+	}
+	if c[root] != 2 {
+		t.Errorf("root should aggregate 2 hits, got %d", c[root])
+	}
+}
+
+// highlight preserves the visible text while emphasizing matches (colors may be
+// stripped in the test environment, so we check the text, not the styling).
+func TestHighlightAllOccurrences(t *testing.T) {
+	defer theme.Apply(theme.Charm)
+	for _, s := range []string{"runbook here and runbook there", "no match here", ""} {
+		if got := ansi.Strip(highlight(s, "runbook", theme.Faded)); got != s {
+			t.Errorf("highlight changed the text: %q → %q", s, got)
+		}
+	}
+	// an empty query is a no-op
+	if ansi.Strip(highlight("anything", "", theme.Faded)) != "anything" {
+		t.Error("empty query should not change the text")
 	}
 }
 
