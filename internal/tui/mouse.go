@@ -25,8 +25,8 @@ func (m Model) handleClick(x, y int) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.tab == 1 || m.detail || m.searchMode {
-		return m, nil // Settings/detail/typing: keyboard-driven for now
+	if m.tab == 1 {
+		return m, nil // Settings: keyboard-driven for now
 	}
 
 	panelsH := max(3, m.h-3)
@@ -34,9 +34,28 @@ func (m Model) handleClick(x, y int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	leftW := min(42, max(18, m.w*2/5))
+	leftSide := x <= leftW-1
+
+	// In the entry detail, clicking the left tree leaves the entry and jumps there.
+	if m.detail {
+		if leftSide {
+			flat := m.visible()
+			if row := windowStart(m.tsel, panelsH-2, len(flat)) + (y - 2); row >= 0 && row < len(flat) {
+				m.tsel, m.esel, m.focus, m.detail = row, 0, 0, false
+				if m.showResults() { // came in from a search — drop it so the tree is live
+					m.input.SetValue("")
+					m.results, m.sel, m.searchMode = nil, 0, false
+				}
+			}
+		}
+		return m, nil
+	}
+	if m.searchMode {
+		return m, nil // typing in the search box
+	}
 
 	// Left panel — the folder tree (only the base surface, not during search).
-	if x <= leftW-1 && !m.showResults() {
+	if leftSide && !m.showResults() {
 		flat := m.visible()
 		if row := windowStart(m.tsel, panelsH-2, len(flat)) + (y - 2); row >= 0 && row < len(flat) {
 			if dbl && m.tsel == row {
@@ -71,6 +90,34 @@ func (m Model) handleClick(x, y int) (tea.Model, tea.Cmd) {
 				}
 				m.esel, m.focus = idx, 1
 			}
+		}
+	}
+	return m, nil
+}
+
+// handleRightClick copies the password of the entry (or result) under the cursor
+// — a quick copy from the list without opening the detail.
+func (m Model) handleRightClick(x, y int) (tea.Model, tea.Cmd) {
+	if m.locked || m.help || m.attach != attachNone || m.tab == 1 || m.detail || m.searchMode {
+		return m, nil
+	}
+	panelsH := max(3, m.h-3)
+	leftW := min(42, max(18, m.w*2/5))
+	if y < 3 || y > panelsH-1 || x < leftW+1 { // right-pane list rows only (header at 2)
+		return m, nil
+	}
+	off := y - 3
+	if m.showResults() {
+		if idx := windowStart(m.sel, panelsH-3, len(m.results)) + off; idx >= 0 && idx < len(m.results) {
+			m.sel = idx
+			return m, m.copySel("password")
+		}
+		return m, nil
+	}
+	if f := m.currentFolder(); f != nil {
+		if idx := windowStart(m.esel, panelsH-3, len(f.entries)) + off; idx >= 0 && idx < len(f.entries) {
+			m.esel, m.focus = idx, 1
+			return m, m.copySel("password")
 		}
 	}
 	return m, nil
