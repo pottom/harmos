@@ -93,6 +93,23 @@ func TestMany(t *testing.T) {
 	}
 }
 
+// A password must never contain a space or a non-printable/control character —
+// those are invisible or get mangled by shells, forms and CSV.
+func TestOnlyVisibleChars(t *testing.T) {
+	o := Options{Length: 64, Lower: true, Upper: true, Digit: true, Symbol: true}
+	for range 50 {
+		p, err := Generate(o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range p {
+			if r <= ' ' || r == 0x7f {
+				t.Fatalf("password %q contains a space or control char %q (%#x)", p, r, r)
+			}
+		}
+	}
+}
+
 func TestEntropyAndPool(t *testing.T) {
 	o := Default()
 	if got := o.PoolSize(); got != len(Lower)+len(Upper)+len(Digit)+len(Symbol) {

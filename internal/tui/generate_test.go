@@ -162,8 +162,8 @@ func TestGenerateMouseAndColor(t *testing.T) {
 	if got := ansi.Strip(colorizePw("aB3!xZ")); got != "aB3!xZ" {
 		t.Errorf("colourising must not change the text, got %q", got)
 	}
-	if got := ansi.Strip(heroPassword("abcdefgh")); got != "abcd efgh" {
-		t.Errorf("grouping should chunk by 4 without altering chars, got %q", got)
+	if got := ansi.Strip(heroPassword("abcdefgh")); got != "abcdefgh" {
+		t.Errorf("the hero must show the password verbatim, got %q", got)
 	}
 }
 

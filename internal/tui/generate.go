@@ -433,14 +433,11 @@ func (m Model) genPasswordLines(w, rows int) []string {
 	return append(out, inner...)
 }
 
-// heroPassword groups a password into 4-char chunks and syntax-colours each.
+// heroPassword renders the password contiguously and syntax-coloured. It is shown
+// exactly as generated — no separators — so there is never any doubt about which
+// characters the password contains (it never contains spaces itself).
 func heroPassword(p string) string {
-	runes := []rune(p)
-	var chunks []string
-	for i := 0; i < len(runes); i += 4 {
-		chunks = append(chunks, colorizePw(string(runes[i:min(i+4, len(runes))])))
-	}
-	return strings.Join(chunks, " ")
+	return colorizePw(p)
 }
 
 // strengthBar is a filled/empty block bar for the entropy, capped at 128 bits.
