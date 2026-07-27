@@ -528,6 +528,21 @@ func TestRightClickCopies(t *testing.T) {
 	}
 }
 
+// Right-click copies while viewing an entry's detail (without leaving it).
+func TestRightClickInDetail(t *testing.T) {
+	ents := []vault.Entry{{Source: "s", Path: "f", Title: "a", Password: secret.New("p")}}
+	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = up(m, click(50, 3)) // select
+	m = up(m, click(50, 3)) // open detail
+	if !m.detail {
+		t.Fatal("should be in the detail")
+	}
+	m = up(m, rclick(60, 6)) // right-click inside the detail
+	if !m.detail {
+		t.Error("right-click in the detail must not leave it")
+	}
+}
+
 // In the detail view, clicking the tree on the left leaves the entry and jumps.
 func TestDetailClickTreeExits(t *testing.T) {
 	ents := []vault.Entry{
