@@ -13,15 +13,15 @@ func newLsCmd() *cobra.Command {
 	var configPath string
 	var noHeaders bool
 	cmd := &cobra.Command{
-		Use:   "ls [profile]",
+		Use:   "ls [source]",
 		Short: "List entries in an aligned table (no TTY needed)",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			profile := ""
+			source := ""
 			if len(args) == 1 {
-				profile = args[0]
+				source = args[0]
 			}
-			return runLs(configPath, profile, !noHeaders, cmd.OutOrStdout())
+			return runLs(configPath, source, !noHeaders, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().BoolVar(&noHeaders, "no-headers", false, "omit the header row (for scripting)")
@@ -29,17 +29,17 @@ func newLsCmd() *cobra.Command {
 	return cmd
 }
 
-func runLs(configPath, profile string, showHeaders bool, out io.Writer) error {
+func runLs(configPath, source string, showHeaders bool, out io.Writer) error {
 	res, _, err := openAll(configPath)
 	if err != nil {
 		return err
 	}
 
 	entries := res.Entries
-	if profile != "" {
+	if source != "" {
 		var filtered []vault.Entry
 		for _, e := range entries {
-			if e.Source == profile {
+			if e.Source == source {
 				filtered = append(filtered, e)
 			}
 		}

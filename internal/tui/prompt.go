@@ -21,7 +21,7 @@ type promptStep struct {
 // openSavePassword starts collecting the selected source's password(s): for a
 // Pleasant source the shared master (only when not already saved) and the server
 // password; for a kdbx source its file password.
-func (m Model) openSavePassword(p config.Profile) Model {
+func (m Model) openSavePassword(p config.Source) Model {
 	m.setMode = setPrompt
 	m.setStatus = ""
 	m.promptName = p.Name

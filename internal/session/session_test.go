@@ -38,14 +38,14 @@ func makeKDBX(t *testing.T, path, password, title string) {
 func writeConfig(t *testing.T, dir string) *config.Config {
 	t.Helper()
 	body := fmt.Sprintf(`
-[[profile]]
+[[source]]
 name  = "work"
 type  = "pleasant"
 url   = "https://pps:10001"
 user  = "u"
 cache = %q
 
-[[profile]]
+[[source]]
 name = "personal"
 type = "kdbx"
 path = %q
@@ -67,7 +67,7 @@ func TestOpenAllSources(t *testing.T) {
 	makeKDBX(t, filepath.Join(dir, "personal.kdbx"), "personalpw", "router")
 	cfg := writeConfig(t, dir)
 
-	ask := func(p config.Profile, retry bool) (secret.Secret, bool, error) {
+	ask := func(p config.Source, retry bool) (secret.Secret, bool, error) {
 		if p.Type == config.Pleasant {
 			return secret.New("master"), false, nil
 		}
@@ -98,7 +98,7 @@ func TestPartialFailureIsNotFatal(t *testing.T) {
 
 	// wrong master (returned again on retry) → the Pleasant cache is excluded,
 	// but personal still opens
-	ask := func(p config.Profile, retry bool) (secret.Secret, bool, error) {
+	ask := func(p config.Source, retry bool) (secret.Secret, bool, error) {
 		if p.Type == config.Pleasant {
 			return secret.New("WRONG"), false, nil
 		}
@@ -123,7 +123,7 @@ func TestRetryUnlocksOnSecondTry(t *testing.T) {
 	cfg := writeConfig(t, dir)
 
 	tries := map[string]int{}
-	ask := func(p config.Profile, retry bool) (secret.Secret, bool, error) {
+	ask := func(p config.Source, retry bool) (secret.Secret, bool, error) {
 		tries[p.Name]++
 		if p.Type == config.Pleasant {
 			if !retry {
@@ -151,7 +151,7 @@ func TestNonInteractiveWrongPasswordNotRetried(t *testing.T) {
 	cfg := writeConfig(t, dir)
 
 	tries := 0
-	ask := func(p config.Profile, retry bool) (secret.Secret, bool, error) {
+	ask := func(p config.Source, retry bool) (secret.Secret, bool, error) {
 		if p.Type == config.Pleasant {
 			tries++
 			return secret.New("WRONG"), false, nil // not interactive

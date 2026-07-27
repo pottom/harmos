@@ -157,10 +157,10 @@ func PackageExpired(expiry string, now time.Time) bool {
 }
 
 type mapper struct {
-	db                          *gokeepasslib.Database
-	files                       map[string]*zip.File
+	db                            *gokeepasslib.Database
+	files                         map[string]*zip.File
 	folders, entries, attachments int
-	err                         error
+	err                           error
 }
 
 func (m *mapper) folder(f Folder) gokeepasslib.Group {

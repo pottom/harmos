@@ -30,9 +30,9 @@ func newRemoveSourceCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			p := cfg.Profile(name)
+			p := cfg.Source(name)
 			if p == nil {
-				return fmt.Errorf("no profile named %q", name)
+				return fmt.Errorf("no source named %q", name)
 			}
 			localFile := p.Path
 			if p.Type == config.Pleasant {
@@ -74,9 +74,9 @@ func runRemoveSource(configPath, name string, deleteFile, forgetPassword bool, o
 	if err != nil {
 		return err
 	}
-	p := cfg.Profile(name)
+	p := cfg.Source(name)
 	if p == nil {
-		return fmt.Errorf("no profile named %q", name)
+		return fmt.Errorf("no source named %q", name)
 	}
 	localFile := p.Path
 	if p.Type == config.Pleasant {
@@ -84,13 +84,13 @@ func runRemoveSource(configPath, name string, deleteFile, forgetPassword bool, o
 	}
 	isPleasant := p.Type == config.Pleasant
 	otherPleasant := 0
-	for _, q := range cfg.Profiles {
+	for _, q := range cfg.Sources {
 		if q.Name != name && q.Type == config.Pleasant {
 			otherPleasant++
 		}
 	}
 
-	remaining, err := config.RemoveProfile(configPath, name)
+	remaining, err := config.RemoveSource(configPath, name)
 	if err != nil {
 		return err
 	}
@@ -141,7 +141,7 @@ func newRemovePasswordCmd() *cobra.Command {
 		Use:   "remove-password <name[,name...]|all>",
 		Short: "Remove saved passwords from the OS keyring",
 		Long: "Remove one or more sources' saved passwords from the OS keyring. Pass a " +
-			"comma-separated list of profile names, or `all` for every configured " +
+			"comma-separated list of source names, or `all` for every configured " +
 			"source. A Pleasant source removes the shared master password.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -166,7 +166,7 @@ func runRemovePassword(configPath, spec string, out io.Writer) error {
 			continue
 		case "all":
 			names = names[:0]
-			for _, p := range cfg.Profiles {
+			for _, p := range cfg.Sources {
 				names = append(names, p.Name)
 			}
 		default:
@@ -179,9 +179,9 @@ func runRemovePassword(configPath, spec string, out io.Writer) error {
 
 	masterDone := false
 	for _, name := range names {
-		p := cfg.Profile(name)
+		p := cfg.Source(name)
 		if p == nil {
-			return fmt.Errorf("no profile named %q", name)
+			return fmt.Errorf("no source named %q", name)
 		}
 		if p.Type == config.Pleasant {
 			if err := keyring.ForgetServer(name); err != nil {

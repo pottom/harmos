@@ -13,23 +13,23 @@ import (
 )
 
 // service is the keyring "service" every harmos entry is filed under; the
-// profile name is the "account". The shared harmos master password (which
+// source name is the "account". The shared harmos master password (which
 // unlocks every Pleasant cache — spec §2a) lives under a reserved account.
 const (
 	service       = "harmos"
 	masterAccount = "__harmos_master__"
 )
 
-// Store saves a profile's password in the OS keyring, replacing any existing one.
-func Store(profile string, pw secret.Secret) error { return set(profile, pw) }
+// Store saves a source's password in the OS keyring, replacing any existing one.
+func Store(source string, pw secret.Secret) error { return set(source, pw) }
 
-// Fetch returns a profile's stored password. ok is false (with a nil error) when
-// nothing is stored for that profile.
-func Fetch(profile string) (pw secret.Secret, ok bool, err error) { return get(profile) }
+// Fetch returns a source's stored password. ok is false (with a nil error) when
+// nothing is stored for that source.
+func Fetch(source string) (pw secret.Secret, ok bool, err error) { return get(source) }
 
-// Forget deletes a profile's stored password. It is not an error if there was
+// Forget deletes a source's stored password. It is not an error if there was
 // nothing to delete.
-func Forget(profile string) error { return del(profile) }
+func Forget(source string) error { return del(source) }
 
 // StoreMaster saves the shared harmos master password.
 func StoreMaster(pw secret.Secret) error { return set(masterAccount, pw) }
@@ -41,17 +41,17 @@ func FetchMaster() (secret.Secret, bool, error) { return get(masterAccount) }
 func ForgetMaster() error { return del(masterAccount) }
 
 // serverAccount namespaces a Pleasant source's server login password so it never
-// collides with a kdbx source's per-file password of the same profile name.
-func serverAccount(profile string) string { return "server:" + profile }
+// collides with a kdbx source's per-file password of the same source name.
+func serverAccount(source string) string { return "server:" + source }
 
 // StoreServer saves a Pleasant source's server login password.
-func StoreServer(profile string, pw secret.Secret) error { return set(serverAccount(profile), pw) }
+func StoreServer(source string, pw secret.Secret) error { return set(serverAccount(source), pw) }
 
 // FetchServer returns a Pleasant source's server login password, if stored.
-func FetchServer(profile string) (secret.Secret, bool, error) { return get(serverAccount(profile)) }
+func FetchServer(source string) (secret.Secret, bool, error) { return get(serverAccount(source)) }
 
 // ForgetServer deletes a Pleasant source's server login password.
-func ForgetServer(profile string) error { return del(serverAccount(profile)) }
+func ForgetServer(source string) error { return del(serverAccount(source)) }
 
 func set(account string, pw secret.Secret) error {
 	return gokeyring.Set(service, account, pw.Reveal())

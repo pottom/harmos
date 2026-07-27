@@ -22,14 +22,14 @@ const valid = `
 default = "work"
 clipboard_timeout = "45s"
 
-[[profile]]
+[[source]]
 name  = "work"
 type  = "pleasant"
 url   = "https://pps.example:10001"
 user  = "alice"
 cache = "~/caches/work.kdbx"
 
-[[profile]]
+[[source]]
 name = "personal"
 type = "kdbx"
 path = "~/vaults/personal.kdbx"
@@ -43,25 +43,25 @@ func TestLoadValid(t *testing.T) {
 	if c.ClipboardTimeout.Duration != 45*time.Second {
 		t.Errorf("clipboard_timeout = %v, want 45s", c.ClipboardTimeout.Duration)
 	}
-	if len(c.Profiles) != 2 {
-		t.Fatalf("got %d profiles, want 2", len(c.Profiles))
+	if len(c.Sources) != 2 {
+		t.Fatalf("got %d sources, want 2", len(c.Sources))
 	}
-	work := c.Profile("work")
+	work := c.Source("work")
 	if work == nil || work.Type != Pleasant {
-		t.Fatal("work profile missing or wrong type")
+		t.Fatal("work source missing or wrong type")
 	}
-	if c.Profile("nope") != nil {
-		t.Error("Profile(nonexistent) should be nil")
+	if c.Source("nope") != nil {
+		t.Error("Source(nonexistent) should be nil")
 	}
 	home, _ := os.UserHomeDir()
-	if want := filepath.Join(home, "vaults/personal.kdbx"); c.Profile("personal").Path != want {
-		t.Errorf("~ not expanded: got %q want %q", c.Profile("personal").Path, want)
+	if want := filepath.Join(home, "vaults/personal.kdbx"); c.Source("personal").Path != want {
+		t.Errorf("~ not expanded: got %q want %q", c.Source("personal").Path, want)
 	}
 }
 
 func TestDefaultClipboardTimeout(t *testing.T) {
 	body := `
-[[profile]]
+[[source]]
 name = "x"
 type = "kdbx"
 path = "/tmp/x.kdbx"
@@ -91,33 +91,33 @@ func TestRejectsLoosePermissions(t *testing.T) {
 func TestValidationErrors(t *testing.T) {
 	cases := map[string]string{
 		"duplicate name": `
-[[profile]]
+[[source]]
 name = "dup"
 type = "kdbx"
 path = "/a.kdbx"
-[[profile]]
+[[source]]
 name = "dup"
 type = "kdbx"
 path = "/b.kdbx"
 `,
 		"unknown type": `
-[[profile]]
+[[source]]
 name = "x"
 type = "mystery"
 path = "/a.kdbx"
 `,
 		"pleasant missing fields": `
-[[profile]]
+[[source]]
 name = "x"
 type = "pleasant"
 url  = "https://h:10001"
 `,
 		"kdbx missing path": `
-[[profile]]
+[[source]]
 name = "x"
 type = "kdbx"
 `,
-		"no profiles": `
+		"no sources": `
 default = "x"
 `,
 	}
@@ -129,7 +129,7 @@ default = "x"
 }
 
 func TestDanglingDefaultIsIgnored(t *testing.T) {
-	path := writeConfig(t, "default = \"work\"\n[[profile]]\nname = \"own\"\ntype = \"kdbx\"\npath = \"/x.kdbx\"\n")
+	path := writeConfig(t, "default = \"work\"\n[[source]]\nname = \"own\"\ntype = \"kdbx\"\npath = \"/x.kdbx\"\n")
 	cfg, err := Load(path)
 	if err != nil {
 		t.Fatalf("a dangling default should not fail load: %v", err)

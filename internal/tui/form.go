@@ -65,7 +65,7 @@ func (m Model) openAddForm() Model {
 	return m.refocusForm()
 }
 
-func (m Model) openEditForm(p config.Profile) Model {
+func (m Model) openEditForm(p config.Source) Model {
 	m.setMode = setForm
 	m.setStatus = ""
 	m.formEditing, m.formOrig = true, p.Name
@@ -137,7 +137,7 @@ func (m Model) updateForm(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// submitForm validates and writes the profile, then returns to the list.
+// submitForm validates and writes the source, then returns to the list.
 func (m Model) submitForm() Model {
 	name := m.formValue("name")
 	if name == "" {
@@ -172,8 +172,8 @@ func (m Model) submitForm() Model {
 				return m
 			}
 		}
-		verb, err = m.writeProfile(name, func(overwrite bool) (string, error) {
-			return config.WritePleasantProfile(m.configPath, name, url, user, cache, ca, overwrite)
+		verb, err = m.writeSource(name, func(overwrite bool) (string, error) {
+			return config.WritePleasantSource(m.configPath, name, url, user, cache, ca, overwrite)
 		})
 	} else {
 		path := m.formValue("path")
@@ -192,8 +192,8 @@ func (m Model) submitForm() Model {
 				return m
 			}
 		}
-		verb, err = m.writeProfile(name, func(overwrite bool) (string, error) {
-			return config.WriteKdbxProfile(m.configPath, name, path, keyfile, overwrite)
+		verb, err = m.writeSource(name, func(overwrite bool) (string, error) {
+			return config.WriteKdbxSource(m.configPath, name, path, keyfile, overwrite)
 		})
 	}
 	if err != nil {
@@ -211,16 +211,16 @@ func (m Model) submitForm() Model {
 	return m
 }
 
-// writeProfile applies the write, handling a rename on edit and a name clash on
+// writeSource applies the write, handling a rename on edit and a name clash on
 // add. write is called with the overwrite flag.
-func (m Model) writeProfile(name string, write func(overwrite bool) (string, error)) (string, error) {
+func (m Model) writeSource(name string, write func(overwrite bool) (string, error)) (string, error) {
 	if m.formEditing {
 		if name != m.formOrig {
 			// rename: drop the old block, then add under the new name
-			if exists, _ := config.ProfileExists(m.configPath, name); exists {
-				return "", config.ErrProfileExists
+			if exists, _ := config.SourceExists(m.configPath, name); exists {
+				return "", config.ErrSourceExists
 			}
-			if _, err := config.RemoveProfile(m.configPath, m.formOrig); err != nil {
+			if _, err := config.RemoveSource(m.configPath, m.formOrig); err != nil {
 				return "", err
 			}
 			return write(false)

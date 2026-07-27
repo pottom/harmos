@@ -9,7 +9,7 @@ import (
 	"github.com/pottom/harmos/internal/vault"
 )
 
-// Source is an external kdbx profile. Password and/or Keyfile may be set
+// Source is an external kdbx source. Password and/or Keyfile may be set
 // (a KDBX composite key needs both).
 type Source struct {
 	Name     string

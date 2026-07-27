@@ -55,7 +55,7 @@ type Model struct {
 	configPath string                 // for the Settings tab
 	srcType    map[string]config.Type // source name → type, for tree/breadcrumb icons
 	setSel     int                    // selected row in the Settings sources table
-	setKeyring map[string]bool        // profile name → has a saved keyring password
+	setKeyring map[string]bool        // source name → has a saved keyring password
 	setMode    int                    // setList / setRemove / …
 	setCat     int                    // selected Settings category (left pane): catSources / catTheme
 	setStatus  string                 // last action result, shown in the Settings footer
@@ -68,12 +68,12 @@ type Model struct {
 	form        []formField // add/edit form fields
 	formFocus   int         // focused form row (len(form) = the Save button)
 	formEditing bool        // editing an existing source vs adding
-	formOrig    string      // the profile name being edited (for rename)
+	formOrig    string      // the source name being edited (for rename)
 	formPps     bool        // form type: Pleasant vs kdbx
 
 	promptInput textinput.Model // save-password prompt
 	promptQueue []promptStep    // remaining password prompts
-	promptName  string          // profile the prompt(s) are for
+	promptName  string          // source the prompt(s) are for
 
 	syncCh    chan syncProgressMsg // live sync progress
 	syncName  string               // source being synced
@@ -148,7 +148,7 @@ func New(entries []vault.Entry, configPath string, timeout time.Duration) Model 
 			if cfg.Theme != "" {
 				themeName = cfg.Theme
 			}
-			for _, p := range cfg.Profiles {
+			for _, p := range cfg.Sources {
 				srcType[p.Name] = p.Type
 			}
 		}
@@ -235,9 +235,9 @@ func clearClip() tea.Msg {
 	return clearedMsg{}
 }
 
-// sources reads the configured profiles fresh from disk (so the Settings tab
+// sources reads the configured sources fresh from disk (so the Settings tab
 // reflects edits); an unreadable or empty config yields no rows.
-func (m Model) sources() []config.Profile {
+func (m Model) sources() []config.Source {
 	if m.configPath == "" {
 		return nil
 	}
@@ -245,13 +245,13 @@ func (m Model) sources() []config.Profile {
 	if err != nil {
 		return nil
 	}
-	return cfg.Profiles
+	return cfg.Sources
 }
 
-// keyringStatus probes the OS keyring for each profile's saved password (the
+// keyringStatus probes the OS keyring for each source's saved password (the
 // server password for Pleasant, the per-file password for kdbx). Computed once
 // on entering Settings, not per render, to avoid repeated keychain access.
-func keyringStatus(profs []config.Profile) map[string]bool {
+func keyringStatus(profs []config.Source) map[string]bool {
 	st := make(map[string]bool, len(profs))
 	for _, p := range profs {
 		var ok bool

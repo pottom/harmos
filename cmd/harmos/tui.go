@@ -22,7 +22,7 @@ func runTUI(configPath string) error {
 	if err != nil {
 		return err
 	}
-	if len(cfg.Profiles) == 0 {
+	if len(cfg.Sources) == 0 {
 		return fmt.Errorf("no sources configured — run `harmos sync` first, or add one in Settings")
 	}
 	applyConfiguredTheme(cfg, cfgPath)
