@@ -316,7 +316,7 @@ func (m Model) generateView() string {
 
 // genHeader mirrors the other tabs' top line.
 func (m Model) genHeader() string {
-	left := brandVersion() + theme.Faded.Render("  ·  generate")
+	left := m.brandVersion() + theme.Faded.Render("  ·  generate")
 	right := theme.Faded.Render("crypto/rand")
 	return spread(left, right, m.w)
 }

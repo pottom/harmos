@@ -17,7 +17,26 @@ import (
 	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/theme"
 	"github.com/pottom/harmos/internal/vault"
+	"github.com/pottom/harmos/internal/version"
 )
+
+// The header shows a yellow update marker once the background check finds a newer
+// release.
+func TestUpdateMarker(t *testing.T) {
+	version.Version = "v0.1.0"
+	t.Cleanup(func() { version.Version = "dev"; version.LatestVersion = "" })
+	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 20})
+	if strings.Contains(ansi.Strip(m.View()), "⬆") {
+		t.Error("no marker before a newer release is found")
+	}
+	m = up(m, updateAvailableMsg{tag: "v0.2.0"})
+	if m.latest != "v0.2.0" {
+		t.Fatalf("updateAvailableMsg should set latest, got %q", m.latest)
+	}
+	if !strings.Contains(ansi.Strip(m.View()), "⬆ v0.2.0") {
+		t.Error("the header should show the update marker")
+	}
+}
 
 func TestSettingsThemePicker(t *testing.T) {
 	defer theme.Apply(theme.Charm)

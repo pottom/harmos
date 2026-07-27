@@ -19,10 +19,19 @@ import (
 	"github.com/pottom/harmos/internal/version"
 )
 
+// updateStyle is the yellow "a newer release exists" marker — a deliberate amber
+// that reads as "attention" on both light and dark grounds (the palette has no
+// yellow token, and a red would read as an error rather than an update).
+var updateStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#b58900", Dark: "#e5c07b"})
+
 // brandVersion is the wordmark plus the build version, shown at the top of every
-// tab. (An update-available marker is added here later.)
-func brandVersion() string {
-	return brand() + theme.Faded.Render("  "+version.Version)
+// tab. When the background check found a newer release, a yellow marker follows.
+func (m Model) brandVersion() string {
+	s := brand() + theme.Faded.Render("  "+version.Version)
+	if m.latest != "" {
+		s += " " + updateStyle.Render("⬆ "+m.latest)
+	}
+	return s
 }
 
 // display-width aware helpers (spec §8a — never len()).
@@ -377,7 +386,7 @@ func (m Model) settingsView() string {
 // settingsHeader mirrors the Vault tab's search line: the wordmark plus a source
 // count, so the top line sits at the same row on both tabs.
 func (m Model) settingsHeader() string {
-	left := brandVersion() + theme.Faded.Render("  ·  settings")
+	left := m.brandVersion() + theme.Faded.Render("  ·  settings")
 	right := theme.Faded.Render(plural(len(m.sources()), "source", "sources"))
 	return spread(left, right, m.w)
 }
@@ -585,7 +594,7 @@ func (m Model) searchLine() string {
 	if m.searchMode {
 		glyph = theme.Acc.Render("  /  ")
 	}
-	left := brandVersion() + glyph + m.input.View()
+	left := m.brandVersion() + glyph + m.input.View()
 	right := theme.Faded.Render(plural(m.nSrc, "source", "sources"))
 	if m.showResults() {
 		right = theme.Dimmed.Render(plural(len(m.results), "match", "matches"))
