@@ -26,7 +26,7 @@ func (m Model) applyThemeAt(idx int) Model {
 func (m Model) updateThemePane(key string) (tea.Model, tea.Cmd) {
 	names := theme.Names()
 	switch key {
-	case "left", "esc":
+	case "left", "esc", "tab":
 		if t, ok := theme.Builtin(m.themeOrig); ok {
 			theme.Apply(t)
 		}
