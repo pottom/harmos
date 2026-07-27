@@ -229,7 +229,7 @@ func (m Model) genLayout(rows int) (top, listStart int, order []int) {
 // blank, affordance); genInnerMax reserves room for the fullest recent list so the
 // hero's position is stable.
 const (
-	genHeroInner = 7 // framed password (3) + blank + bar + blank + affordance
+	genHeroInner = 9 // framed password (3) + blank + bar + bits + label + blank + affordance
 	genInnerMax  = genHeroInner + 2 + (genHistMax - 1)
 )
 
@@ -407,7 +407,9 @@ func (m Model) genPasswordLines(w, rows int) []string {
 	}
 	inner = append(inner,
 		"",
-		center(strengthBar(bits, 20)+"  "+theme.Strong.Render(fmt.Sprintf("%.0f bits", bits))+" "+lst.Render("· "+label)),
+		center(strengthBar(bits, 24)),
+		center(theme.Strong.Render(fmt.Sprintf("%.0f bits", bits))),
+		center(lst.Render(label)),
 		"",
 		center(theme.Faded.Render("↵ copy    r reroll")),
 	)
