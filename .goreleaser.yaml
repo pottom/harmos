@@ -16,6 +16,11 @@ builds:
       - CGO_ENABLED=1
     goos: [darwin]
     goarch: [amd64, arm64]
+    ldflags: &ldflags
+      - -s -w
+      - -X github.com/pottom/harmos/internal/version.Version={{ .Version }}
+      - -X github.com/pottom/harmos/internal/version.GitCommit={{ .ShortCommit }}
+      - -X github.com/pottom/harmos/internal/version.BuildDate={{ .Date }}
   # linux and windows stay pure Go and cross-compile.
   - id: nocgo
     main: ./cmd/harmos
@@ -24,6 +29,7 @@ builds:
       - CGO_ENABLED=0
     goos: [linux, windows]
     goarch: [amd64, arm64]
+    ldflags: *ldflags
 
 archives:
   - formats: [tar.gz]
@@ -33,7 +39,8 @@ archives:
         formats: [zip]
 
 checksum:
-  name_template: "checksums.txt"
+  name_template: "sha256sums.txt"
+  algorithm: sha256
 
 changelog:
   use: github
