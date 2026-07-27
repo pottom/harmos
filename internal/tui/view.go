@@ -375,12 +375,15 @@ func (m Model) catLines(w int) []string {
 	return out
 }
 
-// sourceLines renders the Sources table (right pane).
+// sourceLines renders the Sources table (right pane). Every line carries a
+// one-cell left padding so the table lines up with the Theme/Icons panes, which
+// indent their content.
 func (m Model) sourceLines(w int, profs []config.Profile) []string {
 	i := ic()
+	iw := w - 2 // reserve the leading pad columns, matching the other panes
 	nameW, typeW, kfW := 18, 9, 14
-	locW := max(10, w-nameW-typeW-kfW-8-3)
-	out := []string{theme.Dimmed.Render(pad("NAME", nameW) + " " + pad("TYPE", typeW) + " " + pad("LOCATION", locW) + " " + pad("KEYFILE", kfW) + " KEYRING")}
+	locW := max(10, iw-nameW-typeW-kfW-8-3)
+	out := []string{"  " + theme.Dimmed.Render(pad("NAME", nameW)+" "+pad("TYPE", typeW)+" "+pad("LOCATION", locW)+" "+pad("KEYFILE", kfW)+" KEYRING")}
 	if len(profs) == 0 {
 		out = append(out, "", theme.Faded.Render("  no sources yet — press 'a' to add one"))
 		return out
@@ -401,11 +404,11 @@ func (m Model) sourceLines(w int, profs []config.Profile) []string {
 				kr = "saved"
 			}
 			plain := pad("▸ "+p.Name, nameW) + " " + pad(string(p.Type), typeW) + " " + pad(trunc(loc, locW), locW) + " " + pad(trunc(kf, kfW), kfW) + " " + kr
-			out = append(out, theme.SelRow.Width(w).Render(trunc(plain, w)))
+			out = append(out, theme.SelRow.Width(w).Render(trunc("  "+plain, w)))
 			continue
 		}
 		out = append(out,
-			theme.Acc.Render(sicon)+" "+theme.Strong.Render(pad(trunc(p.Name, nameW-2), nameW-2))+" "+
+			"  "+theme.Acc.Render(sicon)+" "+theme.Strong.Render(pad(trunc(p.Name, nameW-2), nameW-2))+" "+
 				theme.Dimmed.Render(pad(string(p.Type), typeW))+" "+
 				theme.Dimmed.Render(pad(trunc(loc, locW), locW))+" "+
 				theme.Faded.Render(pad(trunc(kf, kfW), kfW))+" "+
@@ -564,9 +567,12 @@ func (m Model) treeLines(w, rows int) []string {
 func (m Model) entryLines(w, rows int) []string {
 	f := m.currentFolder()
 	i := ic()
-	titleW := max(8, w*4/10)
-	userW := max(6, w*3/10)
-	out := []string{theme.Dimmed.Render(pad("Title", titleW) + " " + pad("Username", userW) + " Password")}
+	// No password column: every entry has one, so a column of dots carries no
+	// information — it only stole width from the title, which is what actually
+	// identifies the entry. The freed space goes to the title.
+	titleW := max(8, w*13/20)
+	userW := max(6, w-titleW-1)
+	out := []string{theme.Dimmed.Render(pad("Title", titleW) + " Username")}
 	if f == nil || len(f.entries) == 0 {
 		out = append(out, theme.Faded.Render("  (no entries here — open a sub-folder)"))
 		return out
@@ -577,11 +583,13 @@ func (m Model) entryLines(w, rows int) []string {
 	for k := start; k < end; k++ {
 		e := f.entries[k]
 		if k == m.esel && m.focus == 1 {
-			plain := pad(i.entry+" "+e.Title, titleW) + " " + pad(e.Username, userW) + " ••••••••"
+			plain := pad(i.entry+" "+e.Title, titleW) + " " + e.Username
 			out = append(out, theme.SelRow.Width(w).Render(trunc(plain, w)))
 			continue
 		}
-		out = append(out, theme.Faded.Render(i.entry+" ")+theme.Strong.Render(pad(trunc(e.Title, titleW-2), titleW-2))+" "+theme.Dimmed.Render(pad(e.Username, userW))+" "+theme.Acc.Render("••••••••"))
+		out = append(out, theme.Faded.Render(i.entry+" ")+
+			theme.Strong.Render(pad(trunc(e.Title, titleW-2), titleW-2))+" "+
+			theme.Dimmed.Render(trunc(e.Username, userW)))
 	}
 	return out
 }
