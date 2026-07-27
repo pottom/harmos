@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 
+	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/tui"
 )
 
@@ -20,10 +22,13 @@ func runTUI(configPath string) error {
 	}
 	cfg, err := loadConfigAt(cfgPath)
 	if err != nil {
+		// No config yet: instead of erroring, open the TUI in a first-run flow that
+		// walks the user through adding their first source.
+		var nse noSourcesError
+		if errors.As(err, &nse) {
+			return tui.RunOnboarding(cfgPath, config.DefaultClipboardTimeout)
+		}
 		return err
-	}
-	if len(cfg.Sources) == 0 {
-		return fmt.Errorf("no sources configured — run `harmos sync` first, or add one in Settings")
 	}
 	applyConfiguredTheme(cfg, cfgPath)
 	return tui.RunLocked(cfg, cfgPath, cfg.ClipboardTimeout.Duration)
