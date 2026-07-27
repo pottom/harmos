@@ -108,7 +108,14 @@ type Model struct {
 	attachSel   int             // cursor position in the picker
 	attachCheck []bool          // per-attachment selection (space toggles)
 	attachInput textinput.Model // destination-directory input
+
+	clickX, clickY int       // last left-click cell, for double-click detection
+	clickAt        time.Time //
 }
+
+// doubleClick is the window within which a second click on the same cell counts
+// as a double-click.
+const doubleClick = 450 * time.Millisecond
 
 // New builds the model over the given entries. configPath is the config file the
 // Settings tab reads and edits (may be "" when there is no Settings work).

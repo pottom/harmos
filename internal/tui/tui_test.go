@@ -507,6 +507,20 @@ func TestMouseClick(t *testing.T) {
 	}
 }
 
+// Double-clicking a folder expands/collapses it (like Enter).
+func TestFolderDoubleClick(t *testing.T) {
+	ents := []vault.Entry{{Source: "s", Path: "parent/child", Title: "x", Password: secret.New("p")}}
+	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	// visible tree = [s, parent]; "parent" is collapsed so "child" is hidden
+	before := len(m.visible())
+
+	m = up(m, click(5, 3)) // select "parent" (row 1)
+	m = up(m, click(5, 3)) // double-click → expand it (reveals "child")
+	if len(m.visible()) <= before {
+		t.Error("double-clicking a folder should expand it")
+	}
+}
+
 // g on a search result leaves the search and lands on that entry's folder.
 func TestGotoFolderFromResults(t *testing.T) {
 	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})

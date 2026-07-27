@@ -1,15 +1,22 @@
 package tui
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 // handleClick routes a left-click at (x, y) to a tab switch or a list-row
-// selection, matching the layout in vaultBody. Clicking the already-selected row
-// opens it.
+// selection, matching the layout in vaultBody. A single click selects a row; a
+// double-click opens it (a folder expands/collapses, an entry opens its detail).
 func (m Model) handleClick(x, y int) (tea.Model, tea.Cmd) {
 	// Overlays and modal phases own the whole screen; ignore stray clicks.
 	if m.locked || m.help || m.attach != attachNone {
 		return m, nil
 	}
+	dbl := time.Since(m.clickAt) < doubleClick && m.clickX == x && m.clickY == y
+	m.clickX, m.clickY, m.clickAt = x, y, time.Now()
+
 	// The tab indicator sits on the last line, on any tab.
 	if t, ok := m.tabHit(x, y); ok {
 		m.tab, m.detail, m.focus = t, false, 0
@@ -32,7 +39,11 @@ func (m Model) handleClick(x, y int) (tea.Model, tea.Cmd) {
 	if x <= leftW-1 && !m.showResults() {
 		flat := m.visible()
 		if row := windowStart(m.tsel, panelsH-2, len(flat)) + (y - 2); row >= 0 && row < len(flat) {
-			m.tsel, m.esel, m.focus = row, 0, 0
+			if dbl && m.tsel == row {
+				flat[row].node.expanded = !flat[row].node.expanded // double-click opens the folder
+			} else {
+				m.tsel, m.esel, m.focus = row, 0, 0
+			}
 		}
 		return m, nil
 	}
@@ -46,7 +57,7 @@ func (m Model) handleClick(x, y int) (tea.Model, tea.Cmd) {
 		off := y - 3
 		if m.showResults() {
 			if idx := windowStart(m.sel, panelsH-3, len(m.results)) + off; idx >= 0 && idx < len(m.results) {
-				if idx == m.sel {
+				if dbl && idx == m.sel {
 					return m.openDetail()
 				}
 				m.sel = idx
@@ -55,7 +66,7 @@ func (m Model) handleClick(x, y int) (tea.Model, tea.Cmd) {
 		}
 		if f := m.currentFolder(); f != nil {
 			if idx := windowStart(m.esel, panelsH-3, len(f.entries)) + off; idx >= 0 && idx < len(f.entries) {
-				if idx == m.esel && m.focus == 1 {
+				if dbl && idx == m.esel && m.focus == 1 {
 					return m.openDetail()
 				}
 				m.esel, m.focus = idx, 1
