@@ -25,24 +25,39 @@ const (
 	scoreSub    = 20 // title contains query
 	scoreFuzzy  = 30 // title contains query as a subsequence
 	scoreUser   = 40 // username contains query
-	scorePath   = 50 // folder path or tags contain query
+	scoreTags   = 45 // a tag contains query
+	scorePath   = 50 // folder path contains query
 	scoreURL    = 60 // url contains query
-	scoreAll    = 70 // empty query: everything, alphabetical
+	scoreField  = 65 // a custom field name/value contains query
+	scoreNotes  = 70 // notes contain query
+	scoreAll    = 80 // empty query: everything, alphabetical
 
 	noMatch = -1
 )
 
 // Result is one ranked hit. Matched holds the rune indices in Entry.Title that
-// the query matched, for highlighting; it is nil for non-title matches.
+// the query matched, for highlighting (nil for non-title matches). Field names
+// where the match was found — "" for a title match, else "user"/"tags"/"path"/
+// "url"/"notes" or a custom field's name — for a badge in the results list.
 type Result struct {
 	Entry   vault.Entry
 	Score   int
 	Matched []int
+	Field   string
+}
+
+// idxField is a custom field prepared for search: name/value lowercased, the
+// original name kept for the badge. Protected fields are matched by name only,
+// so a search never surfaces a secret value.
+type idxField struct {
+	name, value, display string
+	protected            bool
 }
 
 type indexed struct {
-	v                            vault.Entry
-	title, user, url, path, tags string // lowercased once, never in the loop
+	v                                   vault.Entry
+	title, user, url, path, tags, notes string // lowercased once, never in the loop
+	fields                              []idxField
 }
 
 // Matcher holds the flattened, pre-lowercased entries.
@@ -54,13 +69,24 @@ type Matcher struct {
 func New(entries []vault.Entry) *Matcher {
 	es := make([]indexed, len(entries))
 	for i, e := range entries {
+		fields := make([]idxField, len(e.Custom))
+		for j, f := range e.Custom {
+			fields[j] = idxField{
+				name:      strings.ToLower(f.Name),
+				value:     strings.ToLower(f.Value),
+				display:   f.Name,
+				protected: f.Protected,
+			}
+		}
 		es[i] = indexed{
-			v:     e,
-			title: strings.ToLower(e.Title),
-			user:  strings.ToLower(e.Username),
-			url:   strings.ToLower(e.URL),
-			path:  strings.ToLower(e.Path),
-			tags:  strings.ToLower(strings.Join(e.Tags, " ")),
+			v:      e,
+			title:  strings.ToLower(e.Title),
+			user:   strings.ToLower(e.Username),
+			url:    strings.ToLower(e.URL),
+			path:   strings.ToLower(e.Path),
+			tags:   strings.ToLower(strings.Join(e.Tags, " ")),
+			notes:  strings.ToLower(e.Notes),
+			fields: fields,
 		}
 	}
 	return &Matcher{entries: es}
@@ -89,8 +115,8 @@ func (m *Matcher) Match(query string) []Result {
 		}
 	} else {
 		for _, e := range m.entries {
-			if score, matched := scoreEntry(e, q); score != noMatch {
-				res = append(res, Result{Entry: e.v, Score: score, Matched: matched})
+			if score, matched, field := scoreEntry(e, q); score != noMatch {
+				res = append(res, Result{Entry: e.v, Score: score, Matched: matched, Field: field})
 			}
 		}
 	}
@@ -112,30 +138,41 @@ func (m *Matcher) Match(query string) []Result {
 	return res
 }
 
-func scoreEntry(e indexed, q string) (int, []int) {
+func scoreEntry(e indexed, q string) (int, []int, string) {
 	qr := []rune(q)
 	switch {
 	case e.title == q:
-		return scoreExact, seq(0, len(qr))
+		return scoreExact, seq(0, len(qr)), ""
 	case strings.HasPrefix(e.title, q):
-		return scorePrefix, seq(0, len(qr))
+		return scorePrefix, seq(0, len(qr)), ""
 	}
 	if i := strings.Index(e.title, q); i >= 0 {
 		start := utf8.RuneCountInString(e.title[:i])
-		return scoreSub, seq(start, len(qr))
+		return scoreSub, seq(start, len(qr)), ""
 	}
 	if pos, ok := subsequence(e.title, qr); ok {
-		return scoreFuzzy, pos
+		return scoreFuzzy, pos, ""
 	}
 	switch {
 	case strings.Contains(e.user, q):
-		return scoreUser, nil
-	case strings.Contains(e.path, q), strings.Contains(e.tags, q):
-		return scorePath, nil
+		return scoreUser, nil, "user"
+	case strings.Contains(e.tags, q):
+		return scoreTags, nil, "tags"
+	case strings.Contains(e.path, q):
+		return scorePath, nil, "path"
 	case strings.Contains(e.url, q):
-		return scoreURL, nil
+		return scoreURL, nil, "url"
 	}
-	return noMatch, nil
+	// custom fields: name always, value only when not protected (no secret leak).
+	for _, f := range e.fields {
+		if strings.Contains(f.name, q) || (!f.protected && strings.Contains(f.value, q)) {
+			return scoreField, nil, f.display
+		}
+	}
+	if strings.Contains(e.notes, q) {
+		return scoreNotes, nil, "notes"
+	}
+	return noMatch, nil, ""
 }
 
 // subsequence reports whether qr appears in s in order, and where (rune indices

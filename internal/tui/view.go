@@ -510,18 +510,29 @@ func (m Model) resultLines(w, rows int) []string {
 	start := windowStart(m.sel, avail, len(m.results))
 	end := min(start+avail, len(m.results))
 	q := m.input.Value()
+	locW := max(4, w-titleW-3)
 	for k := start; k < end; k++ {
-		e := m.results[k].Entry
+		r := m.results[k]
+		e := r.Entry
 		loc := e.Source
 		if e.Path != "" {
 			loc += " · " + e.Path
 		}
 		if k == m.sel {
-			plain := pad(i.entry+" "+e.Title, titleW) + " " + loc
+			tail := loc
+			if r.Field != "" { // badge: which field matched, when it's not the title
+				tail += " · " + r.Field
+			}
+			plain := pad(i.entry+" "+e.Title, titleW) + " " + tail
 			out = append(out, theme.SelRow.Width(w).Render(trunc(plain, w)))
 			continue
 		}
-		out = append(out, theme.Faded.Render(i.entry+" ")+highlight(pad(trunc(e.Title, titleW-2), titleW-2), q, theme.Strong)+" "+theme.Dimmed.Render(trunc(loc, max(4, w-titleW-3))))
+		locCell := theme.Dimmed.Render(trunc(loc, locW))
+		if r.Field != "" {
+			bw := dw(r.Field) + 3
+			locCell = theme.Dimmed.Render(trunc(loc, max(4, locW-bw))) + theme.Faded.Render(" · ") + theme.Acc.Render(r.Field)
+		}
+		out = append(out, theme.Faded.Render(i.entry+" ")+highlight(pad(trunc(e.Title, titleW-2), titleW-2), q, theme.Strong)+" "+locCell)
 	}
 	return out
 }
