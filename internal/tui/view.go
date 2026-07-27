@@ -488,7 +488,7 @@ func (m Model) entryLines(w, rows int) []string {
 	for k := start; k < end; k++ {
 		e := f.entries[k]
 		if k == m.esel && m.focus == 1 {
-			plain := pad("▸ "+e.Title, titleW) + " " + pad(e.Username, userW) + " ••••••••"
+			plain := pad(i.entry+" "+e.Title, titleW) + " " + pad(e.Username, userW) + " ••••••••"
 			out = append(out, theme.SelRow.Width(w).Render(trunc(plain, w)))
 			continue
 		}
@@ -517,7 +517,7 @@ func (m Model) resultLines(w, rows int) []string {
 			loc += " · " + e.Path
 		}
 		if k == m.sel {
-			plain := pad("▸ "+e.Title, titleW) + " " + loc
+			plain := pad(i.entry+" "+e.Title, titleW) + " " + loc
 			out = append(out, theme.SelRow.Width(w).Render(trunc(plain, w)))
 			continue
 		}
