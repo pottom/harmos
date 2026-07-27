@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -114,6 +115,32 @@ func TestSettingsAddForm(t *testing.T) {
 	}
 	if !strings.HasSuffix(profs[0].Path, "own.kdbx") {
 		t.Errorf("path = %q, want …/own.kdbx", profs[0].Path)
+	}
+}
+
+// The Settings sources table shows the same STATUS badge as the unlock screen —
+// cache freshness for Pleasant, credential state for kdbx.
+func TestSettingsSourceStatus(t *testing.T) {
+	gokeyring.MockInit()
+	dir := t.TempDir()
+	cache := filepath.Join(dir, "acme.kdbx")
+	if err := os.WriteFile(cache, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(dir, "config.toml")
+	if _, err := config.WriteKdbxProfile(cfgPath, "own", "/data/own.kdbx", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := config.WritePleasantProfile(cfgPath, "acme", "https://x.invalid", "u", cache, "", false); err != nil {
+		t.Fatal(err)
+	}
+	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 120, Height: 16})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}) // Settings / Sources
+	out := ansi.Strip(m.View())
+	for _, want := range []string{"STATUS", "own password", "cache just now"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("settings sources missing %q:\n%s", want, out)
+		}
 	}
 }
 

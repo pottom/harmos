@@ -387,9 +387,9 @@ func (m Model) catLines(w int) []string {
 func (m Model) sourceLines(w int, profs []config.Profile) []string {
 	i := ic()
 	iw := w - 2 // reserve the leading pad columns, matching the other panes
-	nameW, typeW, kfW := 18, 9, 14
-	locW := max(10, iw-nameW-typeW-kfW-8-3)
-	out := []string{"  " + theme.Dimmed.Render(pad("NAME", nameW)+" "+pad("TYPE", typeW)+" "+pad("LOCATION", locW)+" "+pad("KEYFILE", kfW)+" KEYRING")}
+	nameW, typeW, kfW, statW := 18, 9, 14, 18
+	locW := max(8, iw-nameW-typeW-kfW-statW-6)
+	out := []string{"  " + theme.Dimmed.Render(pad("NAME", nameW)+" "+pad("TYPE", typeW)+" "+pad("LOCATION", locW)+" "+pad("KEYFILE", kfW)+" STATUS")}
 	if len(profs) == 0 {
 		out = append(out, "", theme.Faded.Render("  no sources yet — press 'a' to add one"))
 		return out
@@ -404,12 +404,13 @@ func (m Model) sourceLines(w int, profs []config.Profile) []string {
 		if p.Keyfile != "" {
 			kf = filepath.Base(p.Keyfile)
 		}
+		// STATUS mirrors the unlock screen: cache freshness / credential state.
+		badge, kind := sourceBadge(p)
+		dot, bst := badgeDot(kind)
+		badge = trunc(badge, statW-2)
+
 		if k == m.setSel && m.focus == 1 {
-			kr := "—"
-			if m.setKeyring[p.Name] {
-				kr = "saved"
-			}
-			plain := pad("▸ "+p.Name, nameW) + " " + pad(string(p.Type), typeW) + " " + pad(trunc(loc, locW), locW) + " " + pad(trunc(kf, kfW), kfW) + " " + kr
+			plain := pad("▸ "+p.Name, nameW) + " " + pad(string(p.Type), typeW) + " " + pad(trunc(loc, locW), locW) + " " + pad(trunc(kf, kfW), kfW) + " " + dot + " " + badge
 			out = append(out, theme.SelRow.Width(w).Render(trunc("  "+plain, w)))
 			continue
 		}
@@ -418,7 +419,7 @@ func (m Model) sourceLines(w int, profs []config.Profile) []string {
 				theme.Dimmed.Render(pad(string(p.Type), typeW))+" "+
 				theme.Dimmed.Render(pad(trunc(loc, locW), locW))+" "+
 				theme.Faded.Render(pad(trunc(kf, kfW), kfW))+" "+
-				krCell(m.setKeyring[p.Name]))
+				bst.Render(dot+" "+badge))
 	}
 	return out
 }
@@ -464,14 +465,6 @@ func (m Model) iconsLines(_ int) []string {
 		"",
 		"  " + theme.Faded.Render("HARMOS_NERDFONT overrides this when set."),
 	}
-}
-
-// krCell renders the KEYRING cell: a green "saved" or a muted dash.
-func krCell(saved bool) string {
-	if saved {
-		return theme.Ok.Render("saved")
-	}
-	return theme.Faded.Render("—")
 }
 
 // brand is the small two-tone "harmos" wordmark.
