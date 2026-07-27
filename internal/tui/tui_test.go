@@ -179,6 +179,52 @@ func TestPageKeysPageThroughResults(t *testing.T) {
 	}
 }
 
+// A result row shows an excerpt of the field that matched, so the user sees what
+// was found — not just which field.
+func TestSnippetAndMatchedField(t *testing.T) {
+	if got := snippet("rotated the ppk key for the tunnel", []string{"ppk"}, 20); !strings.Contains(got, "ppk") {
+		t.Errorf("snippet should keep the term: %q", got)
+	}
+	long := "aaaa bbbb cccc dddd eeee ffff needle gggg hhhh"
+	if got := snippet(long, []string{"needle"}, 20); !strings.Contains(got, "needle") || !strings.HasPrefix(got, "…") {
+		t.Errorf("a mid-value match should ellipsize and keep the term: %q", got)
+	}
+
+	e := vault.Entry{
+		Username: "svc", URL: "https://x", Notes: "line one\nppk here",
+		Custom: []vault.Field{
+			{Name: "plain", Value: "shown"},
+			{Name: "secret", Value: "hidden", Protected: true},
+		},
+	}
+	if got := matchedFieldValue(e, "notes"); got != "line one ppk here" {
+		t.Errorf("notes should flatten newlines: %q", got)
+	}
+	if got := matchedFieldValue(e, "plain"); got != "shown" {
+		t.Errorf("plain custom field value = %q", got)
+	}
+	if got := matchedFieldValue(e, "secret"); got != "" {
+		t.Errorf("a protected value must never surface, got %q", got)
+	}
+	if got := matchedFieldValue(e, ""); got != "" {
+		t.Errorf("a title match has no field excerpt, got %q", got)
+	}
+}
+
+// The results pane shows the matched excerpt, e.g. a URL hit surfaces the URL.
+func TestResultsShowMatchExcerpt(t *testing.T) {
+	m := New([]vault.Entry{
+		{Source: "s", Path: "Net", Title: "gateway", Password: secret.New("p"), URL: "https://ppk.example.internal"},
+	}, "", 30*time.Second)
+	m = up(m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = typeStr(m, "ppk")
+	out := ansi.Strip(m.View())
+	if !strings.Contains(out, "ppk.example.internal") {
+		t.Errorf("a URL match should show the URL excerpt in the row:\n%s", out)
+	}
+}
+
 func testModel() Model {
 	return New([]vault.Entry{
 		{Source: "work", Path: "Infra", Title: "db-prod", Username: "svc_admin", Password: secret.New("p1")},

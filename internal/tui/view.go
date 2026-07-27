@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -585,11 +586,14 @@ func (m Model) entryLines(w, rows int) []string {
 	return out
 }
 
-// resultLines are the ranked search results shown in the right panel.
+// resultLines are the ranked search results shown in the right panel. The right
+// column shows the location for a title match, else the matched field's name and
+// a short excerpt of where the query hit — so a row says what was found, not just
+// which field.
 func (m Model) resultLines(w, rows int) []string {
 	i := ic()
 	titleW := max(8, w*4/10)
-	out := []string{theme.Dimmed.Render(pad("Title", titleW) + " Location")}
+	out := []string{theme.Dimmed.Render(pad("Title", titleW) + " Match")}
 	if len(m.results) == 0 {
 		out = append(out, theme.Faded.Render("  nothing matches — esc clears"))
 		return out
@@ -598,7 +602,7 @@ func (m Model) resultLines(w, rows int) []string {
 	start := windowStart(m.sel, avail, len(m.results))
 	end := min(start+avail, len(m.results))
 	terms := search.HighlightTerms(m.input.Value())
-	locW := max(4, w-titleW-3)
+	tailW := max(4, w-titleW-3)
 	for k := start; k < end; k++ {
 		r := m.results[k]
 		e := r.Entry
@@ -606,23 +610,106 @@ func (m Model) resultLines(w, rows int) []string {
 		if e.Path != "" {
 			loc += " · " + e.Path
 		}
+		val := matchedFieldValue(e, r.Field) // "" for a title match or a secret field
+
 		if k == m.sel {
 			tail := loc
-			if r.Field != "" { // badge: which field matched, when it's not the title
+			switch {
+			case val != "":
+				snipW := max(6, tailW-dw(r.Field)-1)
+				tail = r.Field + " " + snippet(val, terms, snipW)
+			case r.Field != "": // name-only or protected match: still say which field
 				tail += " · " + r.Field
 			}
 			plain := pad(i.entry+" "+e.Title, titleW) + " " + tail
 			out = append(out, theme.SelRow.Width(w).Render(trunc(plain, w)))
 			continue
 		}
-		locCell := theme.Dimmed.Render(trunc(loc, locW))
-		if r.Field != "" {
+
+		var tailCell string
+		switch {
+		case val != "": // show the excerpt where the query matched
+			snipW := max(6, tailW-dw(r.Field)-1)
+			tailCell = theme.Acc.Render(r.Field) + " " + highlightTerms(snippet(val, terms, snipW), terms, theme.Dimmed)
+		case r.Field != "": // matched the field's name (or a secret): badge + location
 			bw := dw(r.Field) + 3
-			locCell = theme.Dimmed.Render(trunc(loc, max(4, locW-bw))) + theme.Faded.Render(" · ") + theme.Acc.Render(r.Field)
+			tailCell = theme.Dimmed.Render(trunc(loc, max(4, tailW-bw))) + theme.Faded.Render(" · ") + theme.Acc.Render(r.Field)
+		default: // title match: the highlighted title is the "why", show the location
+			tailCell = theme.Dimmed.Render(trunc(loc, tailW))
 		}
-		out = append(out, theme.Faded.Render(i.entry+" ")+highlightTerms(pad(trunc(e.Title, titleW-2), titleW-2), terms, theme.Strong)+" "+locCell)
+		out = append(out, theme.Faded.Render(i.entry+" ")+highlightTerms(pad(trunc(e.Title, titleW-2), titleW-2), terms, theme.Strong)+" "+tailCell)
 	}
 	return out
+}
+
+// matchedFieldValue is the plain text of the field the search matched (r.Field),
+// so the results can show an excerpt. It returns "" for a title match (the title
+// is already shown, highlighted) and for a protected custom field (never surface
+// a secret value — the field name matched, not the value).
+func matchedFieldValue(e vault.Entry, field string) string {
+	switch field {
+	case "user":
+		return e.Username
+	case "url":
+		return e.URL
+	case "path":
+		return e.Path
+	case "tags":
+		return strings.Join(e.Tags, ", ")
+	case "notes":
+		return strings.Join(strings.Fields(strings.ReplaceAll(e.Notes, "\n", " ")), " ")
+	case "":
+		return ""
+	default:
+		for _, f := range e.Custom {
+			if f.Name == field {
+				if f.Protected {
+					return ""
+				}
+				return f.Value
+			}
+		}
+	}
+	return ""
+}
+
+// snippet is a short excerpt of val centered on the first query term, ellipsized,
+// width cells wide — grep's match context for a result row.
+func snippet(val string, terms []string, width int) string {
+	if width < 6 {
+		width = 6
+	}
+	lv := strings.ToLower(val)
+	pos := -1
+	for _, t := range terms {
+		if t == "" {
+			continue
+		}
+		if idx := strings.Index(lv, t); idx >= 0 && (pos < 0 || idx < pos) {
+			pos = idx
+		}
+	}
+	if pos <= 0 { // no hit (a name-only match) or hit at the start — show from the top
+		return trunc(val, width)
+	}
+	const ctx = 12 // keep a little context before the match
+	start := utf8.RuneCountInString(val[:pos])
+	runes := []rune(val)
+	from := max(0, start-ctx)
+	if from > 0 { // snap to a word boundary so the excerpt doesn't begin mid-word
+		j := from
+		for j < start && runes[j] != ' ' {
+			j++
+		}
+		if j < start {
+			from = j + 1
+		}
+	}
+	prefix := ""
+	if from > 0 {
+		prefix = "…"
+	}
+	return trunc(prefix+string(runes[from:]), width)
 }
 
 // detailView shows the selected entry inside a titled box.
