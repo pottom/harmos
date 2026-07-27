@@ -122,14 +122,21 @@ func (m Model) vaultBody() string {
 	searchLine := m.searchLine()
 	hint := m.hints()
 	if m.detail {
-		parts := []string{"↵ copy password"}
+		var parts []string
 		if e := m.selEntry(); e != nil {
+			w, vis := m.detailViewport()
+			if len(m.detailLines(e, w)) > vis {
+				parts = append(parts, "↑↓ scroll")
+			}
+			parts = append(parts, "↵ copy password")
 			if e.TOTP != "" {
 				parts = append(parts, "ctrl+t copy totp")
 			}
 			if len(e.Files) > 0 {
 				parts = append(parts, "s save files")
 			}
+		} else {
+			parts = append(parts, "↵ copy password")
 		}
 		parts = append(parts, "c copy get-cmd", "ctrl+r reveal", "esc back")
 		hint = theme.Faded.Render(strings.Join(parts, " · "))
@@ -499,11 +506,8 @@ func (m Model) resultLines(w, rows int) []string {
 // detailView shows the selected entry inside a titled box.
 // detailPane is the selected entry expanded into the right panel (a split with
 // the folder tree still on the left), sized to w×h.
-func (m Model) detailPane(w, h int) string {
-	e := m.selEntry()
-	if e == nil {
-		return box("Entry", "", nil, w, h, true)
-	}
+// detailLines builds the full (unwindowed) content of the entry-detail pane.
+func (m Model) detailLines(e *vault.Entry, w int) []string {
 	i := ic()
 	inW := w - 2
 
@@ -599,7 +603,46 @@ func (m Model) detailPane(w, h int) string {
 		}
 	}
 
-	return box(m.breadcrumb(e), "", b, w, h, true)
+	return b
+}
+
+// detailPane renders the selected entry, windowed by detailScroll so long notes
+// scroll instead of overflowing the panel.
+func (m Model) detailPane(w, h int) string {
+	e := m.selEntry()
+	if e == nil {
+		return box("Entry", "", nil, w, h, true)
+	}
+	lines := m.detailLines(e, w)
+	visible := max(1, h-2)
+	scroll := clampScroll(m.detailScroll, len(lines), visible)
+	info := ""
+	if len(lines) > visible {
+		info = fmt.Sprintf("%d–%d/%d", scroll+1, min(scroll+visible, len(lines)), len(lines))
+	}
+	return box(m.breadcrumb(e), info, lines[scroll:min(scroll+visible, len(lines))], w, h, true)
+}
+
+// detailViewport is the width and visible-line count of the detail pane, matching
+// vaultBody's layout, so scroll bounds line up with what's rendered.
+func (m Model) detailViewport() (w, visible int) {
+	panelsH := max(3, m.h-3)
+	leftW := min(42, max(18, m.w*2/5))
+	return m.w - leftW - 1, max(1, panelsH-2)
+}
+
+func clampScroll(scroll, total, visible int) int {
+	maxOff := total - visible
+	if maxOff < 0 {
+		maxOff = 0
+	}
+	if scroll < 0 {
+		return 0
+	}
+	if scroll > maxOff {
+		return maxOff
+	}
+	return scroll
 }
 
 // breadcrumb is the entry's full trail — "source › folder › … › title" — shown

@@ -100,8 +100,9 @@ type Model struct {
 	copiedWhat string
 	remaining  int
 
-	totpGen int    // generation token for the live-TOTP refresh loop in detail view
-	flash   string // transient message (e.g. "saved attachment"), shown in the bottom line
+	totpGen      int    // generation token for the live-TOTP refresh loop in detail view
+	detailScroll int    // top line offset when the detail pane overflows
+	flash        string // transient message (e.g. "saved attachment"), shown in the bottom line
 
 	attach      int             // attachment-save modal: attachNone / attachPick / attachDest
 	attachSel   int             // cursor position in the picker
@@ -198,7 +199,7 @@ func totpTick(gen int) tea.Cmd {
 // openDetail enters the entry-detail split. If the entry carries a TOTP it starts
 // a fresh once-a-second refresh loop so the code and its countdown stay live.
 func (m Model) openDetail() (tea.Model, tea.Cmd) {
-	m.detail, m.reveal = true, false
+	m.detail, m.reveal, m.detailScroll = true, false, 0
 	if e := m.selEntry(); e != nil && e.TOTP != "" {
 		m.totpGen++
 		return m, totpTick(m.totpGen)
@@ -454,6 +455,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch key {
 			case "esc", "left":
 				m.detail, m.reveal = false, false
+			case "up", "ctrl+p":
+				if m.detailScroll > 0 {
+					m.detailScroll--
+				}
+			case "down", "ctrl+n":
+				if e := m.selEntry(); e != nil {
+					w, vis := m.detailViewport()
+					if len(m.detailLines(e, w))-vis > m.detailScroll {
+						m.detailScroll++
+					}
+				}
+			case "pgup":
+				_, vis := m.detailViewport()
+				m.detailScroll = max(0, m.detailScroll-(vis-1))
+			case "pgdown":
+				if e := m.selEntry(); e != nil {
+					w, vis := m.detailViewport()
+					m.detailScroll = clampScroll(m.detailScroll+(vis-1), len(m.detailLines(e, w)), vis)
+				}
 			case "ctrl+r":
 				m.reveal = !m.reveal
 			case "s":
