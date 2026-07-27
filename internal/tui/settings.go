@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -25,9 +26,10 @@ const (
 	catSources = iota
 	catTheme
 	catIcons
+	catPrefs
 )
 
-var settingsCats = []string{"Sources", "Theme", "Icons"}
+var settingsCats = []string{"Sources", "Theme", "Icons", "Preferences"}
 
 // updateSettings handles keys while the Settings tab is active: modal overlays
 // first, then the two-pane list (left = category, right = its content).
@@ -50,6 +52,8 @@ func (m Model) updateSettings(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateThemePane(key)
 	case catIcons:
 		return m.updateIconsPane(key)
+	case catPrefs:
+		return m.updatePrefsPane(key)
 	}
 	return m.updateSourcesPane(key)
 }
@@ -70,6 +74,72 @@ func (m Model) updateIconsPane(key string) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// updatePrefsPane edits the persistent preferences: the clipboard timeout and the
+// cache-stale threshold. ←/→ adjust the selected row; esc/tab leave the pane.
+func (m Model) updatePrefsPane(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "left", "esc", "tab":
+		if key == "left" {
+			m.adjustPref(-1)
+		} else {
+			m.focus = 0
+		}
+	case "h", "-":
+		m.adjustPref(-1)
+	case "right", "l", "+", "=":
+		m.adjustPref(+1)
+	case "up", "ctrl+p", "k":
+		if m.prefSel > 0 {
+			m.prefSel--
+			m.setStatus = ""
+		}
+	case "down", "ctrl+n", "j":
+		if m.prefSel < 1 {
+			m.prefSel++
+			m.setStatus = ""
+		}
+	}
+	return m, nil
+}
+
+// adjustPref changes the selected preference by d steps and persists it.
+func (m *Model) adjustPref(d int) {
+	switch m.prefSel {
+	case 0: // clipboard timeout: ±5s in [5s, 300s]
+		m.timeout = clampDur(m.timeout+time.Duration(d)*5*time.Second, 5*time.Second, 300*time.Second)
+	case 1: // cache stale-after: ±1h in [1h, 720h]
+		m.staleAfter = clampDur(m.staleAfter+time.Duration(d)*time.Hour, time.Hour, 720*time.Hour)
+	}
+	m.savePrefs()
+}
+
+// savePrefs persists the preferences (best-effort, only if a config file exists).
+func (m *Model) savePrefs() {
+	if m.configPath == "" {
+		return
+	}
+	if _, err := os.Stat(m.configPath); err != nil {
+		return
+	}
+	if err := config.SetPreferences(m.configPath,
+		fmt.Sprintf("%ds", int(m.timeout.Seconds())),
+		fmt.Sprintf("%dh", int(m.staleAfter.Hours()))); err != nil {
+		m.setStatus = "could not save: " + err.Error()
+		return
+	}
+	m.setStatus = "saved"
+}
+
+func clampDur(d, lo, hi time.Duration) time.Duration {
+	if d < lo {
+		return lo
+	}
+	if d > hi {
+		return hi
+	}
+	return d
 }
 
 // updateSettingsNav is the left pane: pick a category.

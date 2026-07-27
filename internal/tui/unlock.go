@@ -41,8 +41,13 @@ const (
 	badgeAsk                    // faint — a password will be asked
 )
 
-// staleAfter marks a Pleasant cache "stale" once it is older than this.
-const staleAfter = 24 * time.Hour
+// resolveStaleAfter is the cache-stale threshold from config, or the default.
+func resolveStaleAfter(cfg *config.Config) time.Duration {
+	if cfg != nil && cfg.CacheStaleAfter.Duration > 0 {
+		return cfg.CacheStaleAfter.Duration
+	}
+	return config.DefaultCacheStaleAfter
+}
 
 // unlockDoneMsg carries the outcome of one open attempt.
 type unlockDoneMsg struct{ res *session.Result }
@@ -104,13 +109,14 @@ func hasPleasant(cfg *config.Config) bool {
 // sourceStats builds the per-source status rows: Pleasant sources show cache
 // freshness, kdbx sources show whether a saved password covers them.
 func sourceStats(cfg *config.Config) []srcStat {
+	staleAfter := resolveStaleAfter(cfg)
 	stats := make([]srcStat, 0, len(cfg.Profiles))
 	for _, p := range cfg.Profiles {
 		s := srcStat{name: p.Name, typ: string(p.Type), loc: p.Path}
 		if p.Type == config.Pleasant {
 			s.loc = p.URL
 		}
-		s.badge, s.kind = sourceBadge(p)
+		s.badge, s.kind = sourceBadge(p, staleAfter)
 		stats = append(stats, s)
 	}
 	return stats
@@ -119,7 +125,7 @@ func sourceStats(cfg *config.Config) []srcStat {
 // sourceBadge is a source's one-line status — a Pleasant cache's freshness, or a
 // kdbx source's credential state — shown both on the unlock screen and in the
 // Settings sources table (so the same info appears in both places).
-func sourceBadge(p config.Profile) (string, badgeKind) {
+func sourceBadge(p config.Profile, staleAfter time.Duration) (string, badgeKind) {
 	if p.Type == config.Pleasant {
 		age, ok := fileAge(p.Cache)
 		switch {
