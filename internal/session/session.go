@@ -35,17 +35,17 @@ type Result struct {
 // whether the password came from a live prompt: if it did, a wrong password is
 // worth re-prompting; if it came from env/keyring/non-TTY, retrying can't help.
 // The returned Secret may be zero for keyfile-only or unprotected files.
-type AskFunc func(p config.Profile, retry bool) (pw secret.Secret, interactive bool, err error)
+type AskFunc func(p config.Source, retry bool) (pw secret.Secret, interactive bool, err error)
 
 // maxUnlockAttempts bounds the wrong-password re-prompts per source.
 const maxUnlockAttempts = 3
 
-// Open opens every profile, resolving each source's password through ask. It
+// Open opens every source, resolving each source's password through ask. It
 // never fails the whole run for one bad source — a source that can't be opened
 // is recorded as excluded.
 func Open(cfg *config.Config, ask AskFunc) *Result {
 	var res Result
-	for _, p := range cfg.Profiles {
+	for _, p := range cfg.Sources {
 		v, err := openOne(p, ask)
 		if err != nil {
 			res.Excluded = append(res.Excluded, Excluded{p.Name, err.Error(), vault.IsBadCredential(err)})
@@ -61,7 +61,7 @@ func Open(cfg *config.Config, ask AskFunc) *Result {
 // not only surfaced as an excluded source at the end. It stops early when ask
 // returns the same secret again (non-interactive, keyring, or env), since a
 // retry then cannot help.
-func openOne(p config.Profile, ask AskFunc) (*vault.Vault, error) {
+func openOne(p config.Source, ask AskFunc) (*vault.Vault, error) {
 	if ask == nil {
 		return nil, fmt.Errorf("no way to obtain a password for %q", p.Name)
 	}
@@ -86,7 +86,7 @@ func openOne(p config.Profile, ask AskFunc) (*vault.Vault, error) {
 	return nil, last
 }
 
-func openWith(p config.Profile, pw secret.Secret) (*vault.Vault, error) {
+func openWith(p config.Source, pw secret.Secret) (*vault.Vault, error) {
 	switch p.Type {
 	case config.Pleasant:
 		return vault.Open(p.Cache, p.Name, vault.Credentials{Password: pw})

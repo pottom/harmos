@@ -58,10 +58,10 @@ func TestUnlockCollectsAndOpens(t *testing.T) {
 	makeKDBX(t, own, "ownpw", "router")
 
 	cfgPath := filepath.Join(dir, "config.toml")
-	if _, err := config.WritePleasantProfile(cfgPath, "work", "https://pps:10001", "u", cache, "", false); err != nil {
+	if _, err := config.WritePleasantSource(cfgPath, "work", "https://pps:10001", "u", cache, "", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := config.WriteKdbxProfile(cfgPath, "personal", own, "", false); err != nil {
+	if _, err := config.WriteKdbxSource(cfgPath, "personal", own, "", false); err != nil {
 		t.Fatal(err)
 	}
 	cfg, _ := config.Load(cfgPath)
@@ -97,7 +97,7 @@ func TestUnlockWrongMasterRequeues(t *testing.T) {
 	makeKDBX(t, cache, "master", "db-prod")
 
 	cfgPath := filepath.Join(dir, "config.toml")
-	if _, err := config.WritePleasantProfile(cfgPath, "work", "https://pps:10001", "u", cache, "", false); err != nil {
+	if _, err := config.WritePleasantSource(cfgPath, "work", "https://pps:10001", "u", cache, "", false); err != nil {
 		t.Fatal(err)
 	}
 	cfg, _ := config.Load(cfgPath)
@@ -136,10 +136,10 @@ func TestUnlockSkipExcludesSource(t *testing.T) {
 	makeKDBX(t, own, "ownpw", "router")
 
 	cfgPath := filepath.Join(dir, "config.toml")
-	if _, err := config.WritePleasantProfile(cfgPath, "work", "https://pps:10001", "u", cache, "", false); err != nil {
+	if _, err := config.WritePleasantSource(cfgPath, "work", "https://pps:10001", "u", cache, "", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := config.WriteKdbxProfile(cfgPath, "personal", own, "", false); err != nil {
+	if _, err := config.WriteKdbxSource(cfgPath, "personal", own, "", false); err != nil {
 		t.Fatal(err)
 	}
 	cfg, _ := config.Load(cfgPath)
@@ -172,7 +172,7 @@ func TestUnlockAutoWhenAllSaved(t *testing.T) {
 	makeKDBX(t, own, "ownpw", "router")
 
 	cfgPath := filepath.Join(dir, "config.toml")
-	if _, err := config.WriteKdbxProfile(cfgPath, "personal", own, "", false); err != nil {
+	if _, err := config.WriteKdbxSource(cfgPath, "personal", own, "", false); err != nil {
 		t.Fatal(err)
 	}
 	if err := keyring.Store("personal", secret.New("ownpw")); err != nil {

@@ -25,7 +25,7 @@ func writeDummyKdbx(t *testing.T, dir, name string) string {
 	return p
 }
 
-func TestAddKdbxWritesLoadableProfile(t *testing.T) {
+func TestAddKdbxWritesLoadableSource(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
 	kdbx := writeDummyKdbx(t, dir, "vault.kdbx")
@@ -38,12 +38,12 @@ func TestAddKdbxWritesLoadableProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load after add: %v", err)
 	}
-	p := cfg.Profile("vault") // name derived from vault.kdbx
+	p := cfg.Source("vault") // name derived from vault.kdbx
 	if p == nil {
-		t.Fatal("profile 'vault' not found after add")
+		t.Fatal("source 'vault' not found after add")
 	}
 	if p.Type != config.Kdbx || p.Path != kdbx {
-		t.Errorf("profile = %+v, want kdbx at %s", p, kdbx)
+		t.Errorf("source = %+v, want kdbx at %s", p, kdbx)
 	}
 	if info, _ := os.Stat(cfgPath); runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Errorf("config perms = %#o, want 0600", info.Mode().Perm())
@@ -81,16 +81,16 @@ func TestAddKdbxForceOverwrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := len(cfg.Profiles); n != 1 {
-		t.Fatalf("want 1 profile after overwrite, got %d", n)
+	if n := len(cfg.Sources); n != 1 {
+		t.Fatalf("want 1 source after overwrite, got %d", n)
 	}
-	if p := cfg.Profile("own"); p == nil || p.Path != second {
-		t.Errorf("profile not overwritten: %+v", p)
+	if p := cfg.Source("own"); p == nil || p.Path != second {
+		t.Errorf("source not overwritten: %+v", p)
 	}
 }
 
-// Overwriting one profile must leave the rest of the file — comments, other
-// profiles, top-level keys — byte-for-byte intact.
+// Overwriting one source must leave the rest of the file — comments, other
+// sources, top-level keys — byte-for-byte intact.
 func TestAddKdbxOverwritePreservesRest(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
@@ -98,13 +98,13 @@ func TestAddKdbxOverwritePreservesRest(t *testing.T) {
 	seed := "# my harmos config\n" +
 		"clipboard_timeout = \"45s\"\n" +
 		"\n" +
-		"[[profile]]\n" +
+		"[[source]]\n" +
 		"name = \"own\"\n" +
 		"type = \"kdbx\"\n" +
 		"path = \"/old/own.kdbx\"\n" +
 		"\n" +
 		"# the work server\n" +
-		"[[profile]]\n" +
+		"[[source]]\n" +
 		"name = \"work\"\n" +
 		"type = \"pleasant\"\n" +
 		"url = \"https://pps.example.invalid\"\n" +
@@ -137,15 +137,15 @@ func TestAddKdbxOverwritePreservesRest(t *testing.T) {
 	if strings.Contains(text, "/old/own.kdbx") {
 		t.Error("old path should be gone after overwrite")
 	}
-	// still two profiles, own now points at the new file
+	// still two sources, own now points at the new file
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if len(cfg.Profiles) != 2 {
-		t.Fatalf("want 2 profiles, got %d", len(cfg.Profiles))
+	if len(cfg.Sources) != 2 {
+		t.Fatalf("want 2 sources, got %d", len(cfg.Sources))
 	}
-	if p := cfg.Profile("own"); p == nil || p.Path != newKdbx {
+	if p := cfg.Source("own"); p == nil || p.Path != newKdbx {
 		t.Errorf("own not updated: %+v", p)
 	}
 }
@@ -189,7 +189,7 @@ func TestSourcesOmitsKeyfileColumnWhenNone(t *testing.T) {
 func TestAddSourceToEmptyConfig(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
-	// an existing but profile-less config (e.g. after removing the last source)
+	// an existing but source-less config (e.g. after removing the last source)
 	if err := os.WriteFile(cfgPath, []byte("# only a comment\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestAddSourceToEmptyConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Profile("own") == nil {
+	if cfg.Source("own") == nil {
 		t.Error("own not added to the empty config")
 	}
 }
@@ -219,9 +219,9 @@ func TestAddPleasantSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := cfg.Profile("work")
+	p := cfg.Source("work")
 	if p == nil || p.Type != config.Pleasant {
-		t.Fatalf("pleasant profile missing: %+v", p)
+		t.Fatalf("pleasant source missing: %+v", p)
 	}
 	if p.URL != "https://pps.invalid:10001" || p.User != "svc" || p.Cache != cache {
 		t.Errorf("pleasant fields wrong: %+v", p)
@@ -250,7 +250,7 @@ func TestAddPleasantDefaultCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := filepath.Join(dir, "data", "harmos", "work.kdbx")
-	if p := cfg.Profile("work"); p == nil || p.Cache != want {
+	if p := cfg.Source("work"); p == nil || p.Cache != want {
 		t.Fatalf("cache = %+v, want %s", p, want)
 	}
 	if _, err := os.Stat(filepath.Dir(want)); err != nil {
@@ -273,7 +273,7 @@ func TestLoadConfigNoSourcesGuidance(t *testing.T) {
 	if _, err := loadConfigAt(filepath.Join(dir, "nope.toml")); err == nil || !strings.Contains(err.Error(), "add-source") {
 		t.Errorf("missing config should guide to add-source, got %v", err)
 	}
-	// an empty config file (no profiles)
+	// an empty config file (no sources)
 	empty := filepath.Join(dir, "empty.toml")
 	if err := os.WriteFile(empty, nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -295,7 +295,7 @@ func TestAddKdbxRejectsMissingFile(t *testing.T) {
 func TestAddKdbxAppendsAndMasterGating(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
-	seed := "[[profile]]\n" +
+	seed := "[[source]]\n" +
 		"name = \"work\"\n" +
 		"type = \"pleasant\"\n" +
 		"url = \"https://pps.example.invalid\"\n" +
@@ -314,10 +314,10 @@ func TestAddKdbxAppendsAndMasterGating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if len(cfg.Profiles) != 2 {
-		t.Fatalf("want 2 profiles, got %d", len(cfg.Profiles))
+	if len(cfg.Sources) != 2 {
+		t.Fatalf("want 2 sources, got %d", len(cfg.Sources))
 	}
-	if cfg.Profile("work") == nil || cfg.Profile("personal") == nil {
-		t.Error("both the seeded pleasant and the added kdbx profile must be present")
+	if cfg.Source("work") == nil || cfg.Source("personal") == nil {
+		t.Error("both the seeded pleasant and the added kdbx source must be present")
 	}
 }

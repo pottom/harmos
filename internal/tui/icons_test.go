@@ -52,7 +52,7 @@ func TestIconsToggle(t *testing.T) {
 
 	dir := t.TempDir()
 	cfg := filepath.Join(dir, "config.toml")
-	if _, err := config.WriteKdbxProfile(cfg, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
+	if _, err := config.WriteKdbxSource(cfg, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
 		t.Fatal(err)
 	}
 	m := up(New(nil, cfg, 30*time.Second), tea.WindowSizeMsg{Width: 84, Height: 16})

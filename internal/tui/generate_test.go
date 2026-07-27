@@ -15,7 +15,7 @@ import (
 func TestGeneratorOptsPersist(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	if _, err := config.WriteKdbxProfile(path, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
+	if _, err := config.WriteKdbxSource(path, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
 		t.Fatal(err)
 	}
 	if err := config.SetGenerator(path, 28, true, true, false, false, true, false, ""); err != nil {

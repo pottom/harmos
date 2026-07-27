@@ -10,7 +10,7 @@ func TestSetGeneratorRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 	// a config with a source, so Load succeeds
-	if _, err := WriteKdbxProfile(path, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
+	if _, err := WriteKdbxSource(path, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
 		t.Fatal(err)
 	}
 	if err := SetGenerator(path, 24, true, false, true, false, true, false, "xy%"); err != nil {
@@ -45,53 +45,53 @@ func TestSetGeneratorRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg2.GenLength != 30 || cfg2.Profile("own") == nil {
-		t.Errorf("second write broke the file: len=%d own=%v", cfg2.GenLength, cfg2.Profile("own"))
+	if cfg2.GenLength != 30 || cfg2.Source("own") == nil {
+		t.Errorf("second write broke the file: len=%d own=%v", cfg2.GenLength, cfg2.Source("own"))
 	}
 }
 
-func TestWriteRemoveProfile(t *testing.T) {
+func TestWriteRemoveSource(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 
-	verb, err := WriteKdbxProfile(path, "own", filepath.Join(dir, "own.kdbx"), "", false)
+	verb, err := WriteKdbxSource(path, "own", filepath.Join(dir, "own.kdbx"), "", false)
 	if err != nil || verb != "added" {
 		t.Fatalf("write kdbx: verb=%q err=%v", verb, err)
 	}
-	if ok, _ := ProfileExists(path, "own"); !ok {
+	if ok, _ := SourceExists(path, "own"); !ok {
 		t.Error("own should exist after add")
 	}
 
 	// a duplicate without overwrite is refused
-	if _, err := WriteKdbxProfile(path, "own", filepath.Join(dir, "x.kdbx"), "", false); !errors.Is(err, ErrProfileExists) {
-		t.Errorf("duplicate should be ErrProfileExists, got %v", err)
+	if _, err := WriteKdbxSource(path, "own", filepath.Join(dir, "x.kdbx"), "", false); !errors.Is(err, ErrSourceExists) {
+		t.Errorf("duplicate should be ErrSourceExists, got %v", err)
 	}
 
 	// overwrite rewrites just that block
 	newPath := filepath.Join(dir, "new.kdbx")
-	if verb, err := WriteKdbxProfile(path, "own", newPath, "", true); err != nil || verb != "updated" {
+	if verb, err := WriteKdbxSource(path, "own", newPath, "", true); err != nil || verb != "updated" {
 		t.Fatalf("overwrite: verb=%q err=%v", verb, err)
 	}
 	cfg, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Profile("own").Path != newPath {
-		t.Errorf("path = %q, want %q", cfg.Profile("own").Path, newPath)
+	if cfg.Source("own").Path != newPath {
+		t.Errorf("path = %q, want %q", cfg.Source("own").Path, newPath)
 	}
 
-	// add a second profile, then remove the first
-	if _, err := WritePleasantProfile(path, "work", "https://x.invalid", "u", filepath.Join(dir, "w.kdbx"), "", false); err != nil {
+	// add a second source, then remove the first
+	if _, err := WritePleasantSource(path, "work", "https://x.invalid", "u", filepath.Join(dir, "w.kdbx"), "", false); err != nil {
 		t.Fatalf("write pleasant: %v", err)
 	}
-	remaining, err := RemoveProfile(path, "own")
+	remaining, err := RemoveSource(path, "own")
 	if err != nil || remaining != 1 {
 		t.Fatalf("remove: remaining=%d err=%v", remaining, err)
 	}
-	if ok, _ := ProfileExists(path, "own"); ok {
+	if ok, _ := SourceExists(path, "own"); ok {
 		t.Error("own should be gone after remove")
 	}
-	if ok, _ := ProfileExists(path, "work"); !ok {
+	if ok, _ := SourceExists(path, "work"); !ok {
 		t.Error("work should remain")
 	}
 }
@@ -99,7 +99,7 @@ func TestWriteRemoveProfile(t *testing.T) {
 func TestSetTopLevelKey(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	if _, err := WriteKdbxProfile(path, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
+	if _, err := WriteKdbxSource(path, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
 		t.Fatal(err)
 	}
 	// insert a new top-level key
@@ -120,7 +120,7 @@ func TestSetTopLevelKey(t *testing.T) {
 	if cfg.Theme != "dracula" {
 		t.Errorf("theme = %q, want dracula", cfg.Theme)
 	}
-	if cfg.Profile("own") == nil {
-		t.Error("the profile should survive setting a top-level key")
+	if cfg.Source("own") == nil {
+		t.Error("the source should survive setting a top-level key")
 	}
 }

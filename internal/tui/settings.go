@@ -238,7 +238,7 @@ func (m Model) updateSourcesPane(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateRemove(key string, profs []config.Profile) (tea.Model, tea.Cmd) {
+func (m Model) updateRemove(key string, profs []config.Source) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc":
 		m.setMode = setList
@@ -267,7 +267,7 @@ func (m Model) updateRemove(key string, profs []config.Profile) (tea.Model, tea.
 }
 
 // clearPassword forgets the selected source's saved keyring password.
-func (m Model) clearPassword(p config.Profile) Model {
+func (m Model) clearPassword(p config.Source) Model {
 	var err error
 	if p.Type == config.Pleasant {
 		err = keyring.ForgetServer(p.Name)
@@ -286,7 +286,7 @@ func (m Model) clearPassword(p config.Profile) Model {
 // doRemove removes the selected source, optionally deleting its local file and
 // forgetting its keyring password (the shared master only when no other Pleasant
 // source remains).
-func (m Model) doRemove(p config.Profile) Model {
+func (m Model) doRemove(p config.Source) Model {
 	otherPleasant := 0
 	for _, q := range m.sources() {
 		if q.Name != p.Name && q.Type == config.Pleasant {
@@ -294,7 +294,7 @@ func (m Model) doRemove(p config.Profile) Model {
 		}
 	}
 
-	if _, err := config.RemoveProfile(m.configPath, p.Name); err != nil {
+	if _, err := config.RemoveSource(m.configPath, p.Name); err != nil {
 		m.setStatus = "remove failed: " + err.Error()
 		return m
 	}

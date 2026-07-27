@@ -23,7 +23,7 @@ func TestSettingsThemePicker(t *testing.T) {
 	defer theme.Apply(theme.Charm)
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
-	if _, err := config.WriteKdbxProfile(cfgPath, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
+	if _, err := config.WriteKdbxSource(cfgPath, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
 		t.Fatal(err)
 	}
 	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 16})
@@ -51,7 +51,7 @@ func TestSettingsSavePassword(t *testing.T) {
 	gokeyring.MockInit()
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
-	if _, err := config.WriteKdbxProfile(cfgPath, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
+	if _, err := config.WriteKdbxSource(cfgPath, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
 		t.Fatal(err)
 	}
 	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 18})
@@ -76,7 +76,7 @@ func TestSettingsSyncNeedsCredentials(t *testing.T) {
 	t.Setenv("HARMOS_MASTER", "")
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
-	if _, err := config.WritePleasantProfile(cfgPath, "work", "https://x.invalid", "u", filepath.Join(dir, "w.kdbx"), "", false); err != nil {
+	if _, err := config.WritePleasantSource(cfgPath, "work", "https://x.invalid", "u", filepath.Join(dir, "w.kdbx"), "", false); err != nil {
 		t.Fatal(err)
 	}
 	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 18})
@@ -122,7 +122,7 @@ func TestSettingsAddForm(t *testing.T) {
 func TestPreferencesPersist(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
-	if _, err := config.WriteKdbxProfile(cfgPath, "own", "/data/own.kdbx", "", false); err != nil {
+	if _, err := config.WriteKdbxSource(cfgPath, "own", "/data/own.kdbx", "", false); err != nil {
 		t.Fatal(err)
 	}
 	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 18})
@@ -168,10 +168,10 @@ func TestSettingsSourceStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfgPath := filepath.Join(dir, "config.toml")
-	if _, err := config.WriteKdbxProfile(cfgPath, "own", "/data/own.kdbx", "", false); err != nil {
+	if _, err := config.WriteKdbxSource(cfgPath, "own", "/data/own.kdbx", "", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := config.WritePleasantProfile(cfgPath, "acme", "https://x.invalid", "u", cache, "", false); err != nil {
+	if _, err := config.WritePleasantSource(cfgPath, "acme", "https://x.invalid", "u", cache, "", false); err != nil {
 		t.Fatal(err)
 	}
 	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 120, Height: 16})
@@ -188,7 +188,7 @@ func TestSettingsSourceStatus(t *testing.T) {
 func TestSettingsTabToggles(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
-	if _, err := config.WriteKdbxProfile(cfgPath, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
+	if _, err := config.WriteKdbxSource(cfgPath, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
 		t.Fatal(err)
 	}
 	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 20})
@@ -209,10 +209,10 @@ func TestSettingsTabToggles(t *testing.T) {
 func TestSettingsRemove(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
-	if _, err := config.WriteKdbxProfile(cfgPath, "a", filepath.Join(dir, "a.kdbx"), "", false); err != nil {
+	if _, err := config.WriteKdbxSource(cfgPath, "a", filepath.Join(dir, "a.kdbx"), "", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := config.WriteKdbxProfile(cfgPath, "b", filepath.Join(dir, "b.kdbx"), "", false); err != nil {
+	if _, err := config.WriteKdbxSource(cfgPath, "b", filepath.Join(dir, "b.kdbx"), "", false); err != nil {
 		t.Fatal(err)
 	}
 

@@ -38,7 +38,7 @@ func loadConfigAt(path string) (*config.Config, error) {
 		path = p
 	}
 	cfg, err := config.Load(path)
-	if err != nil && (errors.Is(err, config.ErrNoProfiles) || errors.Is(err, os.ErrNotExist)) {
+	if err != nil && (errors.Is(err, config.ErrNoSources) || errors.Is(err, os.ErrNotExist)) {
 		return nil, noSourcesError{}
 	}
 	return cfg, err
@@ -91,7 +91,7 @@ func openAll(configPath string) (*session.Result, *config.Config, error) {
 
 	// Per source: a saved keyring password unlocks without asking; otherwise a
 	// prompt, re-prompting on a wrong password.
-	ask := func(p config.Profile, retry bool) (secret.Secret, bool, error) {
+	ask := func(p config.Source, retry bool) (secret.Secret, bool, error) {
 		if p.Type == config.Pleasant {
 			return masterOnce(retry)
 		}

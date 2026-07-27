@@ -29,7 +29,7 @@ type syncDoneMsg struct {
 // so the UI stays responsive. Credentials must already be saved (env/keyring) —
 // the master (encrypts the cache) and the server password (logs in); otherwise it
 // sets a status telling the user to save them first (press p).
-func (m Model) startSync(p config.Profile) (Model, tea.Cmd) {
+func (m Model) startSync(p config.Source) (Model, tea.Cmd) {
 	if p.Type != config.Pleasant {
 		m.setStatus = p.Name + " is a kdbx source — nothing to sync"
 		return m, nil

@@ -1,7 +1,7 @@
 // Package config loads and validates the harmos TOML configuration.
 //
 // The data model assumes N sources from the start (spec §2a): several Pleasant
-// servers and several local kdbx files may coexist. Profile names are unique and
+// servers and several local kdbx files may coexist. Source names are unique and
 // qualify everything downstream. Secrets never live here — the master password
 // and OAuth token go to the OS keyring, not this file (spec §9).
 package config
@@ -18,8 +18,8 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// ErrNoProfiles is returned by Load when the config exists but has no sources.
-var ErrNoProfiles = errors.New("no profiles configured")
+// ErrNoSources is returned by Load when the config exists but has no sources.
+var ErrNoSources = errors.New("no sources configured")
 
 // Type is the kind of a source.
 type Type string
@@ -45,9 +45,10 @@ func (d *Duration) UnmarshalText(b []byte) error {
 	return nil
 }
 
-// Profile is one source. Pleasant and kdbx profiles are asymmetric (spec §2a):
-// a Pleasant profile has URL/User/Cache, a kdbx profile has Path.
-type Profile struct {
+// Source is one configured source — a Pleasant server or a local kdbx file. The
+// two are asymmetric (spec §2a): a Pleasant source has URL/User/Cache, a kdbx
+// source has Path.
+type Source struct {
 	Name string `toml:"name"`
 	Type Type   `toml:"type"`
 
@@ -64,12 +65,12 @@ type Profile struct {
 
 // Config is the whole configuration file.
 type Config struct {
-	Default          string    `toml:"default"`
-	Theme            string    `toml:"theme"`    // built-in name or a themes/<name>.toml
-	NerdFont         *bool     `toml:"nerdfont"` // nil = default on; set false for terminals without a Nerd Font
-	ClipboardTimeout Duration  `toml:"clipboard_timeout"`
-	CacheStaleAfter  Duration  `toml:"cache_stale_after"` // when a Pleasant cache is flagged stale
-	Profiles         []Profile `toml:"profile"`
+	Default          string   `toml:"default"`
+	Theme            string   `toml:"theme"`    // built-in name or a themes/<name>.toml
+	NerdFont         *bool    `toml:"nerdfont"` // nil = default on; set false for terminals without a Nerd Font
+	ClipboardTimeout Duration `toml:"clipboard_timeout"`
+	CacheStaleAfter  Duration `toml:"cache_stale_after"` // when a Pleasant cache is flagged stale
+	Sources          []Source `toml:"source"`
 
 	// Password generator preferences (nil / 0 = built-in default).
 	GenLength  int    `toml:"gen_length"`
@@ -104,7 +105,7 @@ func DefaultPath() (string, error) {
 
 // Load reads, validates, and normalizes the config at path. It refuses a file
 // with permissions looser than 0600 (spec §9) and returns descriptive errors
-// for any invalid profile.
+// for any invalid source.
 func Load(path string) (*Config, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -134,34 +135,34 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) normalizeAndValidate() error {
-	if len(c.Profiles) == 0 {
-		return ErrNoProfiles
+	if len(c.Sources) == 0 {
+		return ErrNoSources
 	}
 
-	seen := make(map[string]bool, len(c.Profiles))
-	for i := range c.Profiles {
-		p := &c.Profiles[i]
+	seen := make(map[string]bool, len(c.Sources))
+	for i := range c.Sources {
+		p := &c.Sources[i]
 		if p.Name == "" {
-			return fmt.Errorf("profile %d has no name", i)
+			return fmt.Errorf("source %d has no name", i)
 		}
 		if seen[p.Name] {
-			return fmt.Errorf("duplicate profile name %q", p.Name)
+			return fmt.Errorf("duplicate source name %q", p.Name)
 		}
 		seen[p.Name] = true
 
 		switch p.Type {
 		case Pleasant:
 			if p.URL == "" || p.User == "" || p.Cache == "" {
-				return fmt.Errorf("pleasant profile %q needs url, user, and cache", p.Name)
+				return fmt.Errorf("pleasant source %q needs url, user, and cache", p.Name)
 			}
 		case Kdbx:
 			if p.Path == "" {
-				return fmt.Errorf("kdbx profile %q needs path", p.Name)
+				return fmt.Errorf("kdbx source %q needs path", p.Name)
 			}
 		case "":
-			return fmt.Errorf("profile %q has no type (want %q or %q)", p.Name, Pleasant, Kdbx)
+			return fmt.Errorf("source %q has no type (want %q or %q)", p.Name, Pleasant, Kdbx)
 		default:
-			return fmt.Errorf("profile %q has unknown type %q", p.Name, p.Type)
+			return fmt.Errorf("source %q has unknown type %q", p.Name, p.Type)
 		}
 
 		for _, pp := range []*string{&p.Cache, &p.Path, &p.CABundle, &p.Keyfile} {
@@ -173,7 +174,7 @@ func (c *Config) normalizeAndValidate() error {
 		}
 	}
 
-	// A default pointing at a missing profile (e.g. one that was removed) is not
+	// A default pointing at a missing source (e.g. one that was removed) is not
 	// fatal — the field is optional and nothing breaks without it, so drop it
 	// rather than refusing to load the whole config.
 	if c.Default != "" && !seen[c.Default] {
@@ -182,11 +183,11 @@ func (c *Config) normalizeAndValidate() error {
 	return nil
 }
 
-// Profile returns the named profile, or nil if it does not exist.
-func (c *Config) Profile(name string) *Profile {
-	for i := range c.Profiles {
-		if c.Profiles[i].Name == name {
-			return &c.Profiles[i]
+// Source returns the named source, or nil if it does not exist.
+func (c *Config) Source(name string) *Source {
+	for i := range c.Sources {
+		if c.Sources[i].Name == name {
+			return &c.Sources[i]
 		}
 	}
 	return nil

@@ -52,7 +52,7 @@ func runSources(configPath string, showHeaders bool, out io.Writer) error {
 	}
 
 	anyKeyfile := false
-	for _, p := range cfg.Profiles {
+	for _, p := range cfg.Sources {
 		if p.Keyfile != "" {
 			anyKeyfile = true
 			break
@@ -63,8 +63,8 @@ func runSources(configPath string, showHeaders bool, out io.Writer) error {
 		headers = append(headers, "KEYFILE")
 	}
 
-	rows := make([][]string, 0, len(cfg.Profiles))
-	for _, p := range cfg.Profiles {
+	rows := make([][]string, 0, len(cfg.Sources))
+	for _, p := range cfg.Sources {
 		loc := p.Path
 		if p.Type == config.Pleasant {
 			loc = p.URL
@@ -107,7 +107,7 @@ func newAddSourceCmd() *cobra.Command {
 				}
 				derived := name
 				if derived == "" {
-					derived = config.DeriveProfileName(args[0])
+					derived = config.DeriveSourceName(args[0])
 				}
 				if err := runAddSource(configPath, args[0], name, keyfile, force, out); err != nil {
 					return err
@@ -133,13 +133,13 @@ func newAddSourceCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&srcType, "type", "", "source type: kdbx (default) or pps")
-	cmd.Flags().StringVar(&name, "name", "", "profile name (default: derived from the path or cache)")
+	cmd.Flags().StringVar(&name, "name", "", "source name (default: derived from the path or cache)")
 	cmd.Flags().StringVar(&keyfile, "keyfile", "", "kdbx: key file, if the file uses one")
 	cmd.Flags().StringVar(&url, "url", "", "pps: server URL")
 	cmd.Flags().StringVar(&user, "user", "", "pps: server username")
 	cmd.Flags().StringVar(&cache, "cache", "", "pps: local cache kdbx path (default: $XDG_DATA_HOME/harmos/<name>.kdbx)")
 	cmd.Flags().StringVar(&caBundle, "ca-bundle", "", "pps: CA bundle for a private CA")
-	cmd.Flags().BoolVar(&force, "force", false, "overwrite an existing profile of the same name without asking")
+	cmd.Flags().BoolVar(&force, "force", false, "overwrite an existing source of the same name without asking")
 	cmd.Flags().BoolVar(&savePassword, "save-password", false, "prompt for the password and store it in the OS keyring")
 	cmd.Flags().StringVar(&configPath, "config", "", "config file (default: $XDG_CONFIG_HOME/harmos/config.toml)")
 	return cmd
@@ -171,17 +171,17 @@ func runAddSource(configPath, path, name, keyfile string, force bool, out io.Wri
 	}
 
 	if name == "" {
-		name = config.DeriveProfileName(kdbxPath)
+		name = config.DeriveSourceName(kdbxPath)
 	}
 	if name == "" {
-		return fmt.Errorf("could not derive a profile name from %q; pass --name", path)
+		return fmt.Errorf("could not derive a source name from %q; pass --name", path)
 	}
 
 	proceed, overwrite, err := confirmOverwrite(cfgPath, name, force, out)
 	if err != nil || !proceed {
 		return err
 	}
-	verb, err := config.WriteKdbxProfile(cfgPath, name, kdbxPath, keyfile, overwrite)
+	verb, err := config.WriteKdbxSource(cfgPath, name, kdbxPath, keyfile, overwrite)
 	if err != nil {
 		return err
 	}
@@ -226,10 +226,10 @@ func runAddPleasant(configPath, name, url, user, cache, caBundle string, force b
 		}
 	}
 	if name == "" {
-		name = config.DeriveProfileName(cachePath)
+		name = config.DeriveSourceName(cachePath)
 	}
 	if name == "" {
-		return fmt.Errorf("could not derive a profile name; pass --name")
+		return fmt.Errorf("could not derive a source name; pass --name")
 	}
 
 	// Make sure the cache directory exists so `harmos sync` can write into it.
@@ -241,7 +241,7 @@ func runAddPleasant(configPath, name, url, user, cache, caBundle string, force b
 	if err != nil || !proceed {
 		return err
 	}
-	verb, err := config.WritePleasantProfile(cfgPath, name, url, user, cachePath, caBundle, overwrite)
+	verb, err := config.WritePleasantSource(cfgPath, name, url, user, cachePath, caBundle, overwrite)
 	if err != nil {
 		return err
 	}
@@ -267,11 +267,11 @@ func configPathOrDefault(p string) (string, error) {
 	return config.DefaultPath()
 }
 
-// confirmOverwrite decides whether to write a profile named name. proceed is
+// confirmOverwrite decides whether to write a source named name. proceed is
 // false (with a nil error) when the user declined an overwrite; overwrite tells
 // the config writer whether to replace an existing block.
 func confirmOverwrite(cfgPath, name string, force bool, out io.Writer) (proceed, overwrite bool, err error) {
-	exists, err := config.ProfileExists(cfgPath, name)
+	exists, err := config.SourceExists(cfgPath, name)
 	if err != nil {
 		return false, false, err
 	}
@@ -282,9 +282,9 @@ func confirmOverwrite(cfgPath, name string, force bool, out io.Writer) (proceed,
 		return true, true, nil
 	}
 	if !onTTY() {
-		return false, false, fmt.Errorf("a profile named %q already exists in %s; pass --force to overwrite", name, cfgPath)
+		return false, false, fmt.Errorf("a source named %q already exists in %s; pass --force to overwrite", name, cfgPath)
 	}
-	ok, err := confirm(fmt.Sprintf("profile %q already exists — overwrite? [y/N] ", name))
+	ok, err := confirm(fmt.Sprintf("source %q already exists — overwrite? [y/N] ", name))
 	if err != nil {
 		return false, false, err
 	}

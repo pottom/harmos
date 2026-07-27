@@ -10,13 +10,13 @@ import (
 	"strings"
 )
 
-// ErrProfileExists is returned by WriteKdbxProfile/WritePleasantProfile when a
-// profile of that name already exists and overwrite was not requested.
-var ErrProfileExists = errors.New("profile already exists")
+// ErrSourceExists is returned by WriteKdbxSource/WritePleasantSource when a
+// source of that name already exists and overwrite was not requested.
+var ErrSourceExists = errors.New("source already exists")
 
-// DeriveProfileName is the default profile name for a path: the file name
+// DeriveSourceName is the default source name for a path: the file name
 // without its extension.
-func DeriveProfileName(path string) string {
+func DeriveSourceName(path string) string {
 	base := filepath.Base(path)
 	return strings.TrimSuffix(base, filepath.Ext(base))
 }
@@ -52,51 +52,51 @@ func DefaultCachePath(name string) (string, error) {
 	return filepath.Join(dir, "harmos", name+".kdbx"), nil
 }
 
-// ProfileExists reports whether the config at path already has a profile named
-// name. A missing or profile-less config reports false — it is appendable.
-func ProfileExists(path, name string) (bool, error) {
+// SourceExists reports whether the config at path already has a source named
+// name. A missing or source-less config reports false — it is appendable.
+func SourceExists(path, name string) (bool, error) {
 	if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
 		return false, nil
 	}
 	cfg, err := Load(path)
 	if err != nil {
-		if errors.Is(err, ErrNoProfiles) {
+		if errors.Is(err, ErrNoSources) {
 			return false, nil
 		}
 		return false, err
 	}
-	return cfg.Profile(name) != nil, nil
+	return cfg.Source(name) != nil, nil
 }
 
-// WriteKdbxProfile adds a local kdbx profile to the config at path, or replaces
+// WriteKdbxSource adds a local kdbx source to the config at path, or replaces
 // an existing one when overwrite is true (rewriting only that block). It returns
 // "added" or "updated".
-func WriteKdbxProfile(path, name, kdbxPath, keyfile string, overwrite bool) (string, error) {
+func WriteKdbxSource(path, name, kdbxPath, keyfile string, overwrite bool) (string, error) {
 	return upsert(path, name, buildKdbxBlock(name, kdbxPath, keyfile), overwrite)
 }
 
-// WritePleasantProfile is WriteKdbxProfile for a Pleasant source.
-func WritePleasantProfile(path, name, url, user, cache, caBundle string, overwrite bool) (string, error) {
+// WritePleasantSource is WriteKdbxSource for a Pleasant source.
+func WritePleasantSource(path, name, url, user, cache, caBundle string, overwrite bool) (string, error) {
 	return upsert(path, name, buildPleasantBlock(name, url, user, cache, caBundle), overwrite)
 }
 
-// RemoveProfile deletes a profile's block (and a top-level default that named it),
-// leaving the rest of the file verbatim. It returns how many profiles remain.
-func RemoveProfile(path, name string) (int, error) {
+// RemoveSource deletes a source's block (and a top-level default that named it),
+// leaving the rest of the file verbatim. It returns how many sources remain.
+func RemoveSource(path, name string) (int, error) {
 	cfg, err := Load(path)
 	if err != nil {
 		return 0, err
 	}
-	if cfg.Profile(name) == nil {
-		return 0, fmt.Errorf("no profile named %q", name)
+	if cfg.Source(name) == nil {
+		return 0, fmt.Errorf("no source named %q", name)
 	}
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return 0, err
 	}
-	next, ok := removeProfileBlock(string(content), name)
+	next, ok := removeSourceBlock(string(content), name)
 	if !ok {
-		return 0, fmt.Errorf("could not locate the %q profile block in %s", name, path)
+		return 0, fmt.Errorf("could not locate the %q source block in %s", name, path)
 	}
 	if cfg.Default == name {
 		next = removeTopLevelKey(next, "default")
@@ -104,7 +104,7 @@ func RemoveProfile(path, name string) (int, error) {
 	if err := writeFileAtomic(path, []byte(next)); err != nil {
 		return 0, err
 	}
-	remaining := len(cfg.Profiles) - 1
+	remaining := len(cfg.Sources) - 1
 	if remaining >= 1 {
 		if _, err := Load(path); err != nil {
 			return 0, fmt.Errorf("config is invalid after removing %q: %w", name, err)
@@ -227,9 +227,9 @@ func setTopLevel(path, key, newLine string) error {
 	return writeFileAtomic(path, []byte(strings.Join(out, "\n")))
 }
 
-// upsert inserts block as a new profile, or — if a profile of that name exists —
+// upsert inserts block as a new source, or — if a source of that name exists —
 // rewrites just that block (leaving the rest of the file verbatim). A file that
-// parses but has no profiles yet is appendable. Returns "added" or "updated".
+// parses but has no sources yet is appendable. Returns "added" or "updated".
 func upsert(path, name, block string, overwrite bool) (string, error) {
 	if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -245,7 +245,7 @@ func upsert(path, name, block string, overwrite bool) (string, error) {
 
 	cfg, err := Load(path)
 	if err != nil {
-		if !errors.Is(err, ErrNoProfiles) {
+		if !errors.Is(err, ErrNoSources) {
 			return "", err
 		}
 		cfg = &Config{}
@@ -257,13 +257,13 @@ func upsert(path, name, block string, overwrite bool) (string, error) {
 
 	verb := "added"
 	var next string
-	if cfg.Profile(name) != nil {
+	if cfg.Source(name) != nil {
 		if !overwrite {
-			return "", ErrProfileExists
+			return "", ErrSourceExists
 		}
-		replaced, ok := replaceProfileBlock(string(content), name, strings.TrimRight(block, "\n"))
+		replaced, ok := replaceSourceBlock(string(content), name, strings.TrimRight(block, "\n"))
 		if !ok {
-			return "", fmt.Errorf("could not locate the %q profile block to overwrite in %s", name, path)
+			return "", fmt.Errorf("could not locate the %q source block to overwrite in %s", name, path)
 		}
 		next, verb = replaced, "updated"
 	} else {
@@ -285,7 +285,7 @@ func upsert(path, name, block string, overwrite bool) (string, error) {
 
 func buildKdbxBlock(name, path, keyfile string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "[[profile]]\n")
+	fmt.Fprintf(&b, "[[source]]\n")
 	fmt.Fprintf(&b, "name = %q\n", name)
 	fmt.Fprintf(&b, "type = %q\n", string(Kdbx))
 	fmt.Fprintf(&b, "path = %q\n", path)
@@ -297,7 +297,7 @@ func buildKdbxBlock(name, path, keyfile string) string {
 
 func buildPleasantBlock(name, url, user, cache, caBundle string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "[[profile]]\n")
+	fmt.Fprintf(&b, "[[source]]\n")
 	fmt.Fprintf(&b, "name = %q\n", name)
 	fmt.Fprintf(&b, "type = %q\n", string(Pleasant))
 	fmt.Fprintf(&b, "url = %q\n", url)
@@ -309,16 +309,16 @@ func buildPleasantBlock(name, url, user, cache, caBundle string) string {
 	return b.String()
 }
 
-// replaceProfileBlock rewrites the [[profile]] block whose name matches, leaving
-// every other line — comments, blank lines, other profiles, top-level keys —
+// replaceSourceBlock rewrites the [[source]] block whose name matches, leaving
+// every other line — comments, blank lines, other sources, top-level keys —
 // exactly as it was. A block is the header line plus the contiguous run of key
 // lines under it, up to the first blank line or the next table header.
-func replaceProfileBlock(content, name, newBlock string) (string, bool) {
+func replaceSourceBlock(content, name, newBlock string) (string, bool) {
 	lines := strings.Split(content, "\n")
 	isTableHeader := func(s string) bool { return strings.HasPrefix(strings.TrimSpace(s), "[") }
 
 	for i := range lines {
-		if strings.TrimSpace(lines[i]) != "[[profile]]" {
+		if strings.TrimSpace(lines[i]) != "[[source]]" {
 			continue
 		}
 		j := i + 1
@@ -345,14 +345,14 @@ func replaceProfileBlock(content, name, newBlock string) (string, bool) {
 	return content, false
 }
 
-// removeProfileBlock deletes the [[profile]] block whose name matches (plus one
+// removeSourceBlock deletes the [[source]] block whose name matches (plus one
 // trailing blank line so no double gap is left), leaving everything else verbatim.
-func removeProfileBlock(content, name string) (string, bool) {
+func removeSourceBlock(content, name string) (string, bool) {
 	lines := strings.Split(content, "\n")
 	isTableHeader := func(s string) bool { return strings.HasPrefix(strings.TrimSpace(s), "[") }
 
 	for i := range lines {
-		if strings.TrimSpace(lines[i]) != "[[profile]]" {
+		if strings.TrimSpace(lines[i]) != "[[source]]" {
 			continue
 		}
 		j := i + 1

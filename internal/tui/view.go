@@ -423,7 +423,7 @@ func (m Model) catLines(w int) []string {
 // sourceLines renders the Sources table (right pane). Every line carries a
 // one-cell left padding so the table lines up with the Theme/Icons panes, which
 // indent their content.
-func (m Model) sourceLines(w int, profs []config.Profile) []string {
+func (m Model) sourceLines(w int, profs []config.Source) []string {
 	i := ic()
 	iw := w - 2 // reserve the leading pad columns, matching the other panes
 	nameW, typeW, kfW, statW := 18, 9, 14, 18

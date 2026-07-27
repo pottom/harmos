@@ -19,7 +19,7 @@ func newSyncCmd() *cobra.Command {
 	var configPath string
 	var savePassword bool
 	cmd := &cobra.Command{
-		Use:   "sync [profile]",
+		Use:   "sync [source]",
 		Short: "Pull each Pleasant source's OfflinePackage into its local kdbx cache",
 		Long: "Pull the OfflinePackage from each Pleasant source and write it to that " +
 			"source's encrypted kdbx cache. With no argument, syncs every Pleasant " +
@@ -51,16 +51,16 @@ func runSync(ctx context.Context, configPath string, args []string, savePassword
 		return err
 	}
 
-	targets := cfg.Profiles
+	targets := cfg.Sources
 	if len(args) == 1 {
-		p := cfg.Profile(args[0])
+		p := cfg.Source(args[0])
 		if p == nil {
-			return fmt.Errorf("no such profile %q", args[0])
+			return fmt.Errorf("no such source %q", args[0])
 		}
-		targets = []config.Profile{*p}
+		targets = []config.Source{*p}
 	}
 
-	var pleasantTargets []config.Profile
+	var pleasantTargets []config.Source
 	for _, p := range targets {
 		switch {
 		case p.Type == config.Pleasant:
@@ -110,7 +110,7 @@ func resolveSyncMaster() (secret.Secret, error) {
 
 // resolveServerPass gets a Pleasant source's server login password from the
 // keyring, else a prompt. The bool reports whether it came from the keyring.
-func resolveServerPass(p config.Profile) (secret.Secret, bool, error) {
+func resolveServerPass(p config.Source) (secret.Secret, bool, error) {
 	if pw, ok, _ := keyring.FetchServer(p.Name); ok {
 		return pw, true, nil
 	}
@@ -121,7 +121,7 @@ func resolveServerPass(p config.Profile) (secret.Secret, bool, error) {
 	return pw, false, err
 }
 
-func syncOne(ctx context.Context, p config.Profile, master secret.Secret, savePassword bool, out io.Writer) error {
+func syncOne(ctx context.Context, p config.Source, master secret.Secret, savePassword bool, out io.Writer) error {
 	emitf(out, "%s (%s):\n", p.Name, p.URL)
 
 	serverPass, fromKeyring, err := resolveServerPass(p)

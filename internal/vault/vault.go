@@ -30,7 +30,7 @@ type Credentials struct {
 // (provenance is structural — §2a). The password is a Secret so it never leaks
 // through logging; reveal it only when copying.
 type Entry struct {
-	Source   string // profile name this entry came from
+	Source   string // source name this entry came from
 	Path     string // folder path within the source, e.g. "Infra/db-prod"
 	Title    string
 	Username string

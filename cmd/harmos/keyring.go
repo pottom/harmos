@@ -25,9 +25,9 @@ func newSavePasswordCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			p := cfg.Profile(args[0])
+			p := cfg.Source(args[0])
 			if p == nil {
-				return fmt.Errorf("no profile named %q", args[0])
+				return fmt.Errorf("no source named %q", args[0])
 			}
 			if p.Type == config.Pleasant {
 				return savePleasantPasswords(args[0], p.User, cmd.OutOrStdout())

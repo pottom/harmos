@@ -19,7 +19,7 @@ import (
 // ulStep is one credential the unlock screen still needs to collect: the shared
 // master (name == ""), or a single kdbx source's own password.
 type ulStep struct {
-	name  string // profile name, "" for the shared master
+	name  string // source name, "" for the shared master
 	label string // prompt shown while this step is active
 	got   secret.Secret
 	done  bool
@@ -79,7 +79,7 @@ func NewLocked(cfg *config.Config, configPath string, timeout time.Duration) Mod
 		}
 	}
 	// Each kdbx source needs its own password unless the keyring holds it.
-	for _, p := range cfg.Profiles {
+	for _, p := range cfg.Sources {
 		if p.Type != config.Kdbx {
 			continue
 		}
@@ -98,7 +98,7 @@ func RunLocked(cfg *config.Config, configPath string, timeout time.Duration) err
 }
 
 func hasPleasant(cfg *config.Config) bool {
-	for _, p := range cfg.Profiles {
+	for _, p := range cfg.Sources {
 		if p.Type == config.Pleasant {
 			return true
 		}
@@ -110,8 +110,8 @@ func hasPleasant(cfg *config.Config) bool {
 // freshness, kdbx sources show whether a saved password covers them.
 func sourceStats(cfg *config.Config) []srcStat {
 	staleAfter := resolveStaleAfter(cfg)
-	stats := make([]srcStat, 0, len(cfg.Profiles))
-	for _, p := range cfg.Profiles {
+	stats := make([]srcStat, 0, len(cfg.Sources))
+	for _, p := range cfg.Sources {
 		s := srcStat{name: p.Name, typ: string(p.Type), loc: p.Path}
 		if p.Type == config.Pleasant {
 			s.loc = p.URL
@@ -125,7 +125,7 @@ func sourceStats(cfg *config.Config) []srcStat {
 // sourceBadge is a source's one-line status — a Pleasant cache's freshness, or a
 // kdbx source's credential state — shown both on the unlock screen and in the
 // Settings sources table (so the same info appears in both places).
-func sourceBadge(p config.Profile, staleAfter time.Duration) (string, badgeKind) {
+func sourceBadge(p config.Source, staleAfter time.Duration) (string, badgeKind) {
 	if p.Type == config.Pleasant {
 		age, ok := fileAge(p.Cache)
 		switch {
@@ -250,7 +250,7 @@ func (m Model) openCmd() tea.Cmd {
 			answered[s.name] = true
 		}
 	}
-	ask := func(p config.Profile, _ bool) (secret.Secret, bool, error) {
+	ask := func(p config.Source, _ bool) (secret.Secret, bool, error) {
 		if p.Type == config.Pleasant {
 			return master, false, nil // interactive=false: retry is handled here, not in session
 		}
@@ -286,7 +286,7 @@ func (m Model) onUnlockDone(msg unlockDoneMsg) (tea.Model, tea.Cmd) {
 			other = append(other, ex)
 			continue
 		}
-		if p, ok := profileByName(m.cfg, ex.Source); ok && p.Type == config.Pleasant {
+		if p, ok := sourceByName(m.cfg, ex.Source); ok && p.Type == config.Pleasant {
 			masterBad = true
 			continue
 		}
@@ -330,16 +330,16 @@ func unlockErrText(masterBad bool, retry []ulStep) string {
 	}
 }
 
-func profileByName(cfg *config.Config, name string) (config.Profile, bool) {
+func sourceByName(cfg *config.Config, name string) (config.Source, bool) {
 	if cfg == nil {
-		return config.Profile{}, false
+		return config.Source{}, false
 	}
-	for _, p := range cfg.Profiles {
+	for _, p := range cfg.Sources {
 		if p.Name == name {
 			return p, true
 		}
 	}
-	return config.Profile{}, false
+	return config.Source{}, false
 }
 
 // unlockView is the unlock screen: a centered, titled panel listing the sources
