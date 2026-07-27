@@ -12,17 +12,19 @@ import (
 
 // copyGetCommand puts a scriptable `harmos get` invocation for the selected entry
 // on the clipboard — for pasting into a shell script so the secret is fetched at
-// runtime (pw=$(harmos get …)) rather than embedded. It does not start the
-// clipboard countdown: a command is a reference, not a secret.
+// runtime (pw=$(harmos get …)) rather than embedded. A command is a reference, not
+// a secret, so it is copied untracked (never auto-cleared) and it cancels any
+// running secret countdown, which would otherwise wipe the command when it fired.
 func (m Model) copyGetCommand() (tea.Model, tea.Cmd) {
 	e := m.selEntry()
 	if e == nil {
 		return m, nil
 	}
 	cmd := m.getCommand(e)
-	if err := clip.Copy([]byte(cmd)); err != nil {
+	if err := clip.CopyUntracked([]byte(cmd)); err != nil {
 		return m, nil
 	}
+	m.copied, m.copiedWhat, m.remaining = "", "", 0 // stop any secret countdown
 	m.flash = "copied command · " + cmd
 	return m, nil
 }

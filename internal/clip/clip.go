@@ -45,6 +45,20 @@ func Copy(secret []byte) error {
 	return nil
 }
 
+// CopyUntracked writes value to the clipboard but does not track it for
+// auto-clearing — for non-secret values (a scriptable command) that must stay put.
+// It also drops tracking of any previously-copied secret, so a pending
+// ClearIfUnchanged can no longer wipe this value out from under the user.
+func CopyUntracked(value []byte) error {
+	mu.Lock()
+	defer mu.Unlock()
+	if err := writeFn(value); err != nil {
+		return err
+	}
+	haveLast = false
+	return nil
+}
+
 // ClearIfUnchanged clears the clipboard only if it still holds the value we last
 // wrote. If the user has copied something else since, that value is left alone
 // (spec §9). Safe to call on exit and after the timeout.
