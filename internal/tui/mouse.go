@@ -98,8 +98,11 @@ func (m Model) handleClick(x, y int) (tea.Model, tea.Cmd) {
 // handleRightClick copies the password of the entry (or result) under the cursor
 // — a quick copy from the list without opening the detail.
 func (m Model) handleRightClick(x, y int) (tea.Model, tea.Cmd) {
-	if m.locked || m.help || m.attach != attachNone || m.tab == 1 || m.detail || m.searchMode {
+	if m.locked || m.help || m.attach != attachNone || m.tab == 1 || m.searchMode {
 		return m, nil
+	}
+	if m.detail { // in the detail, a right-click anywhere copies the open entry
+		return m, m.copySel("password")
 	}
 	panelsH := max(3, m.h-3)
 	leftW := min(42, max(18, m.w*2/5))
