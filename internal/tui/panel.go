@@ -111,9 +111,17 @@ func boxTop(title, info string, inW int, active bool) string {
 	if active {
 		tstyle = theme.Strong
 	}
-	left := bc.Render("─ ") + tstyle.Render(title) + bc.Render(" ")
+	// A title that already carries styling (e.g. a search-highlighted breadcrumb)
+	// is rendered as-is; a plain one gets the title style.
+	titled := func(s string) string {
+		if strings.Contains(s, "\x1b") {
+			return s
+		}
+		return tstyle.Render(s)
+	}
+	left := bc.Render("─ ") + titled(title) + bc.Render(" ")
 	if dw(left) > inW {
-		left = bc.Render("─ ") + tstyle.Render(trunc(title, max(1, inW-4))) + bc.Render(" ")
+		left = bc.Render("─ ") + titled(trunc(title, max(1, inW-4))) + bc.Render(" ")
 	}
 	right := ""
 	if info != "" {
