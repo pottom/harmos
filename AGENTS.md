@@ -100,7 +100,7 @@ If two readers ever appear, that is an architecture violation, not a feature. Th
 
 - **Read-only, v1.** No writes to the Pleasant server; no writes, no `.lock` files, no timestamp rewrites to external kdbx files. Opening a user's own vault must leave its bytes and mtime unchanged — this is an invariant, tested.
 - **Two producers, one reader.** Never build a general vault-abstraction interface with parallel Pleasant and kdbx implementations. The kdbx format is already the superset; both producers emit kdbx, the reader consumes kdbx.
-- **The cache is encrypted at rest.** kdbx with a single harmos master password chosen at `init`; openable in KeePassXC. Never store the master password or OAuth token in the config file — token goes to the OS keyring.
+- **The cache is encrypted at rest.** A KDBX4 file locked with a composite key — the shared harmos master password *and* a random per-source keyfile in the config dir (`<name>.key`), kept apart from the cache so a copied cache is useless with the master alone (spec §15); openable in KeePassXC with both. The master, per-source, and server passwords, and any OAuth token, go to the OS keyring — never the config file.
 - **Secrets never leak to logs.** Any secret-carrying type has a `String()` returning `[redacted]`. Never `%v` a password, token, or master password.
 - **Honor the server.** Respect the offline package `Expiry`; check `IsOfflineAvailable` and `IsCommentRequired`. Every offline fetch is assumed audited; sync is always explicit and user-initiated, never on a timer or in the background.
 - **Clipboard is concealed.** Copied passwords must set the platform's "do not record / do not sync" pasteboard hints (spec §9); a plain timeout is not enough.
@@ -129,27 +129,15 @@ If two readers ever appear, that is an architecture violation, not a feature. Th
 
 ## Verification
 
-Populate as the framework lands (M2a). Expected shape:
-
 ```
-go test ./...        # unit + mapper + differential tests, all green
+go test ./...        # unit, mapper, oracle, and the teatest interaction contract
 go vet ./...
 golangci-lint run    # config .golangci.yml
 ```
 
-Oracle / differential check: generate a cache and confirm `keepassxc-cli` opens and lists it, in CI. Invariant check: an external kdbx source is byte- and mtime-unchanged after a full browse session.
+Oracle check: CI generates a cache and confirms `keepassxc-cli` opens and lists it. Invariant check: an external kdbx source is byte- and mtime-unchanged after a full browse session. The TUI's state machine is pinned by a `teatest` interaction-contract test (`internal/tui/teatest_test.go`). Local builds and releases stamp their version from `git describe` / GoReleaser via `internal/version`; `make build` is the development build.
 
 ## Child DOX Index
 
-Populated as the tree grows; none exist yet at M1. Expected children:
-
-- `internal/vault/AGENTS.md` — the single kdbx reader.
-- `internal/source/pleasant/AGENTS.md` — Pleasant API client + mapper (the only Pleasant-aware package).
-- `internal/source/localkdbx/AGENTS.md` — read-only external kdbx sources.
-- `internal/tui/AGENTS.md` — the Bubble Tea interface.
-- `internal/theme/AGENTS.md` — color tokens and themes.
-- `internal/clip/AGENTS.md` — per-platform concealed clipboard (the cgo boundary).
-- `internal/secret/AGENTS.md` — redacting types.
-- `internal/config/AGENTS.md` — profiles and config loading.
-- `docs/AGENTS.md` — the brief, PoC, workflow, and design mocks.
-- `scripts/AGENTS.md` — the PoC dump sanitizer and operational tooling.
+- `internal/theme/AGENTS.md` — the color tokens and the ten built-in themes.
+- `internal/tui/AGENTS.md` — the Bubble Tea interface (unlock, tabs, settings, chrome).

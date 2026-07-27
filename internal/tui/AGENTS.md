@@ -27,26 +27,38 @@ keyring are entered **in the TUI**, never on stdin.
 
 ## Tabs
 
-Two top-level tabs, switched by `1` / `2` (`m.tab`), once unlocked:
+Three top-level tabs, switched by `1` / `2` / `3` once unlocked. Displayed order
+is Vault / Generate / Settings; the internal `m.tab` values are Vault `0`,
+Settings `1`, Generate `2`.
 
-- **Vault (0)** — the browse/search surface: a tree on the left, entry list /
-  detail on the right.
-- **Settings (1)** — a two-pane layout mirroring the Vault. Both reset `m.focus`
-  to 0 (the left pane) on switch.
+- **Vault (0)** — the browse/search surface: a folder tree on the left (collapsible
+  with `ctrl+b` to a thin rail), entry list / detail on the right. The header
+  carries the brand, the stamped version, and a yellow `⬆` marker when the
+  background check finds a newer release.
+- **Generate (2)** — a `crypto/rand` password generator (`generate.go`): a
+  live-updating options column and a centered password hero with a strength bar,
+  class breakdown, and recent-roll history. Shares `internal/pwgen` with
+  `harmos gen`; saved options persist to the config.
+- **Settings (1)** — a two-pane layout mirroring the Vault; resets `m.focus` to 0
+  (the left pane) on switch.
 
 ## Settings: two-pane
 
-- **Left (`m.focus == 0`)** is a category selector (`settingsCats`:
-  `catSources`, `catTheme`), rendered by `catLines`. `updateSettingsNav` moves
-  `m.setCat` with ↑↓; →/tab/enter (or `t` straight to Theme) calls
-  `enterCategory`, which sets `m.focus = 1` and, for Theme, snapshots the active
-  theme into `themeOrig`/`themeSel` so the picker can revert on cancel.
+- **Left (`m.focus == 0`)** is a category selector (`settingsCats`: Sources,
+  Theme, Icons, Preferences — `catSources`/`catTheme`/`catIcons`/`catPrefs`),
+  rendered by `catLines`. `updateSettingsNav` moves `m.setCat` with ↑↓;
+  →/tab/enter (or `t` straight to Theme) calls `enterCategory`, which sets
+  `m.focus = 1` and, for Theme, snapshots the active theme into
+  `themeOrig`/`themeSel` so the picker can revert on cancel.
 - **Right (`m.focus == 1`)** configures the selected category:
   - `updateSourcesPane` + `sourceLines` — the sources table (add/edit/sync/
     save-pw/clear-pw/remove); ←/esc returns focus to the left.
   - `updateThemePane` + `themeLines` — the live theme picker: ↑↓ calls
     `applyThemeAt`, which `theme.Apply`s immediately (live preview); ↵ writes
     `theme = <name>` via `config.SetTopLevelKey`; ←/esc reverts to `themeOrig`.
+  - the Icons category toggles the Nerd Font fallback (`nerdfont`).
+  - `updatePrefsPane` + `prefsLines` — editable, persisted preferences: the
+    clipboard timeout and the cache-stale threshold (`config.SetPreferences`).
 - Modal overlays (`setForm`, `setPrompt`, `setRemove`, `setSyncing`) intercept
   before the two-pane dispatch and render as boxed overlays.
 - `settingsHint` is the footer, contextual to focus and category.

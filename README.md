@@ -74,7 +74,9 @@ harmos update
 
 The TUI header shows a yellow `⬆` marker when a newer release exists. The
 background check makes one request to the GitHub releases API and nothing else;
-set `HARMOS_NO_UPDATE_CHECK=1` to disable it.
+set `HARMOS_NO_UPDATE_CHECK=1` to disable it. A package-managed install
+(`.deb`/`.rpm` under a root-owned path) is left to the package manager — `harmos
+update` says so instead of fighting it.
 
 ## Quick start
 
@@ -98,14 +100,44 @@ harmos get "aws root" --copy
 Run `harmos` with no config and it opens the TUI on a first-run onboarding
 screen that walks you through adding your first source.
 
+## Concepts
+
+- **Source** — one place credentials come from: a Pleasant server (`type = pps`)
+  or a local `.kdbx` file (`type = kdbx`). You can configure many; harmos reads
+  them all at once into one searchable set, each entry tagged with its source.
+- **Cache** — a Pleasant source is read through a local **KDBX4 cache** that
+  `harmos sync` writes from the server's offline package. Reads are always
+  against the cache, so browsing is instant and works offline; `sync` is the
+  only moment harmos talks to the server, and it is always explicit.
+- **Master password** — one password unlocks every Pleasant cache. It comes from
+  the `HARMOS_MASTER` environment variable, the OS keyring (if you saved it), or
+  an interactive prompt — never the config file.
+- **Keyring** — master, per-source, and server passwords live in the OS-native
+  secret store (macOS Keychain, Windows Credential Manager, Linux Secret
+  Service). Storing a password is always opt-in (`--save-password`).
+- **Two keyfiles, don't confuse them:**
+  - Your **own** `.kdbx` may use a KeePass *keyfile* — pass it with
+    `add-source --keyfile` (or the TUI's Keyfile field).
+  - Each **Pleasant cache** is additionally locked with an automatic,
+    machine-local keyfile harmos generates on first sync (see [Security](#security)).
+    There is nothing to configure — it just protects the cache at rest.
+
 ## Usage
 
 ### TUI
 
-Running `harmos` with no subcommand opens the terminal UI: a collapsible source
-/ folder tree, an entry table with a live search bar, a detail pane (notes,
-custom fields, dates, attachments, TOTP), and a password **Generate** tab.
-Press `?` for the full key map. A few staples:
+Running `harmos` with no subcommand opens the terminal UI. Three tabs, switched
+with `1` / `2` / `3`:
+
+- **Vault** — a collapsible source / folder tree, an entry table with a live
+  search bar, and a detail pane (notes, custom fields, dates, attachments, TOTP).
+- **Generate** — a `crypto/rand` password generator with a strength bar, class
+  breakdown, and recent-roll history (the same engine as `harmos gen`).
+- **Settings** — sources (add / edit / sync / save-password / remove), the live
+  theme picker, Nerd Font toggle, and preferences (clipboard timeout, cache
+  staleness), all persisted to the config.
+
+Press `?` for the full key map. The staples:
 
 | Key | Action |
 | --- | --- |
@@ -117,39 +149,100 @@ Press `?` for the full key map. A few staples:
 | `c` | Copy a `harmos get …` command for the selected entry |
 | `s` | Save attachments (detail) · sync a source (tree) |
 | `ctrl+b` | Collapse / expand the source tree |
-| `1` / `2` / `3` | Switch Browse / Generate / Settings tab |
+| `1` / `2` / `3` | Switch Vault / Generate / Settings tab |
 | `?` / `q` | Help · quit (clears the clipboard) |
 
 ### CLI
 
-Every read the TUI does is also a command, for scripts and pipes:
+Every read the TUI does is also a command, for scripts and pipes.
 
-| Command | What it does |
-| --- | --- |
-| `harmos ls [source]` | List entries in an aligned table (`--no-headers` for scripts) |
-| `harmos get <query>` | Print (or `--copy`) a password; `--otp` for TOTP; `--path` for an exact, unambiguous selector; `-q` for value-only |
-| `harmos gen` | Generate passwords with `crypto/rand` (short flags: `-n` length, `-c` count, `-x` exclude, `-a` no-ambiguous, `-e` one-each, `-y` copy, `-L/-U/-D/-S` drop a class) |
-| `harmos sync [source]` | Pull each Pleasant source's OfflinePackage into its cache |
-| `harmos sources` | List configured sources (no unlock needed) |
-| `harmos add-source` / `remove-source` | Register or drop a source |
-| `harmos save-password` / `remove-password` | Manage keyring passwords |
-| `harmos themes` | List the built-in color themes |
-| `harmos update` | Self-update to the latest release |
+**`harmos ls [source]`** — list entries in an aligned table.
+
+```sh
+harmos ls                      # every source
+harmos ls work                 # just one
+harmos ls --no-headers         # for piping into awk/cut
+```
+
+**`harmos get <query>`** — print or copy one password; it refuses to guess when
+a query is ambiguous.
+
+```sh
+harmos get "aws root"          # print the password to stdout
+harmos get "aws root" --copy   # copy it (concealed, auto-cleared)
+harmos get github --otp        # the current TOTP code instead
+harmos get --path "work/Infra/db-prod" --user svc_admin   # exact, for scripts
+harmos get db-prod -q          # value only — no provenance line on stderr
+```
+
+**`harmos gen`** — generate passwords with `crypto/rand`.
+
+```sh
+harmos gen                     # one, using your saved options
+harmos gen -n 32 -c 5          # five 32-char passwords
+harmos gen -n 24 -a -e         # no ambiguous glyphs, one of each class
+harmos gen -LUS                # digits only (drop lower/upper/symbol)
+harmos gen -x '0Oo' -y         # exclude some chars, copy to the clipboard
+```
+
+Short flags: `-n` length, `-c` count, `-x` exclude, `-a` no-ambiguous,
+`-e` one-each, `-y` copy, and `-L/-U/-D/-S` to drop lower/upper/digit/symbol.
+
+**`harmos sync [source]`** — pull each Pleasant source's offline package into its
+cache (kdbx sources are skipped).
+
+```sh
+harmos sync                    # every Pleasant source
+harmos sync work               # just one
+harmos sync work --save-password
+```
+
+**Managing sources and passwords:**
+
+```sh
+harmos sources                 # list configured sources (no unlock needed)
+harmos add-source ~/vault.kdbx --keyfile ~/vault.key
+harmos remove-source work
+harmos save-password work      # store a source's password in the keyring
+harmos remove-password work
+harmos themes                  # list the built-in color themes
+```
 
 Run any command with `--help` for its full flag set.
+
+## Search
+
+The search bar (TUI `/`) and `harmos get` share one matcher. Beyond plain
+substring matching, the query language understands:
+
+| Query | Matches |
+| --- | --- |
+| `db prod` | entries matching **both** words (implicit AND) |
+| `db OR cache` | either word |
+| `url:ssh` | only the URL field (also `user:`, `title:`, `notes:`, `tag:`) |
+| `"db prod"` | the exact phrase |
+| `db -staging` | `db` but **not** `staging` |
+| `ppk` | falls back to fuzzy matching when nothing else hits |
+
+Result rows show **what** matched and **where** (title · source · the matched
+field excerpt), so a wrong-source copy is obvious before you make it.
 
 ## Configuration
 
 Config lives at `$XDG_CONFIG_HOME/harmos/config.toml` (override with
 `--config`). `add-source` writes it for you; you rarely edit it by hand.
-**Passwords never go here** — they live in the OS keyring, or come from the
-`HARMOS_MASTER` environment variable / an interactive prompt at unlock.
+**Passwords never go here** — they live in the OS keyring or come from
+`HARMOS_MASTER` / a prompt.
 
 ```toml
-default = "work"
-theme = "nord"
-clipboard_timeout = "20s"
-cache_stale_after = "24h"
+default = "work"              # source opened first
+theme = "nord"                # a built-in name, or themes/<name>.toml
+clipboard_timeout = "20s"     # how long a copied secret lingers
+cache_stale_after = "24h"     # when a Pleasant cache is flagged stale
+
+# Generator defaults (also editable in the Generate tab)
+gen_length = 24
+gen_no_ambiguous = true
 
 [[source]]
 name = "work"
@@ -162,12 +255,32 @@ cache = "~/.local/share/harmos/work.kdbx"
 name = "personal"
 type = "kdbx"
 path = "~/vault.kdbx"
+keyfile = "~/vault.key"       # only if your kdbx uses one
 ```
 
-Generator defaults (`gen_length`, `gen_no_ambiguous`, …) and preferences
-(clipboard timeout, cache staleness) are editable in the TUI Settings tab and
-persisted here. Set `nerdfont = false` for terminals without a Nerd Font
-(or `HARMOS_NERDFONT=0`).
+**Environment variables:**
+
+| Variable | Effect |
+| --- | --- |
+| `HARMOS_MASTER` | the master password (skips the prompt/keyring) |
+| `HARMOS_NO_UPDATE_CHECK` | set to disable the background release check |
+| `HARMOS_NERDFONT=0` | force the plain-Unicode fallback (no Nerd Font) |
+| `HARMOS_VERSION` / `HARMOS_INSTALL_DIR` | pin / place the installer's download |
+| `XDG_CONFIG_HOME` / `XDG_DATA_HOME` | config and cache locations |
+
+## Scripting
+
+harmos is TTY-aware: `ls` / `get` / `sources` emit no ANSI when piped, and
+launching the TUI without a TTY exits with a clear message.
+
+```sh
+# Feed a password into another tool without it ever touching the clipboard:
+psql "postgres://svc_admin@db.internal/app" \
+  --password "$(harmos get --path 'work/Infra/db-prod' --user svc_admin -q)"
+
+# Non-interactive unlock (CI, cron) — master from the environment:
+HARMOS_MASTER="$MASTER" harmos ls work --no-headers
+```
 
 ## Not affiliated
 
@@ -177,10 +290,21 @@ nominatively to describe compatibility. See `NOTICE`.
 
 ## Security
 
-Not yet audited. Read-only w.r.t. your kdbx files; secrets go to the OS keyring
-and a concealed, auto-clearing clipboard, never to the config file. The Pleasant
-cache is a KDBX4 file locked with a **composite key** — your master password
-*and* a random keyfile kept in the config directory (`<name>.key`), apart from
-the cache under `$XDG_DATA_HOME` — so a cache copied off the machine cannot be
-opened with the master alone. Report issues per `SECURITY.md`. Licensed MIT —
-see `LICENSE`.
+Not yet audited. The design:
+
+- **Read-only** with respect to your kdbx files — harmos opens them `O_RDONLY`
+  and leaves their bytes and mtime unchanged; this is an invariant, tested.
+- **Secrets off disk** — master, per-source, and server passwords go to the OS
+  keyring; the config file never holds a secret. A copied password is written to
+  a **concealed** clipboard (the platform's do-not-record hints) and cleared
+  after the timeout.
+- **Cache at rest** — the Pleasant cache is a KDBX4 file (Argon2id, ChaCha20)
+  locked with a **composite key**: your master password *and* a random keyfile
+  harmos generates on first sync at `$XDG_CONFIG_HOME/harmos/<name>.key` (mode
+  `0600`), kept in the config dir, apart from the cache under `$XDG_DATA_HOME`.
+  A cache copied off the machine therefore cannot be opened with the master
+  alone. You can verify it after a sync: `ls -l ~/.config/harmos/*.key`.
+- **Explicit sync** — harmos talks to the server only during `harmos sync`, never
+  on a timer or in the background, and honors the offline package's expiry.
+
+Report issues per `SECURITY.md`. Licensed MIT — see `LICENSE`.
