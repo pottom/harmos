@@ -226,6 +226,48 @@ func TestReadOnlyInvariant(t *testing.T) {
 	}
 }
 
+// A folder name (or title) with an embedded newline must be flattened, or it
+// breaks the single-line display in the TUI.
+func TestOnelineSanitizes(t *testing.T) {
+	db := gokeepasslib.NewDatabase(gokeepasslib.WithDatabaseKDBXVersion4())
+	db.Credentials = gokeepasslib.NewPasswordCredentials("pw")
+	e := gokeepasslib.NewEntry()
+	e.Values = append(e.Values, val("Title", "line1\nline2"), val("UserName", "u\tv"))
+	sub := gokeepasslib.NewGroup()
+	sub.Name = "Naplo\nNEBIH" // a Pleasant folder name with a newline
+	sub.Entries = []gokeepasslib.Entry{e}
+	root := gokeepasslib.NewGroup()
+	root.Name = "Root"
+	root.Groups = []gokeepasslib.Group{sub}
+	db.Content.Root = &gokeepasslib.RootData{Groups: []gokeepasslib.Group{root}}
+	if err := db.LockProtectedEntries(); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(t.TempDir(), "nl.kdbx")
+	f, err := os.Create(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := gokeepasslib.NewEncoder(f).Encode(db); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+
+	v, err := Open(p, "s", Credentials{Password: secret.New("pw")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Entries) != 1 {
+		t.Fatalf("entries = %d", len(v.Entries))
+	}
+	e0 := v.Entries[0]
+	for name, s := range map[string]string{"path": e0.Path, "title": e0.Title, "user": e0.Username} {
+		if strings.ContainsAny(s, "\n\r\t") {
+			t.Errorf("%s must be single-line, got %q", name, s)
+		}
+	}
+}
+
 func TestOpenErrors(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "e.kdbx")
 	makeKDBX(t, p, gokeepasslib.NewPasswordCredentials("pw"))
