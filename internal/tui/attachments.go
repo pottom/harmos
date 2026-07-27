@@ -84,6 +84,10 @@ func (m Model) updateAttach(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.attachSel < len(e.Files)-1 {
 				m.attachSel++
 			}
+		case "pgup": // short list: page jumps to the ends
+			m.attachSel = 0
+		case "pgdown":
+			m.attachSel = clampIndex(len(e.Files)-1, len(e.Files))
 		case " ": // toggle the file under the cursor
 			if m.attachSel < len(m.attachCheck) {
 				m.attachCheck[m.attachSel] = !m.attachCheck[m.attachSel]

@@ -85,6 +85,10 @@ func (m Model) updateSettingsNav(key string) (tea.Model, tea.Cmd) {
 			m.setCat++
 			m.setStatus = ""
 		}
+	case "pgup": // short list: page jumps to the ends
+		m.setCat, m.setStatus = 0, ""
+	case "pgdown":
+		m.setCat, m.setStatus = len(settingsCats)-1, ""
 	case "right", "tab", "enter":
 		return m.enterCategory(), nil
 	case "t":
@@ -131,6 +135,12 @@ func (m Model) updateSourcesPane(key string) (tea.Model, tea.Cmd) {
 			m.setSel++
 			m.setStatus = ""
 		}
+	case "pgup":
+		_, step := m.panelRows()
+		m.setSel, m.setStatus = clampIndex(m.setSel-max(1, step), len(profs)), ""
+	case "pgdown":
+		_, step := m.panelRows()
+		m.setSel, m.setStatus = clampIndex(m.setSel+max(1, step), len(profs)), ""
 	case "a":
 		return m.openAddForm(), nil
 	case "e":

@@ -165,6 +165,25 @@ func windowStart(cursor, rows, total int) int {
 	return start
 }
 
+// panelRows is the visible row count of the folder-tree pane and of the
+// table/results pane (which spends one row on its header) — the page size a
+// PageUp/PageDown jump moves by.
+func (m Model) panelRows() (tree, list int) {
+	panelsH := max(3, m.h-3)
+	return panelsH - 2, panelsH - 3
+}
+
+// clampIndex keeps a cursor inside [0, n) for a list of n items (0 when empty).
+func clampIndex(i, n int) int {
+	if n <= 0 || i < 0 {
+		return 0
+	}
+	if i >= n {
+		return n - 1
+	}
+	return i
+}
+
 func spread(left, right string, w int) string {
 	gap := w - dw(left) - dw(right)
 	if gap < 1 {

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -136,6 +137,45 @@ func TestSettingsRemove(t *testing.T) {
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter}) // confirm (no toggles)
 	if got := m.sources(); len(got) != 1 || got[0].Name != "b" {
 		t.Fatalf("after removing a, want [b], got %+v", got)
+	}
+}
+
+// PageUp/PageDown page the results list a full screenful at a time and clamp at
+// the ends.
+func TestPageKeysPageThroughResults(t *testing.T) {
+	var es []vault.Entry
+	for i := 0; i < 40; i++ {
+		es = append(es, vault.Entry{Source: "s", Path: "F", Title: fmt.Sprintf("host-%02d", i), Password: secret.New("p")})
+	}
+	m := New(es, "", 30*time.Second)
+	m = up(m, tea.WindowSizeMsg{Width: 100, Height: 20})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = typeStr(m, "host")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter}) // apply the filter → results browse
+	if len(m.results) != 40 {
+		t.Fatalf("want 40 results, got %d", len(m.results))
+	}
+	if m.sel != 0 {
+		t.Fatalf("cursor should start at the top, got %d", m.sel)
+	}
+
+	_, step := m.panelRows()
+	if step < 2 {
+		t.Fatalf("test needs a multi-row page, got step=%d", step)
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyPgDown})
+	if m.sel != step {
+		t.Fatalf("pgdown should jump one page (%d), got %d", step, m.sel)
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyPgUp})
+	if m.sel != 0 {
+		t.Fatalf("pgup should return to the top, got %d", m.sel)
+	}
+	for i := 0; i < 20; i++ { // paging past the end clamps at the last result
+		m = up(m, tea.KeyMsg{Type: tea.KeyPgDown})
+	}
+	if m.sel != len(m.results)-1 {
+		t.Fatalf("pgdown should clamp at the last result, got %d", m.sel)
 	}
 }
 
