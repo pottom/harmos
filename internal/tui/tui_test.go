@@ -338,6 +338,35 @@ func TestTruncLeftKeepsTail(t *testing.T) {
 	}
 }
 
+// ctrl+b collapses/expands the folder tree; a click on the rail reopens it.
+func TestTreeCollapse(t *testing.T) {
+	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
+	wide := m.leftPaneW()
+	m = up(m, tea.KeyMsg{Type: tea.KeyCtrlB})
+	if !m.treeCollapsed {
+		t.Fatal("ctrl+b should collapse the tree")
+	}
+	if m.focus != 1 {
+		t.Error("collapsing should move focus off the hidden tree")
+	}
+	if m.leftPaneW() >= wide {
+		t.Errorf("collapsed pane should be narrower: %d vs %d", m.leftPaneW(), wide)
+	}
+	if !strings.Contains(m.View(), "Username") {
+		t.Error("the right pane should still render while collapsed")
+	}
+	// a click on the thin rail reopens the tree
+	m = up(m, click(1, 3))
+	if m.treeCollapsed {
+		t.Error("clicking the rail should reopen the tree")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyCtrlB})
+	m = up(m, tea.KeyMsg{Type: tea.KeyCtrlB})
+	if m.treeCollapsed {
+		t.Error("ctrl+b twice should end expanded")
+	}
+}
+
 func testModel() Model {
 	return New([]vault.Entry{
 		{Source: "work", Path: "Infra", Title: "db-prod", Username: "svc_admin", Password: secret.New("p1")},

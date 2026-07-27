@@ -39,17 +39,18 @@ type Model struct {
 	input   textinput.Model
 	results []search.Result
 
-	tab        int  // 0 = Vault, 1 = Settings
-	tsel       int  // selected folder (index into the flattened visible tree)
-	focus      int  // 0 = tree (left), 1 = entry table (right)
-	esel       int  // selected entry within the folder's table
-	sel        int  // selected search result (while searching)
-	searchMode bool // the "/" search box is capturing keystrokes
-	detail     bool // entry-details screen
-	reveal     bool
-	help       bool
-	helpScroll int // top line offset in the (scrollable) help overlay
-	w, h       int
+	tab           int  // 0 = Vault, 1 = Settings
+	tsel          int  // selected folder (index into the flattened visible tree)
+	focus         int  // 0 = tree (left), 1 = entry table (right)
+	esel          int  // selected entry within the folder's table
+	sel           int  // selected search result (while searching)
+	searchMode    bool // the "/" search box is capturing keystrokes
+	detail        bool // entry-details screen
+	reveal        bool
+	help          bool
+	helpScroll    int  // top line offset in the (scrollable) help overlay
+	treeCollapsed bool // the folder tree is collapsed to a thin rail (ctrl+b)
+	w, h          int
 
 	configPath string                 // for the Settings tab
 	srcType    map[string]config.Type // source name → type, for tree/breadcrumb icons
@@ -485,6 +486,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The Generate tab handles its own keys.
 		if m.tab == 2 {
 			return m.updateGenerate(key)
+		}
+
+		// ctrl+b collapses/expands the folder tree (Vault tab), reclaiming width for
+		// the right pane. Collapsing moves focus off the now-hidden tree.
+		if key == "ctrl+b" && !m.searchMode {
+			m.treeCollapsed = !m.treeCollapsed
+			if m.treeCollapsed && m.focus == 0 && !m.detail {
+				m.focus = 1
+			}
+			return m, nil
 		}
 
 		// SEARCH MODE — the "/" box is capturing keystrokes.

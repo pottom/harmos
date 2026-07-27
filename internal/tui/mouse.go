@@ -42,8 +42,14 @@ func (m Model) handleClick(x, y int) (tea.Model, tea.Cmd) {
 	if y < 2 || y > panelsH-1 { // outside the panel content rows
 		return m, nil
 	}
-	leftW := min(42, max(18, m.w*2/5))
+	leftW := m.leftPaneW()
 	leftSide := x <= leftW-1
+
+	// Clicking the collapsed rail reopens the folder tree.
+	if m.treeCollapsed && leftSide {
+		m.treeCollapsed = false
+		return m, nil
+	}
 
 	// In the entry detail, clicking the left tree leaves the entry and jumps there.
 	if m.detail {
@@ -117,7 +123,7 @@ func (m Model) handleRightClick(x, y int) (tea.Model, tea.Cmd) {
 		return m, m.copySel("password")
 	}
 	panelsH := max(3, m.h-3)
-	leftW := min(42, max(18, m.w*2/5))
+	leftW := m.leftPaneW()
 	if y < 3 || y > panelsH-1 || x < leftW+1 { // right-pane list rows only (header at 2)
 		return m, nil
 	}

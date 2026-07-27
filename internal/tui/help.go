@@ -123,6 +123,7 @@ func (m Model) keyList(w int) []string {
 			row("→ ⇥", "into folder · to the table"),
 			row("←", "collapse · back to tree"),
 			row("↵", "expand · copy password"),
+			row("^b", "hide / show the folder tree"),
 			row("PgUp/Dn", "page any list"),
 			row("g", "results: go to the folder"),
 			"",
