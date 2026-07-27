@@ -43,8 +43,8 @@ func TestGeneratePopulatesOnEntry(t *testing.T) {
 			t.Fatalf("default length should be 20, got %q (%d)", p, len([]rune(p)))
 		}
 	}
-	if !strings.Contains(m.View(), "Passwords") {
-		t.Error("the passwords pane should render")
+	if !strings.Contains(m.View(), "Password") {
+		t.Error("the password pane should render")
 	}
 }
 
@@ -116,16 +116,30 @@ func TestGenerateListCopyKeepsState(t *testing.T) {
 	}
 }
 
-// A left-click selects a password row; a double-click copies; syntax colouring
-// never changes the underlying text.
+// Clicking an alternative promotes it to the hero; colouring and grouping never
+// change the underlying text.
 func TestGenerateMouseAndColor(t *testing.T) {
 	m := genTab()
-	// click the third visible password row (y = panel row 2 → index 2)
-	m = up(m, click(genLeftW+5, 4))
-	if m.focus != 1 || m.genSel != 2 {
-		t.Errorf("click should select the row under the cursor, got focus=%d sel=%d", m.focus, m.genSel)
+	// click the first "more" alternative (content row genHeroRows → y = 2+genHeroRows)
+	m = up(m, click(genLeftW+5, 2+genHeroRows))
+	if m.focus != 1 || m.genSel != 1 {
+		t.Errorf("clicking an alternative should promote it, got focus=%d sel=%d", m.focus, m.genSel)
 	}
 	if got := ansi.Strip(colorizePw("aB3!xZ")); got != "aB3!xZ" {
 		t.Errorf("colourising must not change the text, got %q", got)
+	}
+	if got := ansi.Strip(heroPassword("abcdefgh")); got != "abcd efgh" {
+		t.Errorf("grouping should chunk by 4 without altering chars, got %q", got)
+	}
+}
+
+func TestStrengthLabel(t *testing.T) {
+	for _, tc := range []struct {
+		bits float64
+		want string
+	}{{40, "weak"}, {75, "fair"}, {100, "strong"}, {130, "very strong"}} {
+		if got, _ := strengthLabel(tc.bits); got != tc.want {
+			t.Errorf("%.0f bits → %q, want %q", tc.bits, got, tc.want)
+		}
 	}
 }

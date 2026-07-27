@@ -178,30 +178,39 @@ func (m Model) handleGenClick(x, y int, dbl bool) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	// passwords pane
-	idx := windowStart(m.genSel, m.genVisRows(), len(m.genList)) + row
-	if idx >= 0 && idx < len(m.genList) {
-		if dbl && idx == m.genSel && m.focus == 1 {
-			return m, m.copyString(m.genList[idx], "password", "generated")
+	// passwords pane: the hero block up top, then the "more" alternatives.
+	m.focus = 1
+	if row < genHeroRows { // clicked the hero — double-click copies
+		if dbl && m.genSel < len(m.genList) {
+			return m, m.copyString(m.genList[m.genSel], "password", "generated")
 		}
-		m.genSel, m.focus = idx, 1
+		return m, nil
+	}
+	if target := m.genSel + 1 + (row - genHeroRows); target < len(m.genList) {
+		if dbl {
+			m.genSel = target
+			return m, m.copyString(m.genList[target], "password", "generated")
+		}
+		m.genSel = target // promote the alternative to the hero
 	}
 	return m, nil
 }
 
-// handleGenRightClick copies the password under the cursor — a quick copy without
-// selecting first, mirroring the vault's right-click.
+// handleGenRightClick copies the password under the cursor (the hero, or an
+// alternative row) — a quick copy, mirroring the vault's right-click.
 func (m Model) handleGenRightClick(x, y int) (tea.Model, tea.Cmd) {
 	panelsH := max(3, m.h-3)
-	if y < 2 || y > panelsH-1 || x <= genLeftW-1 {
+	if y < 2 || y > panelsH-1 || x <= genLeftW-1 || len(m.genList) == 0 {
 		return m, nil
 	}
-	idx := windowStart(m.genSel, m.genVisRows(), len(m.genList)) + (y - 2)
-	if idx >= 0 && idx < len(m.genList) {
-		m.genSel, m.focus = idx, 1
-		return m, m.copyString(m.genList[idx], "password", "generated")
+	m.focus = 1
+	row := y - 2
+	if row >= genHeroRows {
+		if target := m.genSel + 1 + (row - genHeroRows); target < len(m.genList) {
+			m.genSel = target
+		}
 	}
-	return m, nil
+	return m, m.copyString(m.genList[m.genSel], "password", "generated")
 }
 
 func (m Model) generateView() string {
@@ -210,12 +219,8 @@ func (m Model) generateView() string {
 
 	left := box("Options", "", m.genOptionLines(genLeftW-2), genLeftW, panelsH, m.focus == 0)
 
-	vis := m.genVisRows()
-	total := len(m.genList)
-	sb := boolToInt(total > vis) // scrollbar steals one content column
-	right := boxV("Passwords", fmt.Sprintf("%d", total),
-		m.genListLines(rightW-2-sb, vis), rightW, panelsH, m.focus == 1,
-		total, windowStart(m.genSel, vis, total), 0)
+	right := box("Password", cursorInfo(m.genSel, len(m.genList)),
+		m.genHeroLines(rightW-2, m.genVisRows()), rightW, panelsH, m.focus == 1)
 
 	ctx := m.genContext()
 	if m.remaining > 0 { // a copy countdown takes over the context line, as in the vault
@@ -301,27 +306,80 @@ func (m Model) genOptionLines(w int) []string {
 	return out
 }
 
-// genListLines renders the passwords one per row (like the vault entry table),
-// windowed to the visible rows and syntax-coloured.
-func (m Model) genListLines(w, rows int) []string {
+// genHeroRows is the number of content rows above the "more" alternatives — used
+// by the renderer and the mouse hit-test to stay in sync.
+const genHeroRows = 8
+
+// genHeroLines renders the selected password as a prominent "hero" — grouped into
+// 4-char chunks, syntax-coloured, with a strength bar — then a short list of the
+// following passwords as pickable alternatives.
+func (m Model) genHeroLines(w, rows int) []string {
 	if m.genErr != "" {
-		return []string{"", theme.Bad.Render("  " + m.genErr)}
+		return []string{"", "", "   " + theme.Bad.Render(m.genErr)}
 	}
 	if len(m.genList) == 0 {
-		return []string{"", theme.Faded.Render("  press ↵ to generate")}
+		return []string{"", "", "   " + theme.Faded.Render("press ↵ to generate")}
 	}
-	start := windowStart(m.genSel, rows, len(m.genList))
-	end := min(start+rows, len(m.genList))
-	var out []string
-	for k := start; k < end; k++ {
-		p := m.genList[k]
-		if k == m.genSel && m.focus == 1 {
-			out = append(out, theme.SelRow.Width(w).Render(trunc("  "+p, w)))
-		} else {
-			out = append(out, "  "+colorizePw(p))
-		}
+	o := m.genOpts
+	bits := o.EntropyBits()
+	label, lst := strengthLabel(bits)
+	bar := strengthBar(bits, 18)
+
+	out := []string{
+		"",
+		"   " + heroPassword(m.genList[m.genSel]),
+		"",
+		"   " + bar + "  " + theme.Strong.Render(fmt.Sprintf("%.0f bits", bits)) + " " + lst.Render("· "+label),
+		"",
+		"   " + theme.Faded.Render("↵ copy    r reroll"),
+		"",
+	}
+	// Alternatives: the passwords following the hero, muted so it stands out.
+	alts := 0
+	out = append(out, "   "+theme.Dimmed.Render("more"))
+	for i := m.genSel + 1; i < len(m.genList) && len(out) < rows; i++ {
+		out = append(out, "   "+theme.Faded.Render("· "+trunc(m.genList[i], max(8, w-6))))
+		alts++
+	}
+	if alts == 0 {
+		out[len(out)-1] = "" // no room / no more: drop the "more" header
 	}
 	return out
+}
+
+// heroPassword groups a password into 4-char chunks and syntax-colours each.
+func heroPassword(p string) string {
+	runes := []rune(p)
+	var chunks []string
+	for i := 0; i < len(runes); i += 4 {
+		chunks = append(chunks, colorizePw(string(runes[i:min(i+4, len(runes))])))
+	}
+	return strings.Join(chunks, " ")
+}
+
+// strengthBar is a filled/empty block bar for the entropy, capped at 128 bits.
+func strengthBar(bits float64, w int) string {
+	frac := bits / 128
+	if frac > 1 {
+		frac = 1
+	}
+	filled := int(frac*float64(w) + 0.5)
+	_, st := strengthLabel(bits)
+	return st.Render(strings.Repeat("█", filled)) + theme.Faded.Render(strings.Repeat("░", w-filled))
+}
+
+// strengthLabel maps entropy bits to a word and a colour.
+func strengthLabel(bits float64) (string, lipgloss.Style) {
+	switch {
+	case bits < 60:
+		return "weak", theme.Bad
+	case bits < 90:
+		return "fair", theme.Acc
+	case bits < 120:
+		return "strong", theme.Ok
+	default:
+		return "very strong", theme.Hi
+	}
 }
 
 // colorizePw renders a password with its character classes in distinct theme
