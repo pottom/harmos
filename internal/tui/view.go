@@ -125,6 +125,9 @@ func (m Model) View() string {
 	if m.tab == 1 {
 		return m.settingsView()
 	}
+	if m.tab == 2 {
+		return m.generateView()
+	}
 	return m.vaultBody() // browse, search, and entry detail share this frame
 }
 
@@ -137,7 +140,10 @@ func (m Model) tabIndicator() string {
 		}
 		return theme.Faded.Render(name)
 	}
-	return tab(0, "Vault") + theme.Faded.Render(" · ") + tab(1, "Settings")
+	// Display order Vault · Generate · Settings (Settings last); the number keys
+	// follow this order (1/2/3), though the internal tab indices are 0/1/2.
+	sep := theme.Faded.Render(" · ")
+	return tab(0, "Vault") + sep + tab(2, "Generate") + sep + tab(1, "Settings")
 }
 
 // spread puts left at the start and right at the end of a width-w line.

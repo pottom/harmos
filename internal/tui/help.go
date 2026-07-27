@@ -87,7 +87,8 @@ func (m Model) keyList(w int) []string {
 	}
 
 	var out []string
-	if m.tab == 1 {
+	switch m.tab {
+	case 1:
 		out = append(out,
 			head("SETTINGS"),
 			row("↑↓ jk", "move in the list"),
@@ -100,7 +101,22 @@ func (m Model) keyList(w int) []string {
 			row("t / i", "theme / Nerd Font icons"),
 			row("PgUp/Dn", "page the list"),
 		)
-	} else {
+	case 2:
+		out = append(out,
+			head("GENERATE — OPTIONS"),
+			row("↑↓ jk", "move between options"),
+			row("space", "toggle a class / option"),
+			row("←/→ -/+", "adjust length · count"),
+			row("↵ g", "generate · jump to list"),
+			row("⇥", "to the password list"),
+			"",
+			head("GENERATE — LIST"),
+			row("↑↓←→", "move in the grid"),
+			row("↵ ^y", "copy the password"),
+			row("r", "regenerate the batch"),
+			row("esc ⇥", "back to options"),
+		)
+	default:
 		out = append(out,
 			head("NAVIGATE"),
 			row("↑↓ jk", "move: tree/table/results"),

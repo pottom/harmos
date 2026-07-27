@@ -56,7 +56,7 @@ func TestIconsToggle(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := up(New(nil, cfg, 30*time.Second), tea.WindowSizeMsg{Width: 84, Height: 16})
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}}) // settings
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}) // settings
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}}) // Icons pane
 	if m.setCat != catIcons || m.focus != 1 {
 		t.Fatalf("i should open the Icons pane (cat=%d focus=%d)", m.setCat, m.focus)
