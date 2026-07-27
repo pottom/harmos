@@ -55,6 +55,40 @@ func TestClearIfUnchanged(t *testing.T) {
 	}
 }
 
+// CopyUntracked leaves a value on the clipboard that a later ClearIfUnchanged
+// will not wipe — even if a secret was copied first (the get-command case).
+func TestCopyUntracked(t *testing.T) {
+	var board []byte
+	writeFn = func(s []byte) error {
+		if s == nil {
+			board = nil
+		} else {
+			board = append([]byte(nil), s...)
+		}
+		return nil
+	}
+	readFn = func() ([]byte, error) { return board, nil }
+	t.Cleanup(func() {
+		writeFn, readFn = platformWrite, platformRead
+		haveLast = false
+	})
+
+	// a secret is copied (its clear is pending), then a command overwrites it
+	if err := Copy([]byte("secret")); err != nil {
+		t.Fatal(err)
+	}
+	if err := CopyUntracked([]byte("harmos get --path x")); err != nil {
+		t.Fatal(err)
+	}
+	// the secret's pending clear must NOT wipe the command
+	if err := ClearIfUnchanged(); err != nil {
+		t.Fatal(err)
+	}
+	if string(board) != "harmos get --path x" {
+		t.Errorf("the command was cleared: %q", board)
+	}
+}
+
 func TestConcealedType(t *testing.T) {
 	got := ConcealedType()
 	switch runtime.GOOS {
