@@ -578,6 +578,25 @@ func TestFolderDoubleClick(t *testing.T) {
 	}
 }
 
+// An empty search box (opened, or deleted back to empty) shows the tree, not a
+// dump of every entry.
+func TestEmptySearchShowsTree(t *testing.T) {
+	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}) // open search, empty
+	if m.showResults() || len(m.results) != 0 {
+		t.Errorf("empty search must not show results, got showResults=%v n=%d", m.showResults(), len(m.results))
+	}
+	m = typeStr(m, "db") // now there's a query
+	if !m.showResults() || len(m.results) == 0 {
+		t.Error("typing a query should show results")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyBackspace})
+	m = up(m, tea.KeyMsg{Type: tea.KeyBackspace}) // delete back to empty
+	if m.showResults() || len(m.results) != 0 {
+		t.Errorf("deleting to empty should return to the tree, got showResults=%v n=%d", m.showResults(), len(m.results))
+	}
+}
+
 // g on a search result leaves the search and lands on that entry's folder.
 func TestGotoFolderFromResults(t *testing.T) {
 	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
