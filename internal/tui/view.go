@@ -81,6 +81,30 @@ func (m Model) tabIndicator() string {
 }
 
 // spread puts left at the start and right at the end of a width-w line.
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// windowStart is the first visible index of a list of total items, rows tall,
+// that keeps cursor in view — the scroll offset shared by the line builders and
+// their scrollbars.
+func windowStart(cursor, rows, total int) int {
+	if rows <= 0 || total <= rows || cursor < rows {
+		return 0
+	}
+	start := cursor - rows + 1
+	if start > total-rows {
+		start = total - rows
+	}
+	if start < 0 {
+		start = 0
+	}
+	return start
+}
+
 func spread(left, right string, w int) string {
 	gap := w - dw(left) - dw(right)
 	if gap < 1 {
@@ -148,23 +172,31 @@ func (m Model) vaultBody() string {
 	rightW := m.w - leftW - 1 // 1-column gap between panels
 
 	flat := m.visible()
-	folders := box("Folders", cursorInfo(m.tsel, len(flat)),
-		m.treeLines(leftW-2, panelsH-2), leftW, panelsH, m.focus == 0 && !m.showResults() && !m.detail)
+	treeRows := panelsH - 2
+	treeSB := boolToInt(len(flat) > treeRows) // scrollbar steals one content column
+	folders := boxV("Folders", cursorInfo(m.tsel, len(flat)),
+		m.treeLines(leftW-2-treeSB, treeRows), leftW, panelsH, m.focus == 0 && !m.showResults() && !m.detail,
+		len(flat), windowStart(m.tsel, treeRows, len(flat)), 0)
 
 	var right string
+	listRows := panelsH - 3 // one row is the table header
 	switch {
 	case m.detail:
 		right = m.detailPane(rightW, panelsH)
 	case m.showResults():
-		right = box("Search results", fmt.Sprintf("%d", len(m.results)),
-			m.resultLines(rightW-2, panelsH-2), rightW, panelsH, true)
+		sb := boolToInt(len(m.results) > listRows)
+		right = boxV("Search results", fmt.Sprintf("%d", len(m.results)),
+			m.resultLines(rightW-2-sb, panelsH-2), rightW, panelsH, true,
+			len(m.results), windowStart(m.sel, listRows, len(m.results)), 1)
 	default:
 		f := m.currentFolder()
-		title, info := "Entries", ""
+		title, info, n := "Entries", "", 0
 		if f != nil {
-			title, info = m.folderCrumb(flat, m.tsel), fmt.Sprintf("%d", len(f.entries))
+			title, info, n = m.folderCrumb(flat, m.tsel), fmt.Sprintf("%d", len(f.entries)), len(f.entries)
 		}
-		right = box(title, info, m.entryLines(rightW-2, panelsH-2), rightW, panelsH, m.focus == 1)
+		sb := boolToInt(n > listRows)
+		right = boxV(title, info, m.entryLines(rightW-2-sb, panelsH-2), rightW, panelsH, m.focus == 1,
+			n, windowStart(m.esel, listRows, n), 1)
 	}
 
 	panels := lipgloss.JoinHorizontal(lipgloss.Top, folders, " ", right)
@@ -403,10 +435,7 @@ func (m Model) treeLines(w, rows int) []string {
 	flat := m.visible()
 	i := ic()
 	dim := m.showResults() // the tree loses emphasis while results are showing
-	start := 0
-	if m.tsel >= rows {
-		start = m.tsel - rows + 1
-	}
+	start := windowStart(m.tsel, rows, len(flat))
 	end := min(start+rows, len(flat))
 
 	var out []string
@@ -454,10 +483,7 @@ func (m Model) entryLines(w, rows int) []string {
 		return out
 	}
 	avail := max(1, rows-1)
-	start := 0
-	if m.esel >= avail {
-		start = m.esel - avail + 1
-	}
+	start := windowStart(m.esel, avail, len(f.entries))
 	end := min(start+avail, len(f.entries))
 	for k := start; k < end; k++ {
 		e := f.entries[k]
@@ -481,10 +507,7 @@ func (m Model) resultLines(w, rows int) []string {
 		return out
 	}
 	avail := max(1, rows-1)
-	start := 0
-	if m.sel >= avail {
-		start = m.sel - avail + 1
-	}
+	start := windowStart(m.sel, avail, len(m.results))
 	end := min(start+avail, len(m.results))
 	q := m.input.Value()
 	for k := start; k < end; k++ {
@@ -616,11 +639,7 @@ func (m Model) detailPane(w, h int) string {
 	lines := m.detailLines(e, w)
 	visible := max(1, h-2)
 	scroll := clampScroll(m.detailScroll, len(lines), visible)
-	info := ""
-	if len(lines) > visible {
-		info = fmt.Sprintf("%d–%d/%d", scroll+1, min(scroll+visible, len(lines)), len(lines))
-	}
-	return box(m.breadcrumb(e), info, lines[scroll:min(scroll+visible, len(lines))], w, h, true)
+	return boxV(m.breadcrumb(e), "", lines[scroll:min(scroll+visible, len(lines))], w, h, true, len(lines), scroll, 0)
 }
 
 // detailViewport is the width and visible-line count of the detail pane, matching

@@ -435,6 +435,32 @@ func TestDetailScroll(t *testing.T) {
 	}
 }
 
+// A long list shows a scrollbar; the mouse wheel scrolls it like ↑↓.
+func TestScrollbarAndWheel(t *testing.T) {
+	var ents []vault.Entry
+	for range 20 {
+		ents = append(ents, vault.Entry{Source: "s", Path: "f", Title: "entry", Password: secret.New("p")})
+	}
+	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 12})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRight}) // into the entry table
+	if m.focus != 1 {
+		t.Fatalf("→ should focus the table, got focus=%d", m.focus)
+	}
+	if !strings.Contains(m.View(), "┃") {
+		t.Error("an overflowing list should draw a scrollbar thumb")
+	}
+
+	before := m.esel
+	m = up(m, tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+	if m.esel != before+3 {
+		t.Errorf("wheel down should move the selection by 3, got %d→%d", before, m.esel)
+	}
+	m = up(m, tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	if m.esel != before {
+		t.Errorf("wheel up should move back to %d, got %d", before, m.esel)
+	}
+}
+
 // g on a search result leaves the search and lands on that entry's folder.
 func TestGotoFolderFromResults(t *testing.T) {
 	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
