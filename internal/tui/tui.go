@@ -481,6 +481,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.sel++
 				}
 				return m, nil
+			case "pgup":
+				_, step := m.panelRows()
+				m.sel = clampIndex(m.sel-max(1, step), len(m.results))
+				return m, nil
+			case "pgdown":
+				_, step := m.panelRows()
+				m.sel = clampIndex(m.sel+max(1, step), len(m.results))
+				return m, nil
 			}
 			var cmd tea.Cmd
 			m.input, cmd = m.input.Update(msg)
@@ -550,6 +558,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.sel < len(m.results)-1 {
 					m.sel++
 				}
+			case "pgup":
+				_, step := m.panelRows()
+				m.sel = clampIndex(m.sel-max(1, step), len(m.results))
+			case "pgdown":
+				_, step := m.panelRows()
+				m.sel = clampIndex(m.sel+max(1, step), len(m.results))
 			case "enter":
 				if m.sel < len(m.results) {
 					return m, m.copySel("password") // ↵ copies straight from the results
@@ -604,6 +618,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else if folder != nil && m.esel < len(folder.entries)-1 {
 				m.esel++
+			}
+		case "pgup":
+			tree, list := m.panelRows()
+			if m.focus == 0 {
+				m.tsel, m.esel = clampIndex(m.tsel-max(1, tree), len(m.visible())), 0
+			} else if folder != nil {
+				m.esel = clampIndex(m.esel-max(1, list), len(folder.entries))
+			}
+		case "pgdown":
+			tree, list := m.panelRows()
+			if m.focus == 0 {
+				m.tsel, m.esel = clampIndex(m.tsel+max(1, tree), len(m.visible())), 0
+			} else if folder != nil {
+				m.esel = clampIndex(m.esel+max(1, list), len(folder.entries))
 			}
 		case "tab":
 			if m.focus == 0 && folder != nil && len(folder.entries) > 0 {

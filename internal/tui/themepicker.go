@@ -40,6 +40,12 @@ func (m Model) updateThemePane(key string) (tea.Model, tea.Cmd) {
 		if m.themeSel < len(names)-1 {
 			m = m.applyThemeAt(m.themeSel + 1)
 		}
+	case "pgup":
+		_, step := m.panelRows()
+		m = m.applyThemeAt(clampIndex(m.themeSel-max(1, step), len(names)))
+	case "pgdown":
+		_, step := m.panelRows()
+		m = m.applyThemeAt(clampIndex(m.themeSel+max(1, step), len(names)))
 	case "enter":
 		if err := config.SetTopLevelKey(m.configPath, "theme", m.themeName); err != nil {
 			m.setStatus = "could not save theme: " + err.Error()
