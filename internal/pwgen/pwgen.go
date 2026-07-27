@@ -7,6 +7,7 @@ package pwgen
 import (
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
 	"strings"
@@ -49,8 +50,8 @@ func Default() Options {
 var (
 	// ErrNoClasses means every character class is disabled.
 	ErrNoClasses = errors.New("pwgen: no character classes enabled")
-	// ErrLength means the requested length is out of range.
-	ErrLength = errors.New("pwgen: length out of range")
+	// ErrLength means the requested length is out of range; the message states it.
+	ErrLength = fmt.Errorf("pwgen: length must be between %d and %d", MinLength, MaxLength)
 )
 
 // classes returns the enabled character pools, ambiguous glyphs removed when

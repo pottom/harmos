@@ -416,11 +416,11 @@ func (m Model) genPasswordLines(w, rows int) []string {
 		inner = append(inner, center(ln))
 	}
 	inner = append(inner,
+		center(theme.Faded.Render(classBreakdown(m.genList[m.genSel]))), // directly under the box
 		"",
 		center(strengthBar(bits, 24)),
 		center(theme.Strong.Render(fmt.Sprintf("%.0f bits", bits))),
 		center(lst.Render(label)),
-		center(theme.Faded.Render(classBreakdown(m.genList[m.genSel]))),
 		"",
 		center(theme.Faded.Render("↵ copy    r reroll")),
 	)

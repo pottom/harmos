@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"time"
 
@@ -58,7 +59,7 @@ func newGenCmd() *cobra.Command {
 	}
 	f := cmd.Flags()
 	f.StringVar(&configPath, "config", "", "config file (default: $XDG_CONFIG_HOME/harmos/config.toml)")
-	f.IntVarP(&length, "length", "n", 20, "password length (8–64)")
+	f.IntVarP(&length, "length", "n", 20, fmt.Sprintf("password length (%d–%d)", pwgen.MinLength, pwgen.MaxLength))
 	f.IntVarP(&count, "count", "c", 1, "how many to generate")
 	f.StringVarP(&exclude, "exclude", "x", "", "characters to keep out of the pool")
 	f.BoolVarP(&noLower, "no-lower", "L", false, "exclude a–z")
