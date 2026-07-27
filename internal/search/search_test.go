@@ -72,7 +72,9 @@ func TestRankingOrder(t *testing.T) {
 	})
 
 	got := titles(m.Match("admin"))
-	want := []string{"admin", "administrator", "db-admin", "a-d-m-i-n", "svc-x", "zzz", "www"}
+	// A fuzzy subsequence ("a-d-m-i-n") is the weakest signal — it ranks below every
+	// real substring match (username, path, url), not above them.
+	want := []string{"admin", "administrator", "db-admin", "svc-x", "zzz", "www", "a-d-m-i-n"}
 	if len(got) != len(want) {
 		t.Fatalf("got %d results %v, want %d %v", len(got), got, len(want), want)
 	}

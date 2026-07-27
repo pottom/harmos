@@ -22,14 +22,16 @@ const (
 	scoreExact  = 0  // title == query
 	scorePrefix = 10 // title starts with query
 	scoreSub    = 20 // title contains query
-	scoreFuzzy  = 30 // title contains query as a subsequence
 	scoreUser   = 40 // username contains query
 	scoreTags   = 45 // a tag contains query
 	scorePath   = 50 // folder path contains query
 	scoreURL    = 60 // url contains query
 	scoreField  = 65 // a custom field name/value contains query
 	scoreNotes  = 70 // notes contain query
-	scoreAll    = 80 // empty query: everything, alphabetical
+	scoreFuzzy  = 75 // title contains query as a (tight) subsequence — the weakest,
+	//                   last-resort signal, below every real substring match, or a
+	//                   loose "p…p…k" would bury the entries that actually match.
+	scoreAll = 80 // empty query: everything, alphabetical
 
 	noMatch = -1
 )
