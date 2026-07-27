@@ -18,7 +18,7 @@ func TestGeneratorOptsPersist(t *testing.T) {
 	if _, err := config.WriteKdbxProfile(path, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
 		t.Fatal(err)
 	}
-	if err := config.SetGenerator(path, 28, true, true, false, false, true, false); err != nil {
+	if err := config.SetGenerator(path, 28, true, true, false, false, true, false, ""); err != nil {
 		t.Fatal(err)
 	}
 	m := New(nil, path, 30*time.Second)
@@ -94,6 +94,27 @@ func TestGenerateAdjustLength(t *testing.T) {
 	m = up(m, tea.KeyMsg{Type: tea.KeyLeft}) // −1 back to 20
 	if m.genOpts.Length != 20 {
 		t.Errorf("← should lower length to 20, got %d", m.genOpts.Length)
+	}
+}
+
+func TestGenerateExcludeTyping(t *testing.T) {
+	m := genTab()
+	m = gotoRow(m, genExclude)
+	for _, r := range "aeiou" { // type characters to exclude
+		m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if m.genOpts.Exclude != "aeiou" {
+		t.Fatalf("typed exclude = %q, want aeiou", m.genOpts.Exclude)
+	}
+	for _, p := range m.genList {
+		if strings.ContainsAny(p, "aeiou") {
+			t.Errorf("excluded char in generated %q", p)
+		}
+	}
+	// backspace removes the last one
+	m = up(m, tea.KeyMsg{Type: tea.KeyBackspace})
+	if m.genOpts.Exclude != "aeio" {
+		t.Errorf("after backspace = %q, want aeio", m.genOpts.Exclude)
 	}
 }
 

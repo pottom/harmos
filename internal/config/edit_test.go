@@ -13,7 +13,7 @@ func TestSetGeneratorRoundTrip(t *testing.T) {
 	if _, err := WriteKdbxProfile(path, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetGenerator(path, 24, true, false, true, false, true, false); err != nil {
+	if err := SetGenerator(path, 24, true, false, true, false, true, false, "xy%"); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := Load(path)
@@ -22,6 +22,9 @@ func TestSetGeneratorRoundTrip(t *testing.T) {
 	}
 	if cfg.GenLength != 24 {
 		t.Errorf("length = %d, want 24", cfg.GenLength)
+	}
+	if cfg.GenExclude != "xy%" {
+		t.Errorf("exclude = %q, want xy%%", cfg.GenExclude)
 	}
 	for name, got := range map[string]*bool{
 		"lower": cfg.GenLower, "upper": cfg.GenUpper, "digit": cfg.GenDigit,
@@ -35,7 +38,7 @@ func TestSetGeneratorRoundTrip(t *testing.T) {
 		t.Error("boolean values round-tripped wrong")
 	}
 	// updating again rewrites in place (no duplicate keys)
-	if err := SetGenerator(path, 30, true, true, true, true, false, false); err != nil {
+	if err := SetGenerator(path, 30, true, true, true, true, false, false, ""); err != nil {
 		t.Fatal(err)
 	}
 	cfg2, err := Load(path)

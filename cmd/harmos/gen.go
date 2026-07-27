@@ -14,6 +14,7 @@ func newGenCmd() *cobra.Command {
 	var (
 		configPath                                            string
 		length, count                                         int
+		exclude                                               string
 		noLower, noUpper, noDigit, noSymbol, noAmbig, oneEach bool
 		doCopy                                                bool
 	)
@@ -49,6 +50,9 @@ func newGenCmd() *cobra.Command {
 			if f.Changed("one-each") {
 				o.OneEach = oneEach
 			}
+			if f.Changed("exclude") {
+				o.Exclude = exclude
+			}
 			return runGen(o, count, doCopy, timeout, cmd.OutOrStdout())
 		},
 	}
@@ -56,13 +60,14 @@ func newGenCmd() *cobra.Command {
 	f.StringVar(&configPath, "config", "", "config file (default: $XDG_CONFIG_HOME/harmos/config.toml)")
 	f.IntVarP(&length, "length", "n", 20, "password length (8–64)")
 	f.IntVarP(&count, "count", "c", 1, "how many to generate")
-	f.BoolVar(&noLower, "no-lower", false, "exclude a–z")
-	f.BoolVar(&noUpper, "no-upper", false, "exclude A–Z")
-	f.BoolVar(&noDigit, "no-digit", false, "exclude 0–9")
-	f.BoolVar(&noSymbol, "no-symbol", false, "exclude symbols")
-	f.BoolVar(&noAmbig, "no-ambiguous", false, "drop ambiguous glyphs (0 O 1 l I)")
-	f.BoolVar(&oneEach, "one-each", false, "require at least one of each enabled class")
-	f.BoolVar(&doCopy, "copy", false, "copy the password to the clipboard (concealed, auto-cleared) instead of printing")
+	f.StringVarP(&exclude, "exclude", "x", "", "characters to keep out of the pool")
+	f.BoolVarP(&noLower, "no-lower", "L", false, "exclude a–z")
+	f.BoolVarP(&noUpper, "no-upper", "U", false, "exclude A–Z")
+	f.BoolVarP(&noDigit, "no-digit", "D", false, "exclude 0–9")
+	f.BoolVarP(&noSymbol, "no-symbol", "S", false, "exclude symbols")
+	f.BoolVarP(&noAmbig, "no-ambiguous", "a", false, "drop ambiguous glyphs (0 O 1 l I)")
+	f.BoolVarP(&oneEach, "one-each", "e", false, "require at least one of each enabled class")
+	f.BoolVarP(&doCopy, "copy", "y", false, "copy to the clipboard (concealed, auto-cleared) instead of printing")
 	return cmd
 }
 

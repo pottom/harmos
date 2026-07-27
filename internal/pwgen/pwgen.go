@@ -36,8 +36,9 @@ const (
 type Options struct {
 	Length                      int
 	Lower, Upper, Digit, Symbol bool
-	AvoidAmbig                  bool // drop 0 O 1 l I
-	OneEach                     bool // guarantee at least one char from each enabled class
+	AvoidAmbig                  bool   // drop 0 O 1 l I
+	OneEach                     bool   // guarantee at least one char from each enabled class
+	Exclude                     string // extra characters to keep out of the pool
 }
 
 // Default is the starting configuration for the generator tab.
@@ -62,6 +63,9 @@ func (o Options) classes() []string {
 		}
 		if o.AvoidAmbig {
 			set = strip(set, ambiguous)
+		}
+		if o.Exclude != "" {
+			set = strip(set, o.Exclude)
 		}
 		if set != "" {
 			cs = append(cs, set)

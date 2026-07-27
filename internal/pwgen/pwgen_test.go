@@ -35,6 +35,19 @@ func TestGenerateRespectsDisabledClasses(t *testing.T) {
 	}
 }
 
+func TestExclude(t *testing.T) {
+	o := Options{Length: 40, Lower: true, Upper: true, Digit: true, Symbol: true, Exclude: "aeiou0O!"}
+	for range 20 {
+		p, err := Generate(o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.ContainsAny(p, "aeiou0O!") {
+			t.Fatalf("excluded character leaked into %q", p)
+		}
+	}
+}
+
 func TestAvoidAmbiguous(t *testing.T) {
 	o := Options{Length: 60, Lower: true, Upper: true, Digit: true, AvoidAmbig: true}
 	for range 20 { // sample a few, the pool is small
