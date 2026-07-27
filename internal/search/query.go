@@ -188,13 +188,19 @@ func termScore(t qterm, e indexed) (tier int, field string, idx []int, ok bool) 
 	v := t.value
 	switch t.field {
 	case "", "title":
-		if tr, ix, hit := titleScore(e.title, v); hit {
+		// A real title match (exact / prefix / substring) always wins.
+		if tr, ix, hit := titleSubstr(e.title, v); hit {
 			return tr, "", ix, true
 		}
-		if t.field == "title" {
+		if t.field == "title" { // explicit title: allow a tight fuzzy fallback
+			if ix, hit := titleFuzzy(e.title, v); hit {
+				return scoreFuzzy, "", ix, true
+			}
 			return noMatch, "", nil, false
 		}
-		// bare term: fall through to the other fields
+		// Bare term: try a substring in every other field before falling back to a
+		// fuzzy title, so entries that really contain the term rank above a loose
+		// "p…p…k" subsequence hit.
 		switch {
 		case strings.Contains(e.user, v):
 			return scoreUser, "user", nil, true
@@ -210,6 +216,9 @@ func termScore(t qterm, e indexed) (tier int, field string, idx []int, ok bool) 
 		}
 		if strings.Contains(e.notes, v) {
 			return scoreNotes, "notes", nil, true
+		}
+		if ix, hit := titleFuzzy(e.title, v); hit { // last resort
+			return scoreFuzzy, "", ix, true
 		}
 	case "user":
 		if strings.Contains(e.user, v) {
@@ -250,7 +259,9 @@ func fieldMatch(e indexed, v string) (string, bool) {
 	return "", false
 }
 
-func titleScore(title, q string) (tier int, idx []int, ok bool) {
+// titleSubstr scores a real (exact / prefix / substring) title match — the strong
+// signals. It never does fuzzy matching; that is titleFuzzy's job.
+func titleSubstr(title, q string) (tier int, idx []int, ok bool) {
 	qr := []rune(q)
 	switch {
 	case title == q:
@@ -261,8 +272,26 @@ func titleScore(title, q string) (tier int, idx []int, ok bool) {
 	if before, _, found := strings.Cut(title, q); found {
 		return scoreSub, seq(utf8.RuneCountInString(before), len(qr)), true
 	}
-	if pos, hit := subsequence(title, qr); hit {
-		return scoreFuzzy, pos, true
-	}
 	return noMatch, nil, false
+}
+
+// titleFuzzy matches the query as a subsequence of the title, but only a *tight*
+// one: at least two chars, and no more filler than query chars inside the matched
+// span. Without the tightness gate "ppk" subsequence-matches "GRPPHVC04K" and
+// floods the results with noise (a scattered p…p…k), which is exactly what makes
+// the search feel useless.
+func titleFuzzy(title, q string) (idx []int, ok bool) {
+	qr := []rune(q)
+	if len(qr) < 2 {
+		return nil, false // a single-char subsequence is meaningless
+	}
+	pos, hit := subsequence(title, qr)
+	if !hit {
+		return nil, false
+	}
+	span := pos[len(pos)-1] - pos[0] + 1
+	if span-len(qr) > len(qr) { // more filler than matched chars → too loose
+		return nil, false
+	}
+	return pos, true
 }

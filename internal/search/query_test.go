@@ -94,6 +94,29 @@ func TestQueryFieldBadge(t *testing.T) {
 	}
 }
 
+// A loose subsequence ("ppk" scattered across a title) must NOT match, or the
+// results flood with noise; a real substring (in the URL) must, and reports the
+// field so the row can show an excerpt.
+func TestFuzzyIsTightAndLastResort(t *testing.T) {
+	m := New([]vault.Entry{
+		{Title: "GRPPHVC04K"},                         // p…p…k scattered — too loose
+		{Title: "gateway", URL: "https://ppk.host/x"}, // real substring in the URL
+	})
+	res := m.Match("ppk")
+	if len(res) != 1 {
+		t.Fatalf("only the real match should survive, got %d: %v", len(res), titles(res))
+	}
+	if res[0].Entry.Title != "gateway" || res[0].Field != "url" {
+		t.Errorf("expected the URL substring match, got %+v", res[0])
+	}
+
+	// A genuinely tight subsequence still matches (typo/separator tolerance).
+	m2 := New([]vault.Entry{{Title: "a-d-m-i-n"}})
+	if got := titles(m2.Match("admin")); len(got) != 1 {
+		t.Errorf("a tight subsequence should still match, got %v", got)
+	}
+}
+
 // A term scoped to a field also drives the AND across different fields.
 func TestQueryScopedAND(t *testing.T) {
 	m := New([]vault.Entry{
