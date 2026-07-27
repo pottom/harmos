@@ -23,6 +23,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newLsCmd())
 	root.AddCommand(newGetCmd())
 	root.AddCommand(newGenCmd())
+	root.AddCommand(newUpdateCmd())
 	root.AddCommand(newAddSourceCmd())
 	root.AddCommand(newRemoveSourceCmd())
 	root.AddCommand(newSourcesCmd())
