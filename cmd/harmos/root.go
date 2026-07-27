@@ -1,16 +1,17 @@
 package main
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
 
-// version is overridden at release time by the build.
-var version = "0.0.0-dev"
+	"github.com/pottom/harmos/internal/version"
+)
 
 func newRootCmd() *cobra.Command {
 	var configPath string
 	root := &cobra.Command{
 		Use:          "harmos",
 		Short:        "Read-only terminal password client for Pleasant Password Server and local .kdbx files",
-		Version:      version,
+		Version:      version.Version,
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
