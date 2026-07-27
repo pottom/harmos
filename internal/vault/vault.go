@@ -164,9 +164,9 @@ func (v *Vault) walk(db *gokeepasslib.Database, g gokeepasslib.Group, prefix str
 		v.Entries = append(v.Entries, Entry{
 			Source:   v.Source,
 			Path:     prefix,
-			Title:    e.GetTitle(),
-			Username: e.GetContent("UserName"),
-			URL:      e.GetContent("URL"),
+			Title:    oneline(e.GetTitle()),
+			Username: oneline(e.GetContent("UserName")),
+			URL:      oneline(e.GetContent("URL")),
 			Tags:     splitTags(e.Tags),
 			Password: secret.New(e.GetPassword()),
 			TOTP:     e.GetContent("otp"),
@@ -179,12 +179,24 @@ func (v *Vault) walk(db *gokeepasslib.Database, g gokeepasslib.Group, prefix str
 		})
 	}
 	for _, sub := range g.Groups {
-		child := sub.Name
+		child := oneline(sub.Name)
 		if prefix != "" {
-			child = prefix + "/" + sub.Name
+			child = prefix + "/" + oneline(sub.Name)
 		}
 		v.walk(db, sub, child)
 	}
+}
+
+// oneline flattens a display string to a single line: control characters
+// (newlines/tabs, e.g. a Pleasant folder name that embeds a newline) become
+// spaces, so a value can never break the TUI layout.
+func oneline(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < ' ' {
+			return ' '
+		}
+		return r
+	}, s)
 }
 
 func timeOf(tw *w.TimeWrapper) time.Time {
@@ -229,8 +241,8 @@ func customFields(e *gokeepasslib.Entry) []Field {
 			continue
 		}
 		out = append(out, Field{
-			Name:      customLabel(vd.Key),
-			Value:     vd.Value.Content,
+			Name:      oneline(customLabel(vd.Key)),
+			Value:     oneline(vd.Value.Content),
 			Protected: vd.Value.Protected.Bool,
 		})
 	}
