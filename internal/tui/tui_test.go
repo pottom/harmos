@@ -821,7 +821,7 @@ func TestTabsSwitch(t *testing.T) {
 		t.Fatal("default tab should be Vault")
 	}
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
-	if m.tab != 2 || !strings.Contains(m.View(), "Passwords") {
+	if m.tab != 2 || !strings.Contains(m.View(), "Password") {
 		t.Error("2 should switch to the Generate tab")
 	}
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
