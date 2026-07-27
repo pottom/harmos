@@ -35,13 +35,11 @@ func TestGeneratePopulatesOnEntry(t *testing.T) {
 	if m.tab != 2 {
 		t.Fatalf("2 should open the Generate tab, got %d", m.tab)
 	}
-	if len(m.genList) != 50 {
-		t.Fatalf("entering the tab should generate the default 50, got %d", len(m.genList))
+	if len(m.genList) != 1 {
+		t.Fatalf("entering the tab should roll one password, got %d", len(m.genList))
 	}
-	for _, p := range m.genList {
-		if len([]rune(p)) != 20 {
-			t.Fatalf("default length should be 20, got %q (%d)", p, len([]rune(p)))
-		}
+	if p := m.genList[0]; len([]rune(p)) != 20 {
+		t.Fatalf("default length should be 20, got %q (%d)", p, len([]rune(p)))
 	}
 	if !strings.Contains(m.View(), "Password") {
 		t.Error("the password pane should render")
@@ -94,20 +92,28 @@ func TestGenerateNoClassesErrors(t *testing.T) {
 	}
 }
 
-func TestGenerateListCopyKeepsState(t *testing.T) {
+func reroll(m Model) Model {
+	return up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+}
+
+func TestGenerateRerollAndCopy(t *testing.T) {
 	m := genTab()
-	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the list
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the password pane
 	if m.focus != 1 {
-		t.Fatal("tab should move focus to the list")
+		t.Fatal("tab should move focus to the password pane")
 	}
-	m = up(m, tea.KeyMsg{Type: tea.KeyDown}) // move selection
-	if m.genSel != 1 {
-		t.Errorf("↓ should move the list cursor, got %d", m.genSel)
+	m = reroll(m)
+	if len(m.genList) != 2 || m.genSel != 1 {
+		t.Fatalf("reroll should grow history and make the newest the hero, got n=%d sel=%d", len(m.genList), m.genSel)
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyUp}) // browse to the previous roll
+	if m.genSel != 0 {
+		t.Errorf("↑ should move to the previous roll, got %d", m.genSel)
 	}
 	// enter copies; it must not panic or lose the selection (clipboard may be
 	// unavailable in CI, so we don't assert the countdown started).
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.genSel != 1 {
+	if m.genSel != 0 {
 		t.Errorf("copying should keep the selection, got %d", m.genSel)
 	}
 	m = up(m, tea.KeyMsg{Type: tea.KeyEsc}) // back to options
@@ -116,15 +122,24 @@ func TestGenerateListCopyKeepsState(t *testing.T) {
 	}
 }
 
-// Clicking an alternative promotes it to the hero; colouring and grouping never
+// Clicking a recent entry promotes it to the hero; colouring and grouping never
 // change the underlying text.
 func TestGenerateMouseAndColor(t *testing.T) {
 	m := genTab()
-	// click the first "more" alternative (content row genHeroRows → y = 2+genHeroRows)
-	m = up(m, click(genLeftW+5, 2+genHeroRows))
-	if m.focus != 1 || m.genSel != 1 {
-		t.Errorf("clicking an alternative should promote it, got focus=%d sel=%d", m.focus, m.genSel)
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = reroll(m)
+	m = reroll(m) // 3 in history → a recent list of 2
+	heroBefore := m.genList[m.genSel]
+
+	_, recentStart, recent := m.genLayout(m.genVisRows())
+	if len(recent) == 0 {
+		t.Fatal("expected a recent list after rerolling")
 	}
+	m = up(m, click(genLeftW+5, 2+recentStart)) // click the first recent entry
+	if m.focus != 1 || m.genList[m.genSel] == heroBefore {
+		t.Errorf("clicking a recent entry should promote it (hero was %q, now %q)", heroBefore, m.genList[m.genSel])
+	}
+
 	if got := ansi.Strip(colorizePw("aB3!xZ")); got != "aB3!xZ" {
 		t.Errorf("colourising must not change the text, got %q", got)
 	}

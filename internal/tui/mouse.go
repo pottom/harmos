@@ -25,7 +25,7 @@ func (m Model) handleClick(x, y int) (tea.Model, tea.Cmd) {
 			m.setKeyring = keyringStatus(m.sources())
 		case 2:
 			if len(m.genList) == 0 {
-				m.regen()
+				m.resetGen()
 			}
 		}
 		return m, nil
