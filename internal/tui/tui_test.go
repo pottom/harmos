@@ -401,6 +401,40 @@ func TestDetailCustomFields(t *testing.T) {
 	}
 }
 
+// A long detail (notes) scrolls with ↑↓, clamped at both ends, and resets on open.
+func TestDetailScroll(t *testing.T) {
+	long := strings.Repeat("a reasonably long line of the runbook notes here\n", 40)
+	ents := []vault.Entry{{Source: "s", Path: "p", Title: "big", Password: secret.New("p"), Notes: long}}
+	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 14})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = typeStr(m, "big")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRight}) // open detail
+	if m.detailScroll != 0 {
+		t.Fatal("scroll should start at the top")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyUp})
+	if m.detailScroll != 0 {
+		t.Error("↑ at the top must stay at 0")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyDown})
+	if m.detailScroll != 1 {
+		t.Errorf("↓ should scroll to 1, got %d", m.detailScroll)
+	}
+	for i := 0; i < 300; i++ {
+		m = up(m, tea.KeyMsg{Type: tea.KeyDown})
+	}
+	w, vis := m.detailViewport()
+	if want := len(m.detailLines(m.selEntry(), w)) - vis; m.detailScroll != want {
+		t.Errorf("scroll should clamp to %d at the bottom, got %d", want, m.detailScroll)
+	}
+	// re-opening the entry resets the scroll
+	nm, _ := m.openDetail()
+	if nm.(Model).detailScroll != 0 {
+		t.Error("opening an entry should reset the scroll to the top")
+	}
+}
+
 // g on a search result leaves the search and lands on that entry's folder.
 func TestGotoFolderFromResults(t *testing.T) {
 	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
