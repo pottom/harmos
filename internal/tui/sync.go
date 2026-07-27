@@ -64,6 +64,14 @@ func (m Model) startSync(p config.Source) (Model, tea.Cmd) {
 			close(ch)
 			return syncDoneMsg{err: err}
 		}
+		keyfile, err := config.DefaultCacheKeyfilePath(p.Name)
+		if err == nil {
+			err = config.EnsureKeyfile(keyfile)
+		}
+		if err != nil {
+			close(ch)
+			return syncDoneMsg{err: err}
+		}
 		rep := &pleasant.Reporter{
 			Phase: func(name string) { ch <- syncProgressMsg{phase: name, total: -1} },
 			Bytes: func(d, t int64) {
@@ -71,7 +79,7 @@ func (m Model) startSync(p config.Source) (Model, tea.Cmd) {
 			},
 		}
 		res, err := pleasant.Sync(context.Background(), c, p.URL, pleasant.SyncOptions{
-			Comment: "harmos sync (tui)", CachePath: p.Cache, Master: master, Report: rep,
+			Comment: "harmos sync (tui)", CachePath: p.Cache, Master: master, Keyfile: keyfile, Report: rep,
 		})
 		close(ch)
 		if err != nil {

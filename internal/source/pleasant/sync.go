@@ -23,7 +23,8 @@ type Reporter struct {
 type SyncOptions struct {
 	Comment   string        // recorded server-side (every fetch is audited)
 	CachePath string        // destination kdbx cache
-	Master    secret.Secret // encrypts the cache
+	Master    secret.Secret // encrypts the cache (with Keyfile, if set)
+	Keyfile   string        // cache keyfile; "" writes a password-only cache
 	Now       time.Time     // provenance + expiry check; defaults to time.Now()
 	Report    *Reporter     // optional live progress; nil is silent
 }
@@ -87,7 +88,7 @@ func Sync(ctx context.Context, c *Client, sourceURL string, opt SyncOptions) (*R
 	}
 
 	phase("writing cache")
-	if err := writeAtomic(res.DB, opt.CachePath, opt.Master); err != nil {
+	if err := writeAtomic(res.DB, opt.CachePath, opt.Master, opt.Keyfile); err != nil {
 		return nil, err
 	}
 	return res, nil
@@ -115,7 +116,7 @@ func fetchPackage(ctx context.Context, c *Client, dir, comment string, onBytes f
 	return path, nil
 }
 
-func writeAtomic(db *gokeepasslib.Database, cachePath string, master secret.Secret) error {
+func writeAtomic(db *gokeepasslib.Database, cachePath string, master secret.Secret, keyfile string) error {
 	dir := filepath.Dir(cachePath)
 	tmp, err := os.CreateTemp(dir, ".harmos-cache-*.kdbx")
 	if err != nil {
@@ -124,7 +125,7 @@ func writeAtomic(db *gokeepasslib.Database, cachePath string, master secret.Secr
 	tmpPath := tmp.Name()
 	_ = tmp.Close() // Write reopens with O_TRUNC
 
-	if err := Write(db, tmpPath, master); err != nil {
+	if err := Write(db, tmpPath, master, keyfile); err != nil {
 		_ = os.Remove(tmpPath)
 		return err
 	}

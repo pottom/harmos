@@ -113,9 +113,11 @@ func Map(zr *zip.Reader, meta Meta) (*Result, error) {
 	}, nil
 }
 
-// Write encrypts db with the master password and writes it to path as a 0600
-// KDBX4 file.
-func Write(db *gokeepasslib.Database, path string, master secret.Secret) (err error) {
+// Write encrypts db and writes it to path as a 0600 KDBX4 file. When keyfile is
+// non-empty the cache is locked with a composite key — the master password *and*
+// the keyfile's bytes — so a copied-away cache cannot be opened with the master
+// alone (spec §15). An empty keyfile falls back to a password-only cache.
+func Write(db *gokeepasslib.Database, path string, master secret.Secret, keyfile string) (err error) {
 	// Strengthen the Argon2 cost beyond gokeepasslib's weak default (§14).
 	if kdf := db.Header.FileHeaders.KdfParameters; kdf != nil {
 		kdf.Memory = cacheKDFMemoryBytes
@@ -123,7 +125,11 @@ func Write(db *gokeepasslib.Database, path string, master secret.Secret) (err er
 		kdf.Parallelism = cacheKDFParallelism
 	}
 
-	db.Credentials = gokeepasslib.NewPasswordCredentials(master.Reveal())
+	creds, err := cacheCredentials(master, keyfile)
+	if err != nil {
+		return err
+	}
+	db.Credentials = creds
 	if err := db.LockProtectedEntries(); err != nil {
 		return fmt.Errorf("lock entries: %w", err)
 	}
@@ -140,6 +146,21 @@ func Write(db *gokeepasslib.Database, path string, master secret.Secret) (err er
 		return fmt.Errorf("encode kdbx: %w", err)
 	}
 	return nil
+}
+
+// cacheCredentials builds the cache's KDBX credentials: master + keyfile when a
+// keyfile is given, otherwise master alone. It reads the keyfile itself (rather
+// than gokeepasslib's path-based helper, which leaks the handle) — the same
+// pattern the reader in internal/vault uses.
+func cacheCredentials(master secret.Secret, keyfile string) (*gokeepasslib.DBCredentials, error) {
+	if keyfile == "" {
+		return gokeepasslib.NewPasswordCredentials(master.Reveal()), nil
+	}
+	data, err := os.ReadFile(keyfile)
+	if err != nil {
+		return nil, fmt.Errorf("read cache keyfile: %w", err)
+	}
+	return gokeepasslib.NewPasswordAndKeyDataCredentials(master.Reveal(), data)
 }
 
 // PackageExpired reports whether a package Expiry is in the past. An empty or
