@@ -88,7 +88,7 @@ func NewLocked(cfg *config.Config, configPath string, timeout time.Duration) Mod
 
 // RunLocked launches the TUI in the unlock phase.
 func RunLocked(cfg *config.Config, configPath string, timeout time.Duration) error {
-	_, err := tea.NewProgram(NewLocked(cfg, configPath, timeout), tea.WithAltScreen()).Run()
+	_, err := tea.NewProgram(NewLocked(cfg, configPath, timeout), tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	return err
 }
 

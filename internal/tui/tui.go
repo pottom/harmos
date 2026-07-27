@@ -161,7 +161,7 @@ func firstFolderWithEntries(roots []*node) int {
 
 // Run launches the TUI in the alt screen.
 func Run(entries []vault.Entry, configPath string, timeout time.Duration) error {
-	_, err := tea.NewProgram(New(entries, configPath, timeout), tea.WithAltScreen()).Run()
+	_, err := tea.NewProgram(New(entries, configPath, timeout), tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	return err
 }
 
@@ -371,6 +371,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.syncCh = nil
 		m.setKeyring = keyringStatus(m.sources())
 		return m, nil
+
+	case tea.MouseMsg:
+		// The wheel scrolls the focused surface — the same as pressing up/down a
+		// few times, so it moves the cursor in lists and scrolls the detail pane.
+		var k tea.KeyMsg
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			k = tea.KeyMsg{Type: tea.KeyUp}
+		case tea.MouseButtonWheelDown:
+			k = tea.KeyMsg{Type: tea.KeyDown}
+		default:
+			return m, nil
+		}
+		var cmd tea.Cmd
+		for range 3 {
+			var nm tea.Model
+			nm, cmd = m.Update(k)
+			m = nm.(Model)
+		}
+		return m, cmd
 
 	case tea.KeyMsg:
 		key := msg.String()
