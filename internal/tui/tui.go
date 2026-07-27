@@ -58,6 +58,8 @@ type Model struct {
 	setMode    int                    // setList / setRemove / …
 	setCat     int                    // selected Settings category (left pane): catSources / catTheme
 	setStatus  string                 // last action result, shown in the Settings footer
+	prefSel    int                    // selected row in the Preferences pane
+	staleAfter time.Duration          // Pleasant cache stale threshold (config-backed)
 	rmToggle   int                    // remove overlay: 0 delete-file, 1 forget-pw, 2 confirm
 	rmFile     bool                   // remove overlay: also delete the local file
 	rmPw       bool                   // remove overlay: also forget the keyring password
@@ -162,6 +164,7 @@ func New(entries []vault.Entry, configPath string, timeout time.Duration) Model 
 		srcType:    srcType,
 		themeName:  themeName,
 		timeout:    timeout,
+		staleAfter: resolveStaleAfter(loaded),
 	}
 }
 

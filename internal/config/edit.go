@@ -125,6 +125,15 @@ func SetTopLevelBool(path, key string, v bool) error {
 	return setTopLevel(path, key, fmt.Sprintf("%s = %t", key, v))
 }
 
+// SetPreferences persists the clipboard timeout and cache-stale threshold (both
+// TOML duration strings, e.g. "30s", "24h") in one write.
+func SetPreferences(path, clipboardTimeout, cacheStaleAfter string) error {
+	return setTopLevelMany(path, map[string]string{
+		"clipboard_timeout": strconv.Quote(clipboardTimeout),
+		"cache_stale_after": strconv.Quote(cacheStaleAfter),
+	})
+}
+
 // SetGenerator persists the password-generator preferences in one write.
 func SetGenerator(path string, length int, lower, upper, digit, symbol, noAmbig, oneEach bool) error {
 	return setTopLevelMany(path, map[string]string{

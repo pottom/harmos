@@ -118,6 +118,46 @@ func TestSettingsAddForm(t *testing.T) {
 	}
 }
 
+// Preferences (clipboard timeout, cache stale-after) are adjustable and persist.
+func TestPreferencesPersist(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	if _, err := config.WriteKdbxProfile(cfgPath, "own", "/data/own.kdbx", "", false); err != nil {
+		t.Fatal(err)
+	}
+	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 18})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}) // Settings
+	for range 3 {                                                 // Sources → … → Preferences
+		m = up(m, tea.KeyMsg{Type: tea.KeyDown})
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter}) // into the pane
+
+	m = up(m, tea.KeyMsg{Type: tea.KeyRight}) // clipboard 30s → 35s
+	if int(m.timeout.Seconds()) != 35 {
+		t.Errorf("clipboard timeout = %v, want 35s", m.timeout)
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyDown}) // to the cache row
+	m = up(m, tea.KeyMsg{Type: tea.KeyLeft}) // 24h → 23h
+	if int(m.staleAfter.Hours()) != 23 {
+		t.Errorf("cache stale-after = %v, want 23h", m.staleAfter)
+	}
+
+	loaded, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.ClipboardTimeout.Duration != 35*time.Second {
+		t.Errorf("persisted clipboard = %v", loaded.ClipboardTimeout.Duration)
+	}
+	if loaded.CacheStaleAfter.Duration != 23*time.Hour {
+		t.Errorf("persisted stale-after = %v", loaded.CacheStaleAfter.Duration)
+	}
+	// A fresh model loads the saved stale-after (New reads it from config).
+	if got := New(nil, cfgPath, 0).staleAfter; got != 23*time.Hour {
+		t.Errorf("reloaded stale-after = %v, want 23h", got)
+	}
+}
+
 // The Settings sources table shows the same STATUS badge as the unlock screen —
 // cache freshness for Pleasant, credential state for kdbx.
 func TestSettingsSourceStatus(t *testing.T) {

@@ -68,6 +68,7 @@ type Config struct {
 	Theme            string    `toml:"theme"`    // built-in name or a themes/<name>.toml
 	NerdFont         *bool     `toml:"nerdfont"` // nil = default on; set false for terminals without a Nerd Font
 	ClipboardTimeout Duration  `toml:"clipboard_timeout"`
+	CacheStaleAfter  Duration  `toml:"cache_stale_after"` // when a Pleasant cache is flagged stale
 	Profiles         []Profile `toml:"profile"`
 
 	// Password generator preferences (nil / 0 = built-in default).
@@ -82,6 +83,9 @@ type Config struct {
 
 // DefaultClipboardTimeout is used when the file omits clipboard_timeout.
 const DefaultClipboardTimeout = 30 * time.Second
+
+// DefaultCacheStaleAfter is used when the file omits cache_stale_after.
+const DefaultCacheStaleAfter = 24 * time.Hour
 
 // DefaultPath returns $XDG_CONFIG_HOME/harmos/config.toml, falling back to
 // ~/.config/harmos/config.toml.
@@ -118,6 +122,9 @@ func Load(path string) (*Config, error) {
 	}
 	if c.ClipboardTimeout.Duration == 0 {
 		c.ClipboardTimeout.Duration = DefaultClipboardTimeout
+	}
+	if c.CacheStaleAfter.Duration == 0 {
+		c.CacheStaleAfter.Duration = DefaultCacheStaleAfter
 	}
 	if err := c.normalizeAndValidate(); err != nil {
 		return nil, err

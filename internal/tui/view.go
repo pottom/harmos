@@ -322,6 +322,8 @@ func (m Model) settingsView() string {
 		right = box("Theme  ·  live preview", m.themeName, m.themeLines(rightW-2), rightW, panelsH, m.focus == 1)
 	case catIcons:
 		right = box("Icons", onOff(nerd), m.iconsLines(rightW-2), rightW, panelsH, m.focus == 1)
+	case catPrefs:
+		right = box("Preferences", "", m.prefsLines(rightW-2), rightW, panelsH, m.focus == 1)
 	default:
 		profs := m.sources()
 		right = box("Sources", fmt.Sprintf("%d", len(profs)), m.sourceLines(rightW-2, profs), rightW, panelsH, m.focus == 1)
@@ -351,6 +353,9 @@ func (m Model) settingsContext() string {
 	}
 	if m.setCat == catIcons {
 		return theme.Faded.Render(trunc("  Nerd Font icons · "+onOff(nerd), m.w))
+	}
+	if m.setCat == catPrefs {
+		return theme.Faded.Render(trunc(fmt.Sprintf("  clipboard %ds · cache stale after %s", int(m.timeout.Seconds()), humanStale(m.staleAfter)), m.w))
 	}
 	profs := m.sources()
 	if m.setSel < len(profs) {
@@ -405,7 +410,7 @@ func (m Model) sourceLines(w int, profs []config.Profile) []string {
 			kf = filepath.Base(p.Keyfile)
 		}
 		// STATUS mirrors the unlock screen: cache freshness / credential state.
-		badge, kind := sourceBadge(p)
+		badge, kind := sourceBadge(p, m.staleAfter)
 		dot, bst := badgeDot(kind)
 		badge = trunc(badge, statW-2)
 
@@ -428,14 +433,43 @@ func (m Model) sourceLines(w int, profs []config.Profile) []string {
 func (m Model) settingsHint() string {
 	switch {
 	case m.focus == 0:
-		return theme.Faded.Render("↑↓ pick · →/↵ open · 1 Vault")
+		return theme.Faded.Render("↑↓ pick · →/↵ open")
 	case m.setCat == catTheme:
 		return theme.Faded.Render("↑↓ preview · ↵ save · ← back")
 	case m.setCat == catIcons:
 		return theme.Faded.Render("space toggle Nerd Font · ← back")
+	case m.setCat == catPrefs:
+		return theme.Faded.Render("↑↓ pick · ←/→ adjust · esc back")
 	default:
 		return theme.Faded.Render("↑↓ select · a add · e edit · s sync · p save-pw · x clear-pw · d remove · ← back")
 	}
+}
+
+// prefsLines is the Preferences pane: editable, persistent app settings.
+func (m Model) prefsLines(w int) []string {
+	row := func(idx int, label, val string) string {
+		if m.focus == 1 && m.prefSel == idx {
+			return theme.SelRow.Width(w).Render(trunc("▸ "+pad(label, 20)+val+"  −/+", w))
+		}
+		return "  " + theme.Strong.Render(pad(label, 20)) + theme.Hi.Render(val) + theme.Faded.Render("  −/+")
+	}
+	return []string{
+		"",
+		row(0, "Clipboard timeout", fmt.Sprintf("%ds", int(m.timeout.Seconds()))),
+		row(1, "Cache stale after", humanStale(m.staleAfter)),
+		"",
+		"  " + theme.Faded.Render("How long a copied secret stays on the clipboard"),
+		"  " + theme.Faded.Render("before it is cleared, and when a Pleasant cache"),
+		"  " + theme.Faded.Render("is flagged stale in STATUS."),
+	}
+}
+
+// humanStale formats the cache threshold as whole days when possible, else hours.
+func humanStale(d time.Duration) string {
+	if h := int(d.Hours()); h%24 == 0 {
+		return fmt.Sprintf("%dd", h/24)
+	}
+	return fmt.Sprintf("%dh", int(d.Hours()))
 }
 
 // onOff renders a boolean as "on"/"off".
