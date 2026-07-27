@@ -117,6 +117,28 @@ func TestSettingsAddForm(t *testing.T) {
 	}
 }
 
+// Tab toggles focus between the two Settings panes, like the other tabs.
+func TestSettingsTabToggles(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	if _, err := config.WriteKdbxProfile(cfgPath, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
+		t.Fatal(err)
+	}
+	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 20})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}) // Settings
+	if m.focus != 0 {
+		t.Fatalf("Settings should start on the category pane, focus=%d", m.focus)
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab})
+	if m.focus != 1 {
+		t.Errorf("tab should move into the content pane, focus=%d", m.focus)
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab})
+	if m.focus != 0 {
+		t.Errorf("tab should toggle back to the category pane, focus=%d", m.focus)
+	}
+}
+
 func TestSettingsRemove(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")

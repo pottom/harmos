@@ -24,6 +24,7 @@ func (m Model) handleClick(x, y int) (tea.Model, tea.Cmd) {
 		case 1:
 			m.setKeyring = keyringStatus(m.sources())
 		case 2:
+			m.focus = 1 // land on the password pane, not the options
 			if len(m.genList) == 0 {
 				m.resetGen()
 			}

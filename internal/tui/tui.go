@@ -463,7 +463,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.tab, m.detail, m.focus = 0, false, 0
 				return m, nil
 			case "2": // 2 = Generate (displayed second; internal tab index 2)
-				m.tab, m.detail, m.focus = 2, false, 0
+				m.tab, m.detail, m.focus = 2, false, 1 // land on the password, not the options
 				if len(m.genList) == 0 {
 					m.resetGen() // first visit: roll a password so the pane isn't empty
 				}

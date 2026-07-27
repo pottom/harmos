@@ -57,7 +57,7 @@ func (m Model) updateSettings(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // updateIconsPane toggles Nerd Font glyphs live and persists the choice.
 func (m Model) updateIconsPane(key string) (tea.Model, tea.Cmd) {
 	switch key {
-	case "left", "esc":
+	case "left", "esc", "tab":
 		m.focus = 0
 	case " ", "enter":
 		nerd = !nerd
@@ -123,7 +123,7 @@ func (m Model) enterCategory() Model {
 func (m Model) updateSourcesPane(key string) (tea.Model, tea.Cmd) {
 	profs := m.sources()
 	switch key {
-	case "left", "esc":
+	case "left", "esc", "tab":
 		m.focus = 0
 	case "up", "ctrl+p":
 		if m.setSel > 0 {

@@ -37,8 +37,12 @@ func space(m Model) Model {
 	return up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
 }
 
-// gotoRow moves the option cursor to the given row.
+// gotoRow moves the option cursor to the given row, switching to the options pane
+// first (the tab now lands on the password pane).
 func gotoRow(m Model, row int) Model {
+	if m.focus != 0 {
+		m = up(m, tea.KeyMsg{Type: tea.KeyEsc})
+	}
 	for m.genRow < row {
 		m = up(m, tea.KeyMsg{Type: tea.KeyDown})
 	}
@@ -116,9 +120,8 @@ func reroll(m Model) Model {
 
 func TestGenerateRerollAndCopy(t *testing.T) {
 	m := genTab()
-	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the password pane
 	if m.focus != 1 {
-		t.Fatal("tab should move focus to the password pane")
+		t.Fatal("the Generate tab should land on the password pane")
 	}
 	m = reroll(m)
 	if len(m.genList) != 2 || m.genSel != 1 {
@@ -144,7 +147,6 @@ func TestGenerateRerollAndCopy(t *testing.T) {
 // change the underlying text.
 func TestGenerateMouseAndColor(t *testing.T) {
 	m := genTab()
-	m = up(m, tea.KeyMsg{Type: tea.KeyTab})
 	m = reroll(m)
 	m = reroll(m) // 3 in history → a recent list of 2
 	heroBefore := m.genList[m.genSel]
