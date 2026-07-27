@@ -104,32 +104,52 @@ func hasPleasant(cfg *config.Config) bool {
 // sourceStats builds the per-source status rows: Pleasant sources show cache
 // freshness, kdbx sources show whether a saved password covers them.
 func sourceStats(cfg *config.Config) []srcStat {
-	i := ic()
 	stats := make([]srcStat, 0, len(cfg.Profiles))
 	for _, p := range cfg.Profiles {
-		s := srcStat{name: p.Name}
+		s := srcStat{name: p.Name, typ: string(p.Type), loc: p.Path}
 		if p.Type == config.Pleasant {
-			s.typ, s.loc = "pleasant", p.URL
-			if age, ok := fileAge(p.Cache); !ok {
-				s.badge, s.kind = "no cache", badgeStale
-			} else if age > staleAfter {
-				s.badge, s.kind = "cache "+humanAge(age)+" — stale", badgeStale
-			} else {
-				s.badge, s.kind = "cache "+humanAge(age), badgeFresh
-			}
-		} else {
-			s.typ, s.loc = "kdbx", p.Path
-			if _, ok, _ := keyring.Fetch(p.Name); ok {
-				s.badge, s.kind = "keyring", badgeFresh
-			} else if p.Keyfile != "" {
-				s.badge, s.kind = "keyfile "+i.none, badgeAsk
-			} else {
-				s.badge, s.kind = "own password", badgeAsk
-			}
+			s.loc = p.URL
 		}
+		s.badge, s.kind = sourceBadge(p)
 		stats = append(stats, s)
 	}
 	return stats
+}
+
+// sourceBadge is a source's one-line status — a Pleasant cache's freshness, or a
+// kdbx source's credential state — shown both on the unlock screen and in the
+// Settings sources table (so the same info appears in both places).
+func sourceBadge(p config.Profile) (string, badgeKind) {
+	if p.Type == config.Pleasant {
+		age, ok := fileAge(p.Cache)
+		switch {
+		case !ok:
+			return "no cache", badgeStale
+		case age > staleAfter:
+			return "cache " + humanAge(age) + " — stale", badgeStale
+		default:
+			return "cache " + humanAge(age), badgeFresh
+		}
+	}
+	if _, ok, _ := keyring.Fetch(p.Name); ok {
+		return "keyring", badgeFresh
+	}
+	if p.Keyfile != "" {
+		return "keyfile", badgeAsk
+	}
+	return "own password", badgeAsk
+}
+
+// badgeDot returns the marker (● present, ○ will-ask) and colour for a badge kind.
+func badgeDot(k badgeKind) (string, lipgloss.Style) {
+	switch k {
+	case badgeStale:
+		return "●", theme.Bad
+	case badgeAsk:
+		return "○", theme.Faded
+	default:
+		return "●", theme.Ok
+	}
 }
 
 func fileAge(path string) (time.Duration, bool) {
@@ -332,13 +352,7 @@ func (m Model) unlockView() string {
 
 	lines := []string{"  " + theme.Faded.Render("one master password opens every cache"), ""}
 	for _, s := range m.ulStats {
-		dot, st := "●", theme.Ok
-		switch s.kind {
-		case badgeStale:
-			st = theme.Bad
-		case badgeAsk:
-			dot, st = "○", theme.Faded
-		}
+		dot, st := badgeDot(s.kind)
 		icon := i.kdbx
 		if s.typ == "pleasant" {
 			icon = i.pps
