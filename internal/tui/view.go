@@ -415,7 +415,8 @@ func (m Model) sourceLines(w int, profs []config.Profile) []string {
 		badge = trunc(badge, statW-2)
 
 		if k == m.setSel && m.focus == 1 {
-			plain := pad("▸ "+p.Name, nameW) + " " + pad(string(p.Type), typeW) + " " + pad(trunc(loc, locW), locW) + " " + pad(trunc(kf, kfW), kfW) + " " + dot + " " + badge
+			// selected row: the source's own type icon, not a ▸ arrow (as elsewhere)
+			plain := pad(sicon+" "+p.Name, nameW) + " " + pad(string(p.Type), typeW) + " " + pad(trunc(loc, locW), locW) + " " + pad(trunc(kf, kfW), kfW) + " " + dot + " " + badge
 			out = append(out, theme.SelRow.Width(w).Render(trunc("  "+plain, w)))
 			continue
 		}
