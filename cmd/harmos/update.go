@@ -28,6 +28,10 @@ func newUpdateCmd() *cobra.Command {
 			case errors.Is(err, selfupdate.ErrUpToDate):
 				emitf(cmd.OutOrStdout(), "harmos %s is already the latest release.\n", version.Version)
 				return nil
+			case errors.Is(err, selfupdate.ErrManagedInstall):
+				return fmt.Errorf("%w\n"+
+					"If you installed harmos from a .deb/.rpm, update it with your package manager (apt/dnf).\n"+
+					"Otherwise re-run with elevated privileges, e.g. sudo harmos update", err)
 			case errors.Is(err, updater.ErrNoReleases):
 				return fmt.Errorf("no releases published yet — see https://github.com/pottom/harmos/releases")
 			case errors.Is(err, selfupdate.ErrUnsupported):
