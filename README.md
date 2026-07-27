@@ -27,6 +27,28 @@ tar xzf harmos_*_darwin_arm64.tar.gz
 sudo mv harmos /usr/local/bin/
 ```
 
+**Debian / Ubuntu / Fedora / RHEL** — grab the `.deb` or `.rpm` for your arch
+from the releases page:
+
+```sh
+sudo dpkg -i harmos_*_linux_amd64.deb   # Debian / Ubuntu
+sudo rpm -i  harmos_*_linux_amd64.rpm   # Fedora / RHEL
+```
+
+**Docker** — a minimal multiarch image (distroless, ~19 MB) on the GitHub
+Container Registry:
+
+```sh
+# a CLI verb
+docker run --rm ghcr.io/pottom/harmos:latest gen -n 24
+
+# the TUI (needs a TTY), with your config and cache mounted in
+docker run -it --rm \
+  -v ~/.config/harmos:/home/nonroot/.config/harmos \
+  -v ~/.local/share/harmos:/home/nonroot/.local/share/harmos \
+  ghcr.io/pottom/harmos:latest
+```
+
 **With Go** (1.26+):
 
 ```sh

@@ -38,6 +38,20 @@ archives:
       - goos: windows
         formats: [zip]
 
+nfpms:
+  # .deb and .rpm built from the linux binaries with goreleaser's bundled nfpm —
+  # attached to the GitHub release alongside the archives, no external tooling.
+  - id: packages
+    ids: [nocgo]
+    package_name: harmos
+    vendor: Istvan Basa
+    homepage: https://github.com/pottom/harmos
+    maintainer: Istvan Basa <basipottom@gmail.com>
+    description: Read-only terminal password client for Pleasant Password Server and local .kdbx files.
+    license: MIT
+    formats: [deb, rpm]
+    bindir: /usr/bin
+
 checksum:
   name_template: "sha256sums.txt"
   algorithm: sha256
