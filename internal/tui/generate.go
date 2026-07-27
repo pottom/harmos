@@ -68,9 +68,11 @@ const (
 
 // genRowLayout maps a visual row in the options pane to its field index (-1 for a
 // blank spacer), so a mouse click lands on the right option.
-var genRowLayout = []int{genLength, -1, genLower, genUpper, genDigit, genSymbol, -1, genAmbig, genOneEach, -1, genDo}
+var genRowLayout = []int{genLength, -1, genLower, genUpper, genDigit, genSymbol, -1, genAmbig, genOneEach}
 
-// Option rows in the left pane, in display order.
+// Option rows in the left pane, in display order. There is no "Generate" button:
+// changing any option regenerates automatically, and reroll lives on the password
+// pane (r), so a button would be redundant.
 const (
 	genLength = iota
 	genLower
@@ -79,7 +81,6 @@ const (
 	genSymbol
 	genAmbig
 	genOneEach
-	genDo
 	genRowCount
 )
 
@@ -129,17 +130,9 @@ func (m Model) updateGenOptions(key string) (tea.Model, tea.Cmd) {
 	case "right", "l", "+", "=":
 		m.adjustGen(+1)
 	case " ":
-		if m.genRow == genDo {
-			m.resetGen()
-			m.focus = 1
-			return m, nil
-		}
 		m.toggleGen()
 		m.resetGen()
-	case "tab":
-		m.focus = 1
-	case "enter", "g":
-		m.resetGen()
+	case "tab", "enter", "g": // options already regenerate live — just show the password
 		m.focus = 1
 	}
 	return m, nil
@@ -245,14 +238,9 @@ func (m Model) handleGenClick(x, y int, dbl bool) (tea.Model, tea.Cmd) {
 			field := genRowLayout[row]
 			already := m.focus == 0 && m.genRow == field
 			m.genRow, m.focus = field, 0
-			if dbl && already {
-				if field == genDo {
-					m.resetGen()
-					m.focus = 1
-				} else {
-					m.toggleGen()
-					m.resetGen()
-				}
+			if dbl && already { // double-click toggles the option under the cursor
+				m.toggleGen()
+				m.resetGen()
 			}
 		}
 		return m, nil
@@ -323,7 +311,7 @@ func (m Model) genContext() string {
 // genHint is the footer, contextual to the focused pane.
 func (m Model) genHint() string {
 	if m.focus == 0 {
-		return theme.Faded.Render("↑↓ move · space toggle · ←/→ length · ↵ generate · ⇥ password")
+		return theme.Faded.Render("↑↓ move · space toggle · ←/→ length · ↵/⇥ password")
 	}
 	return theme.Faded.Render("↑↓ recent · ↵ copy · r reroll · esc options · click/right-click")
 }
@@ -367,12 +355,6 @@ func (m Model) genOptionLines(w int) []string {
 	out = append(out, "")
 	chk(genAmbig, "no ambiguous", o.AvoidAmbig, "0O1lI")
 	chk(genOneEach, "one of each", o.OneEach, "")
-	out = append(out, "")
-	if m.focus == 0 && m.genRow == genDo {
-		out = append(out, theme.SelRow.Width(w).Render(trunc("▸ Generate", w)))
-	} else {
-		out = append(out, "  "+theme.Ok.Render("[ Generate ]"))
-	}
 	return out
 }
 
