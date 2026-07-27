@@ -29,6 +29,7 @@ func genOptsFromConfig(cfg *config.Config) pwgen.Options {
 	setBool(&o.Symbol, cfg.GenSymbol)
 	setBool(&o.AvoidAmbig, cfg.GenNoAmbig)
 	setBool(&o.OneEach, cfg.GenOneEach)
+	o.Exclude = cfg.GenExclude
 	return o
 }
 
@@ -50,7 +51,7 @@ func (m *Model) saveGenOpts() {
 		return
 	}
 	o := m.genOpts
-	_ = config.SetGenerator(m.configPath, o.Length, o.Lower, o.Upper, o.Digit, o.Symbol, o.AvoidAmbig, o.OneEach)
+	_ = config.SetGenerator(m.configPath, o.Length, o.Lower, o.Upper, o.Digit, o.Symbol, o.AvoidAmbig, o.OneEach, o.Exclude)
 }
 
 // The Generate tab (2) is a focused password generator: options on the left, and
@@ -68,7 +69,7 @@ const (
 
 // genRowLayout maps a visual row in the options pane to its field index (-1 for a
 // blank spacer), so a mouse click lands on the right option.
-var genRowLayout = []int{genLength, -1, genLower, genUpper, genDigit, genSymbol, -1, genAmbig, genOneEach}
+var genRowLayout = []int{genLength, -1, genLower, genUpper, genDigit, genSymbol, -1, genAmbig, genOneEach, genExclude}
 
 // Option rows in the left pane, in display order. There is no "Generate" button:
 // changing any option regenerates automatically, and reroll lives on the password
@@ -81,6 +82,7 @@ const (
 	genSymbol
 	genAmbig
 	genOneEach
+	genExclude
 	genRowCount
 )
 
@@ -116,6 +118,26 @@ func (m Model) updateGenerate(key string) (tea.Model, tea.Cmd) {
 
 // updateGenOptions handles the left (options) pane.
 func (m Model) updateGenOptions(key string) (tea.Model, tea.Cmd) {
+	// On the exclude row, printable keys type into the excluded-character set
+	// (backspace deletes); arrows/tab/enter still navigate.
+	if m.genRow == genExclude {
+		if key == "backspace" {
+			if r := []rune(m.genOpts.Exclude); len(r) > 0 {
+				m.genOpts.Exclude = string(r[:len(r)-1])
+				m.resetGen()
+				m.saveGenOpts()
+			}
+			return m, nil
+		}
+		if len(key) == 1 && key[0] > ' ' && key[0] < 0x7f { // a printable ASCII char
+			if !strings.ContainsRune(m.genOpts.Exclude, rune(key[0])) {
+				m.genOpts.Exclude += key
+				m.resetGen()
+				m.saveGenOpts()
+			}
+			return m, nil
+		}
+	}
 	switch key {
 	case "up", "ctrl+p", "k":
 		if m.genRow > 0 {
@@ -222,7 +244,7 @@ func (m Model) genLayout(rows int) (top, listStart int, order []int) {
 // blank, affordance); genInnerMax reserves room for the fullest recent list so the
 // hero's position is stable.
 const (
-	genHeroInner = 9 // framed password (3) + blank + bar + bits + label + blank + affordance
+	genHeroInner = 10 // framed password (3) + blank + bar + bits + label + breakdown + blank + affordance
 	genInnerMax  = genHeroInner + 2 + (genHistMax - 1)
 )
 
@@ -355,6 +377,12 @@ func (m Model) genOptionLines(w int) []string {
 	out = append(out, "")
 	chk(genAmbig, "no ambiguous", o.AvoidAmbig, "0O1lI")
 	chk(genOneEach, "one of each", o.OneEach, "")
+	out = append(out, "")
+	exVal, exSt := o.Exclude, theme.Hi
+	if exVal == "" {
+		exVal, exSt = "(type to add)", theme.Faded
+	}
+	row(genExclude, pad("exclude", 10)+exVal, theme.Strong.Render(pad("exclude", 10))+exSt.Render(exVal))
 	return out
 }
 
@@ -392,6 +420,7 @@ func (m Model) genPasswordLines(w, rows int) []string {
 		center(strengthBar(bits, 24)),
 		center(theme.Strong.Render(fmt.Sprintf("%.0f bits", bits))),
 		center(lst.Render(label)),
+		center(theme.Faded.Render(classBreakdown(m.genList[m.genSel]))),
 		"",
 		center(theme.Faded.Render("↵ copy    r reroll")),
 	)
@@ -415,6 +444,36 @@ func (m Model) genPasswordLines(w, rows int) []string {
 		out = append(out, "")
 	}
 	return append(out, inner...)
+}
+
+// classBreakdown counts how many of each character class the password contains,
+// e.g. "12 lower · 5 upper · 2 num · 1 sym" — so you can see its make-up at a
+// glance (and confirm "one of each").
+func classBreakdown(p string) string {
+	var lo, up, num, sym int
+	for _, r := range p {
+		switch {
+		case r >= 'a' && r <= 'z':
+			lo++
+		case r >= 'A' && r <= 'Z':
+			up++
+		case r >= '0' && r <= '9':
+			num++
+		default:
+			sym++
+		}
+	}
+	var parts []string
+	add := func(n int, label string) {
+		if n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, label))
+		}
+	}
+	add(lo, "lower")
+	add(up, "upper")
+	add(num, "num")
+	add(sym, "sym")
+	return strings.Join(parts, " · ")
 }
 
 // heroPassword renders the password contiguously and syntax-coloured. It is shown

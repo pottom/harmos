@@ -33,6 +33,21 @@ func TestGenCommand(t *testing.T) {
 	}
 }
 
+func TestGenExclude(t *testing.T) {
+	var buf bytes.Buffer
+	cmd := newGenCmd()
+	cmd.SetOut(&buf)
+	cmd.SetArgs([]string{"-n", "40", "-x", "aeiou", "-c", "5", "--config", "/no/such/config.toml"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		if strings.ContainsAny(p, "aeiou") {
+			t.Errorf("excluded chars leaked into %q", p)
+		}
+	}
+}
+
 func TestGenNoClassesErrors(t *testing.T) {
 	cmd := newGenCmd()
 	cmd.SetOut(io.Discard)

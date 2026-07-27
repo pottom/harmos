@@ -135,7 +135,7 @@ func SetPreferences(path, clipboardTimeout, cacheStaleAfter string) error {
 }
 
 // SetGenerator persists the password-generator preferences in one write.
-func SetGenerator(path string, length int, lower, upper, digit, symbol, noAmbig, oneEach bool) error {
+func SetGenerator(path string, length int, lower, upper, digit, symbol, noAmbig, oneEach bool, exclude string) error {
 	return setTopLevelMany(path, map[string]string{
 		"gen_length":       strconv.Itoa(length),
 		"gen_lower":        strconv.FormatBool(lower),
@@ -144,6 +144,7 @@ func SetGenerator(path string, length int, lower, upper, digit, symbol, noAmbig,
 		"gen_symbol":       strconv.FormatBool(symbol),
 		"gen_no_ambiguous": strconv.FormatBool(noAmbig),
 		"gen_one_each":     strconv.FormatBool(oneEach),
+		"gen_exclude":      strconv.Quote(exclude),
 	})
 }
 
