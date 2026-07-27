@@ -171,6 +171,35 @@ func windowStart(cursor, rows, total int) int {
 	return start
 }
 
+// treeRailW is the width of the collapsed folder rail.
+const treeRailW = 5
+
+// leftPaneW is the width of the Vault tab's left pane — the folder tree, or the
+// thin rail when collapsed. Shared by the layout and the mouse hit-tests so they
+// always agree.
+func (m Model) leftPaneW() int {
+	if m.treeCollapsed {
+		return treeRailW
+	}
+	return min(42, max(18, m.w*2/5))
+}
+
+// treeRail renders the collapsed folder pane: a thin bordered rail with the source
+// icons stacked, so the tree is clearly still there (reopen with ctrl+b or a
+// click).
+func (m Model) treeRail(h int) string {
+	i := ic()
+	var lines []string
+	for _, root := range m.roots {
+		icon := i.folder
+		if si, ok := m.sourceIcon(root.name); ok {
+			icon = si
+		}
+		lines = append(lines, theme.Acc.Render(icon))
+	}
+	return box(i.folder, "", lines, treeRailW, h, false)
+}
+
 // panelRows is the visible row count of the folder-tree pane and of the
 // table/results pane (which spends one row on its header) — the page size a
 // PageUp/PageDown jump moves by.
@@ -253,15 +282,20 @@ func (m Model) vaultBody() string {
 	bottom := m.countdown() + "\n" + m.footer(hint)
 	panelsH := max(3, m.h-3) // search line + countdown + footer
 
-	leftW := min(42, max(18, m.w*2/5))
+	leftW := m.leftPaneW()
 	rightW := m.w - leftW - 1 // 1-column gap between panels
 
 	flat := m.visible()
 	treeRows := panelsH - 2
-	treeSB := boolToInt(len(flat) > treeRows) // scrollbar steals one content column
-	folders := boxV("Folders", cursorInfo(m.tsel, len(flat)),
-		m.treeLines(leftW-2-treeSB, treeRows), leftW, panelsH, m.focus == 0 && !m.showResults() && !m.detail,
-		len(flat), windowStart(m.tsel, treeRows, len(flat)), 0)
+	var folders string
+	if m.treeCollapsed {
+		folders = m.treeRail(panelsH)
+	} else {
+		treeSB := boolToInt(len(flat) > treeRows) // scrollbar steals one content column
+		folders = boxV("Folders", cursorInfo(m.tsel, len(flat)),
+			m.treeLines(leftW-2-treeSB, treeRows), leftW, panelsH, m.focus == 0 && !m.showResults() && !m.detail,
+			len(flat), windowStart(m.tsel, treeRows, len(flat)), 0)
+	}
 
 	var right string
 	listRows := panelsH - 3 // one row is the table header
@@ -919,7 +953,7 @@ func (m Model) detailPane(w, h int) string {
 // vaultBody's layout, so scroll bounds line up with what's rendered.
 func (m Model) detailViewport() (w, visible int) {
 	panelsH := max(3, m.h-3)
-	leftW := min(42, max(18, m.w*2/5))
+	leftW := m.leftPaneW()
 	return m.w - leftW - 1, max(1, panelsH-2)
 }
 
@@ -1004,9 +1038,9 @@ func (m Model) hints() string {
 	case m.showResults():
 		full = "↑↓ results · ↵ copy pw · → details · c get-cmd · g folder · / edit · esc clear"
 	case m.focus == 1:
-		full = "↑↓ move · ↵ copy pw · → details · c get-cmd · ← back · / search · ?"
+		full = "↑↓ move · ↵ copy pw · → details · c get-cmd · ^b tree · / search · ?"
 	default:
-		full = "↑↓ move · →/⇥ into · ← collapse · ↵ open folder · / search · q quit · ?"
+		full = "↑↓ move · →/⇥ into · ← collapse · ↵ open folder · ^b tree · / search · q quit"
 	}
 	return theme.Faded.Render(trunc(full, m.w))
 }
