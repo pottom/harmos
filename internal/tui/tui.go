@@ -253,9 +253,10 @@ func keyringStatus(profs []config.Profile) map[string]bool {
 
 func (m Model) searching() bool { return m.input.Value() != "" }
 
-// showResults is true whenever the right pane is the ranked results list: while
-// actively typing in the search box, or afterwards while a filter is applied.
-func (m Model) showResults() bool { return m.searchMode || m.input.Value() != "" }
+// showResults is true whenever the right pane is the ranked results list — only
+// when there's an actual query. An empty search box (just opened, or deleted
+// back to empty) shows the tree, not every entry.
+func (m Model) showResults() bool { return m.input.Value() != "" }
 
 func (m Model) visible() []treeLine { return visibleTree(m.roots) }
 
@@ -284,8 +285,12 @@ func (m Model) selEntry() *vault.Entry {
 }
 
 func (m *Model) refilter() {
-	m.results = m.matcher.Match(m.input.Value())
 	m.sel = 0
+	if m.input.Value() == "" { // no query → no results list (the tree shows instead)
+		m.results = nil
+		return
+	}
+	m.results = m.matcher.Match(m.input.Value())
 }
 
 func (m *Model) copySel(what string) tea.Cmd {
