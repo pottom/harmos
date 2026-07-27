@@ -30,8 +30,11 @@ func (m Model) handleClick(x, y int) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.tab != 0 {
-		return m, nil // Settings/Generate: keyboard-driven for now
+	if m.tab == 2 {
+		return m.handleGenClick(x, y, dbl)
+	}
+	if m.tab == 1 {
+		return m, nil // Settings: keyboard-driven for now
 	}
 
 	panelsH := max(3, m.h-3)
@@ -103,6 +106,9 @@ func (m Model) handleClick(x, y int) (tea.Model, tea.Cmd) {
 // handleRightClick copies the password of the entry (or result) under the cursor
 // — a quick copy from the list without opening the detail.
 func (m Model) handleRightClick(x, y int) (tea.Model, tea.Cmd) {
+	if m.tab == 2 {
+		return m.handleGenRightClick(x, y)
+	}
 	if m.locked || m.help || m.attach != attachNone || m.tab != 0 || m.searchMode {
 		return m, nil
 	}

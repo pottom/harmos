@@ -12,12 +12,16 @@ import (
 )
 
 // The Generate tab (3) is a pwgen-style password generator: options on the left,
-// a grid of freshly generated passwords on the right. Read-only w.r.t. the vault
-// — it only copies to the concealed clipboard. All randomness is crypto/rand
-// (see internal/pwgen).
+// a single-column list of freshly generated passwords on the right (mirroring the
+// vault's entry table). Read-only w.r.t. the vault — it only copies to the
+// concealed clipboard. All randomness is crypto/rand (see internal/pwgen).
 
-// genLeftW is the fixed width of the options pane; the grid takes the rest.
+// genLeftW is the fixed width of the options pane; the list takes the rest.
 const genLeftW = 34
+
+// genRowLayout maps a visual row in the options pane to its field index (-1 for a
+// blank spacer), so a mouse click lands on the right option.
+var genRowLayout = []int{genLength, genCount, -1, genLower, genUpper, genDigit, genSymbol, -1, genAmbig, genOneEach, -1, genDo}
 
 // Option rows in the left pane, in display order.
 const (
@@ -115,32 +119,23 @@ func (m *Model) toggleGen() {
 	}
 }
 
-// updateGenList handles the right (grid) pane.
+// updateGenList handles the right (password list) pane.
 func (m Model) updateGenList(key string) (tea.Model, tea.Cmd) {
-	cols := m.genGridCols()
 	n := len(m.genList)
 	switch key {
-	case "left", "h":
+	case "up", "ctrl+p", "k":
 		if m.genSel > 0 {
 			m.genSel--
 		}
-	case "right", "l":
+	case "down", "ctrl+n", "j":
 		if m.genSel < n-1 {
 			m.genSel++
 		}
-	case "up", "ctrl+p", "k":
-		if m.genSel-cols >= 0 {
-			m.genSel -= cols
-		}
-	case "down", "ctrl+n", "j":
-		if m.genSel+cols < n {
-			m.genSel += cols
-		}
 	case "pgup":
-		m.genSel = max(0, m.genSel-cols*m.genVisRows())
+		m.genSel = max(0, m.genSel-m.genVisRows())
 	case "pgdown":
-		m.genSel = clampIndex(m.genSel+cols*m.genVisRows(), n)
-	case "esc", "tab":
+		m.genSel = clampIndex(m.genSel+m.genVisRows(), n)
+	case "esc", "tab", "left", "h":
 		m.focus = 0
 	case "r", "g":
 		m.regen()
@@ -152,28 +147,61 @@ func (m Model) updateGenList(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// genVisRows is the number of grid rows visible in the passwords pane.
+// genVisRows is the number of password rows visible in the list pane.
 func (m Model) genVisRows() int {
 	return max(1, max(3, m.h-3)-2)
 }
 
-// genGridCols is how many password cells fit across the passwords pane — shared by
-// the renderer and the grid navigation so ←/→/↑/↓ match what is drawn.
-func (m Model) genGridCols() int {
-	rightInner := (m.w - genLeftW - 1) - 2 // box inner width
-	return gridCols(rightInner-2, m.genOpts.Length)
+// handleGenClick routes a left-click in the Generate tab: option rows on the
+// left, password rows on the right. A double-click on an already-selected option
+// activates it (toggle / generate); on a selected password it copies.
+func (m Model) handleGenClick(x, y int, dbl bool) (tea.Model, tea.Cmd) {
+	panelsH := max(3, m.h-3)
+	if y < 2 || y > panelsH-1 {
+		return m, nil
+	}
+	row := y - 2
+	if x <= genLeftW-1 { // options pane
+		if row < len(genRowLayout) && genRowLayout[row] >= 0 {
+			field := genRowLayout[row]
+			already := m.focus == 0 && m.genRow == field
+			m.genRow, m.focus = field, 0
+			if dbl && already {
+				if field == genDo {
+					m.regen()
+					m.focus = 1
+				} else {
+					m.toggleGen()
+					m.regen()
+				}
+			}
+		}
+		return m, nil
+	}
+	// passwords pane
+	idx := windowStart(m.genSel, m.genVisRows(), len(m.genList)) + row
+	if idx >= 0 && idx < len(m.genList) {
+		if dbl && idx == m.genSel && m.focus == 1 {
+			return m, m.copyString(m.genList[idx], "password", "generated")
+		}
+		m.genSel, m.focus = idx, 1
+	}
+	return m, nil
 }
 
-// gridCols fits fixed-width cells (plus a 2-cell gap) into w.
-func gridCols(w, cellW int) int {
-	if cellW < 1 {
-		cellW = 1
+// handleGenRightClick copies the password under the cursor — a quick copy without
+// selecting first, mirroring the vault's right-click.
+func (m Model) handleGenRightClick(x, y int) (tea.Model, tea.Cmd) {
+	panelsH := max(3, m.h-3)
+	if y < 2 || y > panelsH-1 || x <= genLeftW-1 {
+		return m, nil
 	}
-	c := (w + 2) / (cellW + 2)
-	if c < 1 {
-		c = 1
+	idx := windowStart(m.genSel, m.genVisRows(), len(m.genList)) + (y - 2)
+	if idx >= 0 && idx < len(m.genList) {
+		m.genSel, m.focus = idx, 1
+		return m, m.copyString(m.genList[idx], "password", "generated")
 	}
-	return c
+	return m, nil
 }
 
 func (m Model) generateView() string {
@@ -181,7 +209,13 @@ func (m Model) generateView() string {
 	rightW := m.w - genLeftW - 1
 
 	left := box("Options", "", m.genOptionLines(genLeftW-2), genLeftW, panelsH, m.focus == 0)
-	right := box("Passwords", fmt.Sprintf("%d", len(m.genList)), m.genGridLines(m.genVisRows()), rightW, panelsH, m.focus == 1)
+
+	vis := m.genVisRows()
+	total := len(m.genList)
+	sb := boolToInt(total > vis) // scrollbar steals one content column
+	right := boxV("Passwords", fmt.Sprintf("%d", total),
+		m.genListLines(rightW-2-sb, vis), rightW, panelsH, m.focus == 1,
+		total, windowStart(m.genSel, vis, total), 0)
 
 	ctx := m.genContext()
 	if m.remaining > 0 { // a copy countdown takes over the context line, as in the vault
@@ -214,7 +248,7 @@ func (m Model) genHint() string {
 	if m.focus == 0 {
 		return theme.Faded.Render("↑↓ move · space toggle · ←/→ adjust · ↵ generate · ⇥ list")
 	}
-	return theme.Faded.Render("↑↓←→ move · ↵ copy · r regenerate · esc options")
+	return theme.Faded.Render("↑↓ move · ↵ copy · r regenerate · esc options · click/right-click")
 }
 
 // genOptionLines renders the left options pane.
@@ -267,42 +301,57 @@ func (m Model) genOptionLines(w int) []string {
 	return out
 }
 
-// genGridLines renders the passwords as a grid of fixed-width cells; rows is how
-// many grid rows are visible.
-func (m Model) genGridLines(rows int) []string {
+// genListLines renders the passwords one per row (like the vault entry table),
+// windowed to the visible rows and syntax-coloured.
+func (m Model) genListLines(w, rows int) []string {
 	if m.genErr != "" {
 		return []string{"", theme.Bad.Render("  " + m.genErr)}
 	}
 	if len(m.genList) == 0 {
 		return []string{"", theme.Faded.Render("  press ↵ to generate")}
 	}
-	cols := m.genGridCols()
-	total := len(m.genList)
-	totalRows := (total + cols - 1) / cols
-	start := windowStart(m.genSel/cols, rows, totalRows)
-
+	start := windowStart(m.genSel, rows, len(m.genList))
+	end := min(start+rows, len(m.genList))
 	var out []string
-	for r := start; r < min(start+rows, totalRows); r++ {
-		var b strings.Builder
-		b.WriteString("  ")
-		for c := 0; c < cols; c++ {
-			idx := r*cols + c
-			if idx >= total {
-				break
-			}
-			cell := m.genList[idx]
-			if idx == m.genSel && m.focus == 1 {
-				b.WriteString(theme.SelRow.Render(cell))
-			} else {
-				b.WriteString(theme.Strong.Render(cell))
-			}
-			if c < cols-1 {
-				b.WriteString("  ")
-			}
+	for k := start; k < end; k++ {
+		p := m.genList[k]
+		if k == m.genSel && m.focus == 1 {
+			out = append(out, theme.SelRow.Width(w).Render(trunc("  "+p, w)))
+		} else {
+			out = append(out, "  "+colorizePw(p))
 		}
-		out = append(out, b.String())
 	}
 	return out
+}
+
+// colorizePw renders a password with its character classes in distinct theme
+// colours — letters plain, digits in accent, symbols emphasised — so a password
+// reads at a glance and fits the vault's colour language. Runs of the same class
+// are batched into one styled span.
+func colorizePw(s string) string {
+	class := func(r rune) int {
+		switch {
+		case r >= '0' && r <= '9':
+			return 1
+		case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z'):
+			return 0
+		default:
+			return 2
+		}
+	}
+	styles := []lipgloss.Style{theme.Strong, theme.Acc, theme.Hi}
+	runes := []rune(s)
+	var b strings.Builder
+	for i := 0; i < len(runes); {
+		c := class(runes[i])
+		j := i
+		for j < len(runes) && class(runes[j]) == c {
+			j++
+		}
+		b.WriteString(styles[c].Render(string(runes[i:j])))
+		i = j
+	}
+	return b.String()
 }
 
 // clampInt keeps v within [lo, hi].
