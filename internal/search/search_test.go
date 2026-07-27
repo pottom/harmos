@@ -15,6 +15,50 @@ func titles(res []Result) []string {
 	return out
 }
 
+func TestSearchFieldsAndBadges(t *testing.T) {
+	m := New([]vault.Entry{
+		{Title: "runbook"}, // title
+		{Title: "b", URL: "https://runbook.example.com"},                                                  // url
+		{Title: "c", Custom: []vault.Field{{Name: "Environment", Value: "runbook-prod"}}},                 // field value
+		{Title: "d", Custom: []vault.Field{{Name: "Recovery", Value: "runbook-secret", Protected: true}}}, // protected → value not searched
+		{Title: "e", Notes: "restore the runbook from the wiki"},                                          // notes
+	})
+	field, score := map[string]string{}, map[string]int{}
+	for _, r := range m.Match("runbook") {
+		field[r.Entry.Title] = r.Field
+		score[r.Entry.Title] = r.Score
+	}
+
+	if field["runbook"] != "" {
+		t.Errorf("a title match should have no field badge, got %q", field["runbook"])
+	}
+	if field["b"] != "url" {
+		t.Errorf("b should match on url, got %q", field["b"])
+	}
+	if field["c"] != "Environment" {
+		t.Errorf("c should match the Environment field, got %q", field["c"])
+	}
+	if field["e"] != "notes" {
+		t.Errorf("e should match on notes, got %q", field["e"])
+	}
+	if _, ok := field["d"]; ok {
+		t.Error("a protected field's value must not be searched")
+	}
+	// ranking: title < url < field < notes
+	if score["runbook"] >= score["b"] || score["b"] >= score["c"] || score["c"] >= score["e"] {
+		t.Errorf("field ranking wrong: %v", score)
+	}
+}
+
+// A protected field is still findable by its name.
+func TestSearchProtectedFieldByName(t *testing.T) {
+	m := New([]vault.Entry{{Title: "x", Custom: []vault.Field{{Name: "Recovery PIN", Value: "8842", Protected: true}}}})
+	res := m.Match("recovery")
+	if len(res) != 1 || res[0].Field != "Recovery PIN" {
+		t.Errorf("protected field should match by name, got %+v", res)
+	}
+}
+
 func TestRankingOrder(t *testing.T) {
 	m := New([]vault.Entry{
 		{Title: "admin"},                                 // exact
