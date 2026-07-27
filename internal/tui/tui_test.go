@@ -461,6 +461,52 @@ func TestScrollbarAndWheel(t *testing.T) {
 	}
 }
 
+func click(x, y int) tea.MouseMsg {
+	return tea.MouseMsg{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: x, Y: y}
+}
+
+// Left-clicks select tree/entry rows, open the already-selected row, and the tab
+// indicator switches tabs.
+func TestMouseClick(t *testing.T) {
+	ents := []vault.Entry{
+		{Source: "s", Path: "f", Title: "a", Password: secret.New("p")},
+		{Source: "s", Path: "f", Title: "b", Password: secret.New("p")},
+		{Source: "s", Path: "f", Title: "c", Password: secret.New("p")},
+	}
+	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	// visible tree = [s (0), f (1)]; panel content starts at Y=2, left pane X<40
+
+	m = up(m, click(5, 2)) // tree row 0 → source "s"
+	if m.tsel != 0 || m.focus != 0 {
+		t.Errorf("clicking tree row 0 → tsel=0/focus=0, got %d/%d", m.tsel, m.focus)
+	}
+	m = up(m, click(5, 3)) // tree row 1 → folder "f"
+	if m.tsel != 1 {
+		t.Errorf("clicking tree row 1 → tsel=1, got %d", m.tsel)
+	}
+
+	// right pane entries: header at Y=2, entries a/b/c at Y=3/4/5
+	m = up(m, click(50, 4)) // entry "b"
+	if m.esel != 1 || m.focus != 1 {
+		t.Errorf("clicking entry row → esel=1/focus=1, got %d/%d", m.esel, m.focus)
+	}
+	m = up(m, click(50, 4)) // click the selected row again → open detail
+	if !m.detail {
+		t.Error("clicking the selected entry again should open the detail")
+	}
+
+	m = up(m, tea.KeyMsg{Type: tea.KeyEsc}) // leave detail
+	// tab indicator on the last line (Y=29): "1 Vault · 2 Settings" right-aligned
+	m = up(m, click(94, 29)) // in the "2 Settings" region
+	if m.tab != 1 {
+		t.Errorf("clicking the Settings tab should switch to it, got tab=%d", m.tab)
+	}
+	m = up(m, click(82, 29)) // "1 Vault"
+	if m.tab != 0 {
+		t.Errorf("clicking the Vault tab should switch back, got tab=%d", m.tab)
+	}
+}
+
 // g on a search result leaves the search and lands on that entry's folder.
 func TestGotoFolderFromResults(t *testing.T) {
 	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
