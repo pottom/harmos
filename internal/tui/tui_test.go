@@ -26,7 +26,7 @@ func TestSettingsThemePicker(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 16})
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}}) // jump into the Theme pane
 	if m.setCat != catTheme || m.focus != 1 {
 		t.Fatalf("t should open the Theme pane (cat=%d focus=%d)", m.setCat, m.focus)
@@ -54,7 +54,7 @@ func TestSettingsSavePassword(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 18})
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
 	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the Sources pane
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
 	if m.setMode != setPrompt {
@@ -79,7 +79,7 @@ func TestSettingsSyncNeedsCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 18})
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
 	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the Sources pane
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	if m.setMode == setSyncing {
@@ -94,7 +94,7 @@ func TestSettingsAddForm(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
 	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 20})
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}}) // Settings
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}) // Settings
 	m = up(m, tea.KeyMsg{Type: tea.KeyTab})                       // into the Sources pane
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}) // add form
 	if m.setMode != setForm {
@@ -128,7 +128,7 @@ func TestSettingsRemove(t *testing.T) {
 	}
 
 	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}}) // Settings
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}) // Settings
 	m = up(m, tea.KeyMsg{Type: tea.KeyTab})                       // into the Sources pane
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}) // remove the selected (a)
 	if m.setMode != setRemove {
@@ -607,12 +607,16 @@ func TestMouseClick(t *testing.T) {
 	}
 
 	m = up(m, tea.KeyMsg{Type: tea.KeyEsc}) // leave detail
-	// tab indicator on the last line (Y=29): "1 Vault · 2 Settings" right-aligned
-	m = up(m, click(94, 29)) // in the "2 Settings" region
+	// tab indicator on the last line (Y=29), right-aligned: "Vault · Generate · Settings"
+	m = up(m, click(95, 29)) // in the "Settings" region
 	if m.tab != 1 {
 		t.Errorf("clicking the Settings tab should switch to it, got tab=%d", m.tab)
 	}
-	m = up(m, click(82, 29)) // "1 Vault"
+	m = up(m, click(84, 29)) // "Generate"
+	if m.tab != 2 {
+		t.Errorf("clicking the Generate tab should switch to it, got tab=%d", m.tab)
+	}
+	m = up(m, click(75, 29)) // "Vault"
 	if m.tab != 0 {
 		t.Errorf("clicking the Vault tab should switch back, got tab=%d", m.tab)
 	}
@@ -810,15 +814,19 @@ func TestQuitAndSearchQ(t *testing.T) {
 	}
 }
 
-// 1/2 switch tabs, but digits type while searching.
+// 1/2/3 switch tabs (Vault/Generate/Settings), but digits type while searching.
 func TestTabsSwitch(t *testing.T) {
 	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
 	if m.tab != 0 {
 		t.Fatal("default tab should be Vault")
 	}
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	if m.tab != 2 || !strings.Contains(m.View(), "Passwords") {
+		t.Error("2 should switch to the Generate tab")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
 	if m.tab != 1 || !strings.Contains(m.View(), "Sources") {
-		t.Error("2 should switch to the Settings tab")
+		t.Error("3 should switch to the Settings tab")
 	}
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
 	if m.tab != 0 {

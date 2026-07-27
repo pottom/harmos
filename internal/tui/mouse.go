@@ -20,13 +20,18 @@ func (m Model) handleClick(x, y int) (tea.Model, tea.Cmd) {
 	// The tab indicator sits on the last line, on any tab.
 	if t, ok := m.tabHit(x, y); ok {
 		m.tab, m.detail, m.focus = t, false, 0
-		if t == 1 {
+		switch t {
+		case 1:
 			m.setKeyring = keyringStatus(m.sources())
+		case 2:
+			if len(m.genList) == 0 {
+				m.regen()
+			}
 		}
 		return m, nil
 	}
-	if m.tab == 1 {
-		return m, nil // Settings: keyboard-driven for now
+	if m.tab != 0 {
+		return m, nil // Settings/Generate: keyboard-driven for now
 	}
 
 	panelsH := max(3, m.h-3)
@@ -98,7 +103,7 @@ func (m Model) handleClick(x, y int) (tea.Model, tea.Cmd) {
 // handleRightClick copies the password of the entry (or result) under the cursor
 // — a quick copy from the list without opening the detail.
 func (m Model) handleRightClick(x, y int) (tea.Model, tea.Cmd) {
-	if m.locked || m.help || m.attach != attachNone || m.tab == 1 || m.searchMode {
+	if m.locked || m.help || m.attach != attachNone || m.tab != 0 || m.searchMode {
 		return m, nil
 	}
 	if m.detail { // in the detail, a right-click anywhere copies the open entry
@@ -131,20 +136,24 @@ func (m Model) tabHit(x, y int) (int, bool) {
 	if y != m.h-1 {
 		return 0, false
 	}
-	labels := []string{"1 Vault", "2 Settings"}
+	// Display order Vault · Generate · Settings, each mapping to its tab index.
+	tabs := []struct {
+		label string
+		idx   int
+	}{{"Vault", 0}, {"Generate", 2}, {"Settings", 1}}
 	total := 0
-	for i, l := range labels {
-		total += dw(l)
-		if i < len(labels)-1 {
+	for i, t := range tabs {
+		total += dw(t.label)
+		if i < len(tabs)-1 {
 			total += dw(" · ")
 		}
 	}
 	off := m.w - total
-	for i, l := range labels {
-		if x >= off && x < off+dw(l) {
-			return i, true
+	for _, t := range tabs {
+		if x >= off && x < off+dw(t.label) {
+			return t.idx, true
 		}
-		off += dw(l) + dw(" · ")
+		off += dw(t.label) + dw(" · ")
 	}
 	return 0, false
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/keyring"
 	"github.com/pottom/harmos/internal/otp"
+	"github.com/pottom/harmos/internal/pwgen"
 	"github.com/pottom/harmos/internal/search"
 	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/session"
@@ -112,6 +113,14 @@ type Model struct {
 
 	clickX, clickY int       // last left-click cell, for double-click detection
 	clickAt        time.Time //
+
+	// Generate tab (3): a pwgen-style password generator.
+	genOpts  pwgen.Options // character classes + length
+	genCount int           // how many to generate
+	genList  []string      // the current batch
+	genSel   int           // selected password in the grid
+	genRow   int           // selected option row (left pane)
+	genErr   string        // last generation error (e.g. no classes enabled)
 }
 
 // doubleClick is the window within which a second click on the same cell counts
@@ -153,6 +162,8 @@ func New(entries []vault.Entry, configPath string, timeout time.Duration) Model 
 		srcType:    srcType,
 		themeName:  themeName,
 		timeout:    timeout,
+		genOpts:    pwgen.Default(),
+		genCount:   50,
 	}
 }
 
@@ -314,13 +325,20 @@ func (m *Model) copySel(what string) tea.Cmd {
 	default:
 		val, what = e.Password.Reveal(), "password"
 	}
+	return m.copyString(val, what, e.Source+" · "+e.Path)
+}
+
+// copyString copies val to the concealed clipboard and starts (or refreshes) the
+// clear countdown. what labels it in the countdown line, provenance says where it
+// came from. Shared by the vault copy and the generator.
+func (m *Model) copyString(val, what, provenance string) tea.Cmd {
 	if val == "" {
 		return nil
 	}
 	if err := clip.Copy([]byte(val)); err != nil {
 		return nil
 	}
-	m.copied = e.Source + " · " + e.Path
+	m.copied = provenance
 	m.copiedWhat = what
 	// A countdown already running means a tick loop is live: just refresh the
 	// timer and let that single loop carry it. Starting another tick() here would
@@ -438,15 +456,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Sequence(clearClip, tea.Quit)
 		}
 
-		// Tab switching (1 = Vault, 2 = Settings) — not while typing a search, and
-		// not while a Settings overlay (form/remove) is capturing keys.
+		// Tab switching (1 = Vault, 2 = Settings, 3 = Generate) — not while typing a
+		// search, and not while a Settings overlay (form/remove) is capturing keys.
 		inOverlay := m.searchMode || (m.tab == 1 && m.setMode != setList)
 		if !inOverlay {
 			switch key {
 			case "1":
 				m.tab, m.detail, m.focus = 0, false, 0
 				return m, nil
-			case "2":
+			case "2": // 2 = Generate (displayed second; internal tab index 2)
+				m.tab, m.detail, m.focus = 2, false, 0
+				if len(m.genList) == 0 {
+					m.regen() // first visit: fill the list so the pane isn't empty
+				}
+				return m, nil
+			case "3": // 3 = Settings (displayed last; internal tab index 1)
 				m.tab, m.detail, m.focus = 1, false, 0
 				m.setKeyring = keyringStatus(m.sources())
 				return m, nil
@@ -456,6 +480,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The Settings tab handles its own keys.
 		if m.tab == 1 {
 			return m.updateSettings(key, msg)
+		}
+		// The Generate tab handles its own keys.
+		if m.tab == 2 {
+			return m.updateGenerate(key)
 		}
 
 		// SEARCH MODE — the "/" box is capturing keystrokes.
