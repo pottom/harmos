@@ -16,7 +16,14 @@ import (
 	"github.com/pottom/harmos/internal/search"
 	"github.com/pottom/harmos/internal/theme"
 	"github.com/pottom/harmos/internal/vault"
+	"github.com/pottom/harmos/internal/version"
 )
+
+// brandVersion is the wordmark plus the build version, shown at the top of every
+// tab. (An update-available marker is added here later.)
+func brandVersion() string {
+	return brand() + theme.Faded.Render("  "+version.Version)
+}
 
 // display-width aware helpers (spec §8a — never len()).
 func dw(s string) int { return ansi.StringWidth(s) }
@@ -370,7 +377,7 @@ func (m Model) settingsView() string {
 // settingsHeader mirrors the Vault tab's search line: the wordmark plus a source
 // count, so the top line sits at the same row on both tabs.
 func (m Model) settingsHeader() string {
-	left := brand() + theme.Faded.Render("  ·  settings")
+	left := brandVersion() + theme.Faded.Render("  ·  settings")
 	right := theme.Faded.Render(plural(len(m.sources()), "source", "sources"))
 	return spread(left, right, m.w)
 }
@@ -578,7 +585,7 @@ func (m Model) searchLine() string {
 	if m.searchMode {
 		glyph = theme.Acc.Render("  /  ")
 	}
-	left := brand() + glyph + m.input.View()
+	left := brandVersion() + glyph + m.input.View()
 	right := theme.Faded.Render(plural(m.nSrc, "source", "sources"))
 	if m.showResults() {
 		right = theme.Dimmed.Render(plural(len(m.results), "match", "matches"))
