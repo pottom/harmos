@@ -658,6 +658,12 @@ func matchedFieldValue(e vault.Entry, field string) string {
 		return strings.Join(e.Tags, ", ")
 	case "notes":
 		return strings.Join(strings.Fields(strings.ReplaceAll(e.Notes, "\n", " ")), " ")
+	case "file":
+		names := make([]string, len(e.Files))
+		for i, f := range e.Files {
+			names[i] = f.Name
+		}
+		return strings.Join(names, ", ")
 	case "":
 		return ""
 	default:
