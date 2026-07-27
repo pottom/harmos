@@ -18,9 +18,19 @@ any local kdbx files — through one shared reader, in a TUI and a scriptable CL
 
 ## Install
 
-**From a release** (recommended) — download the archive for your OS/arch from
-the [releases page](https://github.com/pottom/harmos/releases), unpack it, and
-put `harmos` on your `PATH`:
+**Quick install** (macOS / Linux) — download the latest release, verify its
+checksum, and drop `harmos` on your `PATH`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/pottom/harmos/main/install.sh | sh
+```
+
+Set `HARMOS_VERSION` to pin a tag or `HARMOS_INSTALL_DIR` to choose where it
+lands; it never invokes `sudo` on its own.
+
+**From a release** — download the archive for your OS/arch from the
+[releases page](https://github.com/pottom/harmos/releases), unpack it, and put
+`harmos` on your `PATH`:
 
 ```sh
 tar xzf harmos_*_darwin_arm64.tar.gz

@@ -17,7 +17,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -43,6 +45,10 @@ var (
 	// ErrUnsupported means there is no release asset this runtime can name and
 	// fetch for its platform — reinstalling covers those cases.
 	ErrUnsupported = errors.New("no self-update build for this platform")
+	// ErrManagedInstall means the running binary sits where the current user
+	// cannot replace it — typically a .deb/.rpm install under a root-owned
+	// directory, which should be updated through the package manager instead.
+	ErrManagedInstall = errors.New("harmos is installed in a location you cannot write to")
 )
 
 // Update fetches the latest release and, when it is newer than current, replaces
@@ -56,6 +62,10 @@ func Update(current string) (string, error) {
 	}
 	if !updater.IsNewer(current, tag) {
 		return "", ErrUpToDate
+	}
+	// Fail fast before downloading ~12 MB if we could never swap the binary in.
+	if err := checkWritable(); err != nil {
+		return "", err
 	}
 	// Archive names carry the version without its leading v (GoReleaser default).
 	version := strings.TrimPrefix(tag, "v")
@@ -86,6 +96,30 @@ func Update(current string) (string, error) {
 		return "", fmt.Errorf("applying update (rolled back): %w", err)
 	}
 	return tag, nil
+}
+
+// checkWritable reports whether the running binary can be replaced in place. The
+// atomic swap writes the new binary into the current one's directory and renames
+// it over the old file, so that directory must be writable by this user. When it
+// is not — a package-managed install under a root-owned path — it returns
+// ErrManagedInstall, naming the path, so the caller can point at the package
+// manager instead of failing mid-download.
+func checkWritable() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	if resolved, rerr := filepath.EvalSymlinks(exe); rerr == nil {
+		exe = resolved
+	}
+	dir := filepath.Dir(exe)
+	f, err := os.CreateTemp(dir, ".harmos-update-*")
+	if err != nil {
+		return fmt.Errorf("%w: %s", ErrManagedInstall, exe)
+	}
+	_ = f.Close()
+	_ = os.Remove(f.Name())
+	return nil
 }
 
 // binaryName is the executable's name inside the archive for the given OS.
