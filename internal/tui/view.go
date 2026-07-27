@@ -586,14 +586,17 @@ func (m Model) entryLines(w, rows int) []string {
 	return out
 }
 
-// resultLines are the ranked search results shown in the right panel. The right
-// column shows the location for a title match, else the matched field's name and
-// a short excerpt of where the query hit — so a row says what was found, not just
-// which field.
+// resultLines are the ranked search results shown in the right panel. Every row
+// carries three things so a search is unambiguous: the entry (Title), where it
+// lives (Where — source and folder, keeping the identifying tail), and what the
+// query hit (Match — the field name and a highlighted excerpt). Many Pleasant
+// entries have no title, so the folder tail is often the only identity.
 func (m Model) resultLines(w, rows int) []string {
 	i := ic()
-	titleW := max(8, w*4/10)
-	out := []string{theme.Dimmed.Render(pad("Title", titleW) + " Match")}
+	titleW := max(8, w*3/10)
+	locW := max(10, w*7/20)
+	matchW := max(6, w-titleW-locW-2)
+	out := []string{theme.Dimmed.Render(pad("Title", titleW) + " " + pad("Where", locW) + " Match")}
 	if len(m.results) == 0 {
 		out = append(out, theme.Faded.Render("  nothing matches — esc clears"))
 		return out
@@ -602,44 +605,75 @@ func (m Model) resultLines(w, rows int) []string {
 	start := windowStart(m.sel, avail, len(m.results))
 	end := min(start+avail, len(m.results))
 	terms := search.HighlightTerms(m.input.Value())
-	tailW := max(4, w-titleW-3)
 	for k := start; k < end; k++ {
 		r := m.results[k]
 		e := r.Entry
-		loc := e.Source
-		if e.Path != "" {
-			loc += " · " + e.Path
+
+		title, titleSt := e.Title, theme.Strong
+		if title == "" {
+			title, titleSt = "(untitled)", theme.Faded
 		}
+		loc := locString(e, locW)
 		val := matchedFieldValue(e, r.Field) // "" for a title match or a secret field
 
+		// The Match cell: field name + excerpt, or just the field, or "title".
+		field, snip := r.Field, ""
+		if field == "" {
+			field = "title"
+		}
+		if val != "" {
+			snip = snippet(val, terms, max(6, matchW-dw(field)-1))
+		}
+
 		if k == m.sel {
-			tail := loc
-			switch {
-			case val != "":
-				snipW := max(6, tailW-dw(r.Field)-1)
-				tail = r.Field + " " + snippet(val, terms, snipW)
-			case r.Field != "": // name-only or protected match: still say which field
-				tail += " · " + r.Field
+			match := field
+			if snip != "" {
+				match += " " + snip
 			}
-			plain := pad(i.entry+" "+e.Title, titleW) + " " + tail
+			plain := pad(i.entry+" "+title, titleW) + " " + pad(loc, locW) + " " + match
 			out = append(out, theme.SelRow.Width(w).Render(trunc(plain, w)))
 			continue
 		}
 
-		var tailCell string
-		switch {
-		case val != "": // show the excerpt where the query matched
-			snipW := max(6, tailW-dw(r.Field)-1)
-			tailCell = theme.Acc.Render(r.Field) + " " + highlightTerms(snippet(val, terms, snipW), terms, theme.Dimmed)
-		case r.Field != "": // matched the field's name (or a secret): badge + location
-			bw := dw(r.Field) + 3
-			tailCell = theme.Dimmed.Render(trunc(loc, max(4, tailW-bw))) + theme.Faded.Render(" · ") + theme.Acc.Render(r.Field)
-		default: // title match: the highlighted title is the "why", show the location
-			tailCell = theme.Dimmed.Render(trunc(loc, tailW))
+		matchCell := theme.Acc.Render(field)
+		if snip != "" {
+			matchCell += " " + highlightTerms(snip, terms, theme.Dimmed)
 		}
-		out = append(out, theme.Faded.Render(i.entry+" ")+highlightTerms(pad(trunc(e.Title, titleW-2), titleW-2), terms, theme.Strong)+" "+tailCell)
+		out = append(out,
+			theme.Faded.Render(i.entry+" ")+
+				highlightTerms(pad(trunc(title, titleW-2), titleW-2), terms, titleSt)+" "+
+				theme.Dimmed.Render(pad(loc, locW))+" "+matchCell)
 	}
 	return out
+}
+
+// locString is an entry's "source · folder" location fitted to w, keeping the
+// tail of the path (the leaf folder identifies an untitled entry) rather than the
+// source prefix.
+func locString(e vault.Entry, w int) string {
+	if e.Path == "" {
+		return trunc(e.Source, w)
+	}
+	avail := w - dw(e.Source) - 3 // " · "
+	if avail < 4 {
+		return trunc(e.Source+" · "+e.Path, w)
+	}
+	return e.Source + " · " + truncLeft(e.Path, avail)
+}
+
+// truncLeft truncates from the left, keeping the last w cells with a leading "…"
+// — for paths, where the tail (the leaf) is the identifying part.
+func truncLeft(s string, w int) string {
+	if dw(s) <= w {
+		return s
+	}
+	r := []rune(s)
+	for j := range r {
+		if dw(string(r[j:])) <= w-1 {
+			return "…" + string(r[j:])
+		}
+	}
+	return trunc(s, w)
 }
 
 // matchedFieldValue is the plain text of the field the search matched (r.Field),

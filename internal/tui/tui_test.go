@@ -216,12 +216,36 @@ func TestResultsShowMatchExcerpt(t *testing.T) {
 	m := New([]vault.Entry{
 		{Source: "s", Path: "Net", Title: "gateway", Password: secret.New("p"), URL: "https://ppk.example.internal"},
 	}, "", 30*time.Second)
-	m = up(m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = up(m, tea.WindowSizeMsg{Width: 160, Height: 30})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	m = typeStr(m, "ppk")
 	out := ansi.Strip(m.View())
 	if !strings.Contains(out, "ppk.example.internal") {
 		t.Errorf("a URL match should show the URL excerpt in the row:\n%s", out)
+	}
+}
+
+// A result row must carry all three: the entry (or (untitled)), where it lives
+// (the folder tail), and what matched — so a search is never ambiguous.
+func TestResultsRowShowsTitleWhereMatch(t *testing.T) {
+	m := New([]vault.Entry{
+		{Source: "4iG", Path: "HS Expert/Linux/COLEKDOCP01", Password: secret.New("p"), URL: "ssh://172.16.0.180"},
+	}, "", 30*time.Second)
+	m = up(m, tea.WindowSizeMsg{Width: 120, Height: 20})
+	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = typeStr(m, "url:ssh://")
+	out := ansi.Strip(m.View())
+	for _, want := range []string{"(untitled)", "COLEKDOCP01", "4iG", "ssh://172.16.0.180"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("results row missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestTruncLeftKeepsTail(t *testing.T) {
+	got := truncLeft("HS Expert/Linux/COLEKDOCP01", 14)
+	if !strings.HasSuffix(got, "COLEKDOCP01") || !strings.HasPrefix(got, "…") {
+		t.Errorf("truncLeft should keep the tail with a leading …, got %q", got)
 	}
 }
 
