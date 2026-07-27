@@ -338,6 +338,21 @@ func TestTruncLeftKeepsTail(t *testing.T) {
 	}
 }
 
+// A URL column appears in the entry table when there's room (e.g. tree collapsed).
+func TestEntryTableURLColumn(t *testing.T) {
+	es := []vault.Entry{{Source: "s", Path: "F", Title: "gw", Username: "a", URL: "https://example.test", Password: secret.New("p")}}
+	m := New(es, "", 30*time.Second)
+	m = up(m, tea.WindowSizeMsg{Width: 80, Height: 20})
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the table
+	if strings.Contains(ansi.Strip(m.View()), "example.test") {
+		t.Error("a narrow entry table should not show the URL column")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyCtrlB}) // collapse → wider table → URL column
+	if !strings.Contains(ansi.Strip(m.View()), "example.test") {
+		t.Error("the collapsed (wide) entry table should show the URL column")
+	}
+}
+
 // ctrl+b collapses/expands the folder tree; a click on the rail reopens it.
 func TestTreeCollapse(t *testing.T) {
 	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
