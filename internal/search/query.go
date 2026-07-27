@@ -11,15 +11,16 @@ import (
 //	db prod            title/… contains "db" AND "prod"
 //	db | web           "db" OR "web"        (| splits OR-groups; space is AND)
 //	url:vault          only the url field contains "vault"
+//	src:own db         only entries from a source named "own", matching "db"
 //	ansible -recycle   contains "ansible" but NOT "recycle"
 //	"db prod"          the literal phrase "db prod"
 //
 // Field prefixes: title, user (username), url, notes, tag(s), path, field (any
-// custom field). An unknown prefix is treated as part of the value (so a URL's
-// "https:" is not mistaken for a field).
+// custom field), src (source). An unknown prefix is treated as part of the value
+// (so a URL's "https:" is not mistaken for a field).
 
 type qterm struct {
-	field  string // "", title, user, url, notes, tags, path, field
+	field  string // "", title, user, url, notes, tags, path, field, source
 	value  string // lowercased
 	negate bool
 }
@@ -33,12 +34,18 @@ type Query struct {
 // Empty reports whether the query has no terms (matches everything).
 func (q Query) Empty() bool { return len(q.groups) == 0 }
 
-// Terms returns the distinct positive term values, for highlighting.
+// Terms returns the distinct positive term values, for highlighting. A source
+// term is left out: it narrows *which* entries are shown rather than naming
+// something to look for in them, so highlighting it would just paint stray hits
+// in unrelated titles.
 func (q Query) Terms() []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, g := range q.groups {
 		for _, t := range g {
+			if t.field == "source" {
+				continue
+			}
 			if !t.negate && t.value != "" && !seen[t.value] {
 				seen[t.value] = true
 				out = append(out, t.value)
@@ -140,6 +147,8 @@ func normField(s string) (string, bool) {
 		return "field", true
 	case "file", "attachment", "attachments":
 		return "file", true
+	case "src", "source":
+		return "source", true
 	}
 	return "", false
 }
@@ -252,6 +261,14 @@ func termScore(t qterm, e indexed) (tier int, field string, idx []int, ok bool) 
 	case "file":
 		if strings.Contains(e.files, v) {
 			return scoreFile, "file", nil, true
+		}
+	case "source":
+		// A pure filter: it says which entries are eligible, not how well they
+		// match, so it carries no ranking signal (scoreAll — the weakest tier).
+		// Paired with a real term the group takes that term's tier instead;
+		// alone, the results stay alphabetical like an empty query.
+		if strings.Contains(e.source, v) {
+			return scoreAll, "source", nil, true
 		}
 	}
 	return noMatch, "", nil, false

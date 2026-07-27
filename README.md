@@ -141,13 +141,13 @@ Press `?` for the full key map. The staples:
 
 | Key | Action |
 | --- | --- |
-| `/` | Search (supports `field:`, `AND`/`OR`, `"phrase"`, `-exclude`) |
+| `/` | Search (supports `field:`, `\|` for OR, `"phrase"`, `-exclude`) |
 | `→` / `enter` | Open entry detail · `esc` / `←` to go back |
 | `ctrl+y` | Copy the password (concealed, auto-cleared) |
 | `ctrl+u` / `ctrl+o` | Copy the username / URL |
 | `ctrl+t` | Copy the current TOTP code |
 | `c` | Copy a `harmos get …` command for the selected entry |
-| `s` | Save attachments (detail) · sync a source (tree) |
+| `s` | Save attachments (entry detail) |
 | `ctrl+b` | Collapse / expand the source tree |
 | `1` / `2` / `3` | Switch Vault / Generate / Settings tab |
 | `?` / `q` | Help · quit (clears the clipboard) |
@@ -218,8 +218,9 @@ substring matching, the query language understands:
 | Query | Matches |
 | --- | --- |
 | `db prod` | entries matching **both** words (implicit AND) |
-| `db OR cache` | either word |
+| `db \| cache` | either word (`\|` is OR; a space is AND) |
 | `url:ssh` | only the URL field (also `user:`, `title:`, `notes:`, `tag:`) |
+| `src:own svc-admin` | `svc-admin`, narrowed to the source named `own` |
 | `"db prod"` | the exact phrase |
 | `db -staging` | `db` but **not** `staging` |
 | `ppk` | falls back to fuzzy matching when nothing else hits |
