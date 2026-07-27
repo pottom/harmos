@@ -1,0 +1,9 @@
+# Keep the build context small: the Dockerfile only needs the Go sources.
+.git
+.github
+dist
+/harmos
+*.kdbx
+scratch
+docs
+*.md
