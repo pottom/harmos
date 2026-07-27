@@ -36,16 +36,26 @@ func pad(s string, w int) string {
 	return s
 }
 
+// highlight renders s in the base style with every case-insensitive occurrence of
+// q emphasized — grep --color for the search query.
 func highlight(s, q string, base lipgloss.Style) string {
 	if q == "" {
 		return base.Render(s)
 	}
-	i := strings.Index(strings.ToLower(s), strings.ToLower(q))
-	if i < 0 {
-		return base.Render(s)
+	lq := strings.ToLower(q)
+	var b strings.Builder
+	rest := s
+	for {
+		i := strings.Index(strings.ToLower(rest), lq)
+		if i < 0 {
+			b.WriteString(base.Render(rest))
+			return b.String()
+		}
+		j := i + len(q)
+		b.WriteString(base.Render(rest[:i]))
+		b.WriteString(theme.Hi.Render(rest[i:j]))
+		rest = rest[j:]
 	}
-	j := i + len(q)
-	return base.Render(s[:i]) + theme.Hi.Render(s[i:j]) + base.Render(s[j:])
 }
 
 func (m Model) View() string {
@@ -434,7 +444,7 @@ func (m Model) searchLine() string {
 func (m Model) treeLines(w, rows int) []string {
 	flat := m.visible()
 	i := ic()
-	dim := m.showResults() // the tree loses emphasis while results are showing
+	counts := m.matchCounts() // nil unless searching; a heat map of where hits are
 	start := windowStart(m.tsel, rows, len(flat))
 	end := min(start+rows, len(flat))
 
@@ -451,10 +461,18 @@ func (m Model) treeLines(w, rows int) []string {
 				icon = si
 			}
 		}
-		count := ""
-		if len(n.entries) > 0 {
-			count = fmt.Sprintf(" %d", len(n.entries))
+
+		// count: while searching, the accent match count on folders that have hits;
+		// otherwise the faded entry count.
+		countN, countStyle := len(n.entries), theme.Faded
+		if counts != nil {
+			countN, countStyle = counts[n], theme.Acc
 		}
+		count := ""
+		if countN > 0 {
+			count = fmt.Sprintf(" %d", countN)
+		}
+
 		if k == m.tsel {
 			st := theme.Hi
 			if m.focus == 0 && !m.showResults() {
@@ -463,11 +481,13 @@ func (m Model) treeLines(w, rows int) []string {
 			out = append(out, st.Render(trunc(indent+icon+" "+n.name+count, w)))
 			continue
 		}
+
 		nameStyle, iconStyle := theme.Strong, theme.Acc
-		if dim {
+		if counts != nil && counts[n] == 0 { // searching: dim folders with no hits
 			nameStyle, iconStyle = theme.Dimmed, theme.Faded
 		}
-		out = append(out, iconStyle.Render(indent+icon)+" "+nameStyle.Render(trunc(n.name, max(1, w-dw(indent)-2-dw(count))))+theme.Faded.Render(count))
+		name := nameStyle.Render(trunc(n.name, max(1, w-dw(indent)-2-dw(count))))
+		out = append(out, iconStyle.Render(indent+icon)+" "+name+countStyle.Render(count))
 	}
 	return out
 }
@@ -547,7 +567,8 @@ func (m Model) detailLines(e *vault.Entry, w int) []string {
 
 	// one field row: icon + label on the left, the value in the middle, and a dim
 	// copy/reveal key tucked to the right.
-	rowW := inW - 2 // leave a 2-cell right margin, mirroring the left indent
+	q := m.input.Value() // active query: highlight matches in the fields, grep-style
+	rowW := inW - 2      // leave a 2-cell right margin, mirroring the left indent
 	row := func(icon, label, value string, vst lipgloss.Style, key string) string {
 		lead := "  " + theme.Acc.Render(icon) + "  " + theme.Dimmed.Render(pad(label, 9))
 		right := ""
@@ -555,7 +576,7 @@ func (m Model) detailLines(e *vault.Entry, w int) []string {
 			right = theme.Faded.Render(key)
 		}
 		avail := max(4, rowW-dw(lead)-dw(right)-1)
-		return spread(lead+vst.Render(trunc(value, avail)), right, rowW)
+		return spread(lead+highlight(trunc(value, avail), q, vst), right, rowW)
 	}
 
 	user, userKey, userSt := e.Username, "ctrl+u", theme.Strong
@@ -606,7 +627,7 @@ func (m Model) detailLines(e *vault.Entry, w int) []string {
 				}
 			}
 			name := theme.Dimmed.Render(pad(trunc(f.Name, nameW), nameW))
-			b = append(b, "     "+name+"  "+vst.Render(trunc(val, max(4, rowW-7-nameW))))
+			b = append(b, "     "+name+"  "+highlight(trunc(val, max(4, rowW-7-nameW)), q, vst))
 		}
 	}
 	if !e.Modified.IsZero() {
@@ -633,7 +654,7 @@ func (m Model) detailLines(e *vault.Entry, w int) []string {
 		b = append(b, "", "  "+theme.Acc.Render(i.note)+"  "+theme.Dimmed.Render("notes"))
 		notes := strings.ReplaceAll(e.Notes, "\r\n", "\n")
 		for _, ln := range strings.Split(ansi.Wrap(notes, rowW-2, " -"), "\n") {
-			b = append(b, "     "+theme.Faded.Render(ln))
+			b = append(b, "     "+highlight(ln, q, theme.Faded))
 		}
 	}
 
