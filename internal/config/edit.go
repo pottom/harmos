@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -50,6 +51,51 @@ func DefaultCachePath(name string) (string, error) {
 		dir = filepath.Join(home, ".local", "share")
 	}
 	return filepath.Join(dir, "harmos", name+".kdbx"), nil
+}
+
+// DefaultCacheKeyfilePath is where a Pleasant source's cache keyfile lives:
+// $XDG_CONFIG_HOME/harmos/<name>.key (falling back to ~/.config). It sits in the
+// config directory, deliberately apart from the cache under $XDG_DATA_HOME, so a
+// copied-away cache file is not accompanied by the key that (with the master)
+// decrypts it. The path is derived from the source name, so writer and reader
+// agree without recording it in the config.
+func DefaultCacheKeyfilePath(name string) (string, error) {
+	dir := os.Getenv("XDG_CONFIG_HOME")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		dir = filepath.Join(home, ".config")
+	}
+	return filepath.Join(dir, "harmos", name+".key"), nil
+}
+
+// EnsureKeyfile creates a random cache keyfile at path (0600, parent 0700) if one
+// is not already there, and is a no-op when it exists — so a source keeps the same
+// key across syncs. The content is 48 random bytes: KeePass hashes keyfile bytes
+// whose length is neither 32 nor 64, so this can never be mistaken for a raw or
+// hex-encoded key, and it composes with the master to encrypt the cache.
+func EnsureKeyfile(path string) error {
+	if path == "" {
+		return fmt.Errorf("empty keyfile path")
+	}
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	key := make([]byte, 48)
+	if _, err := rand.Read(key); err != nil {
+		return fmt.Errorf("generate cache keyfile: %w", err)
+	}
+	if err := os.WriteFile(path, key, 0o600); err != nil {
+		return fmt.Errorf("write cache keyfile: %w", err)
+	}
+	return nil
 }
 
 // SourceExists reports whether the config at path already has a source named

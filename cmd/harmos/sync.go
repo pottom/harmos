@@ -149,11 +149,20 @@ func syncOne(ctx context.Context, p config.Source, master secret.Secret, savePas
 		}
 	}
 
+	keyfile, err := config.DefaultCacheKeyfilePath(p.Name)
+	if err != nil {
+		return err
+	}
+	if err := config.EnsureKeyfile(keyfile); err != nil {
+		return err
+	}
+
 	rep := &syncReporter{w: out}
 	res, err := pleasant.Sync(ctx, c, p.URL, pleasant.SyncOptions{
 		Comment:   "harmos sync",
 		CachePath: p.Cache,
 		Master:    master,
+		Keyfile:   keyfile,
 		Report:    &pleasant.Reporter{Phase: rep.phase, Bytes: rep.bytes},
 	})
 	rep.endLine() // finish any open progress line before the result/error

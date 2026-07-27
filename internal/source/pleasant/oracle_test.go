@@ -25,7 +25,7 @@ func TestKeepassXCOpensCache(t *testing.T) {
 	res := mapFixture(t, Meta{SourceURL: "https://pps.example:10001", FetchedAt: time.Now()})
 	cache := filepath.Join(t.TempDir(), "cache.kdbx")
 	const master = "oracle-master"
-	if err := Write(res.DB, cache, secret.New(master)); err != nil {
+	if err := Write(res.DB, cache, secret.New(master), ""); err != nil {
 		t.Fatal(err)
 	}
 

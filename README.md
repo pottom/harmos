@@ -178,5 +178,9 @@ nominatively to describe compatibility. See `NOTICE`.
 ## Security
 
 Not yet audited. Read-only w.r.t. your kdbx files; secrets go to the OS keyring
-and concealed, auto-clearing clipboard, never to the config file. Report issues
-per `SECURITY.md`. Licensed MIT — see `LICENSE`.
+and a concealed, auto-clearing clipboard, never to the config file. The Pleasant
+cache is a KDBX4 file locked with a **composite key** — your master password
+*and* a random keyfile kept in the config directory (`<name>.key`), apart from
+the cache under `$XDG_DATA_HOME` — so a cache copied off the machine cannot be
+opened with the master alone. Report issues per `SECURITY.md`. Licensed MIT —
+see `LICENSE`.

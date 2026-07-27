@@ -7,6 +7,7 @@ package session
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/secret"
@@ -89,7 +90,7 @@ func openOne(p config.Source, ask AskFunc) (*vault.Vault, error) {
 func openWith(p config.Source, pw secret.Secret) (*vault.Vault, error) {
 	switch p.Type {
 	case config.Pleasant:
-		return vault.Open(p.Cache, p.Name, vault.Credentials{Password: pw})
+		return vault.Open(p.Cache, p.Name, vault.Credentials{Password: pw, Keyfile: cacheKeyfile(p.Name)})
 	case config.Kdbx:
 		src := localkdbx.Source{Name: p.Name, Path: p.Path, Keyfile: p.Keyfile, Password: pw}
 		return src.Open()
@@ -101,3 +102,18 @@ func openWith(p config.Source, pw secret.Secret) (*vault.Vault, error) {
 type errUnknownType struct{ t config.Type }
 
 func (e errUnknownType) Error() string { return "unknown source type: " + string(e.t) }
+
+// cacheKeyfile resolves a Pleasant source's cache keyfile by name and returns it
+// only when the file is actually present. A cache written before keyfiles existed
+// (master-only) has no keyfile on disk, so returning "" lets it still open with
+// the master alone until the next sync re-encrypts it with the composite key.
+func cacheKeyfile(name string) string {
+	path, err := config.DefaultCacheKeyfilePath(name)
+	if err != nil {
+		return ""
+	}
+	if _, err := os.Stat(path); err != nil {
+		return ""
+	}
+	return path
+}

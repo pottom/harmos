@@ -33,7 +33,7 @@ func mapFixture(t *testing.T, meta Meta) *Result {
 func writeAndReopen(t *testing.T, db *gokeepasslib.Database, master string) *gokeepasslib.Database {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "cache.kdbx")
-	if err := Write(db, path, secret.New(master)); err != nil {
+	if err := Write(db, path, secret.New(master), ""); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(path)
