@@ -12,6 +12,7 @@ var Charm = Theme{
 	Faint:    token{"#a29fb8", "#4f4c6c"},
 	OK:       token{"#1f9b70", "#43d69a"},
 	Warn:     token{"#cc3b62", "#ff6a94"},
+	Note:     token{"#b07d00", "#e5c07b"},
 	SelBg:    token{"#ebe6fb", "#241d3f"},
 }
 
@@ -25,6 +26,7 @@ var Brass = Theme{
 	Faint:    token{"#948b76", "#544f41"},
 	OK:       token{"#2c7d6e", "#5fb0a0"},
 	Warn:     token{"#a8482f", "#cf6f54"},
+	Note:     token{"#9a6f22", "#e8b964"},
 	SelBg:    token{"#f0e6cf", "#2e2413"},
 }
 
@@ -38,6 +40,7 @@ var Nord = Theme{
 	Faint:    token{"#a6adbb", "#434c5e"},
 	OK:       token{"#5c8a5c", "#a3be8c"},
 	Warn:     token{"#bf616a", "#bf616a"},
+	Note:     token{"#b58900", "#ebcb8b"},
 	SelBg:    token{"#e5e9f0", "#3b4252"},
 }
 
@@ -51,6 +54,7 @@ var Dracula = Theme{
 	Faint:    token{"#a3adcf", "#44475a"},
 	OK:       token{"#2e9b57", "#50fa7b"},
 	Warn:     token{"#c13b52", "#ff5555"},
+	Note:     token{"#b58900", "#f1fa8c"},
 	SelBg:    token{"#efe9ff", "#44475a"},
 }
 
@@ -64,6 +68,7 @@ var Gruvbox = Theme{
 	Faint:    token{"#a89984", "#504945"},
 	OK:       token{"#79740e", "#b8bb26"},
 	Warn:     token{"#9d0006", "#fb4934"},
+	Note:     token{"#b57614", "#fabd2f"},
 	SelBg:    token{"#ebdbb2", "#3c3836"},
 }
 
@@ -77,6 +82,7 @@ var Solarized = Theme{
 	Faint:    token{"#93a1a1", "#586e75"},
 	OK:       token{"#6c7a00", "#a7b42a"},
 	Warn:     token{"#c0271f", "#e5564f"},
+	Note:     token{"#b58900", "#b58900"},
 	SelBg:    token{"#eee8d5", "#073642"},
 }
 
@@ -90,6 +96,7 @@ var TokyoNight = Theme{
 	Faint:    token{"#a8aecb", "#3b4261"},
 	OK:       token{"#587539", "#9ece6a"},
 	Warn:     token{"#c64343", "#f7768e"},
+	Note:     token{"#8f5e15", "#e0af68"},
 	SelBg:    token{"#d4d6e4", "#292e42"},
 }
 
@@ -103,6 +110,7 @@ var Catppuccin = Theme{
 	Faint:    token{"#acb0be", "#45475a"},
 	OK:       token{"#40a02b", "#a6e3a1"},
 	Warn:     token{"#d20f39", "#f38ba8"},
+	Note:     token{"#df8e1d", "#f9e2af"},
 	SelBg:    token{"#e6e9ef", "#313244"},
 }
 
@@ -116,6 +124,7 @@ var RosePine = Theme{
 	Faint:    token{"#cecacd", "#403d52"},
 	OK:       token{"#56949f", "#9ccfd8"},
 	Warn:     token{"#b4637a", "#eb6f92"},
+	Note:     token{"#ea9d34", "#f6c177"},
 	SelBg:    token{"#f2e9e1", "#26233a"},
 }
 
@@ -129,6 +138,7 @@ var Everforest = Theme{
 	Faint:    token{"#bec5b2", "#4a555b"},
 	OK:       token{"#35a77c", "#83c092"},
 	Warn:     token{"#f85552", "#e67e80"},
+	Note:     token{"#dfa000", "#dbbc7f"},
 	SelBg:    token{"#eaedc8", "#3d484d"},
 }
 

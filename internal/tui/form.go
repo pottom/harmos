@@ -1,68 +1,79 @@
 package tui
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/pottom/harmos/internal/config"
-	"github.com/pottom/harmos/internal/theme"
 )
 
-// formField is one row of the add/edit form: a labelled text input, or the Type
-// toggle (which has no input).
-type formField struct {
-	key    string // name, path, keyfile, url, user, cache, ca
-	label  string
-	input  textinput.Model
-	toggle bool // the Type row
+// The Settings tab's add/edit-source form, built on the reusable component in
+// formkit.go. It used to carry its own focus arithmetic and rendering; those now
+// live in one place, so the entry editor does not have to repeat them.
+
+// buildSourceForm assembles the fields for a source type. On add, a Type toggle
+// leads and switching it rebuilds the field list; on edit the type is fixed.
+func buildSourceForm(isPps, editing bool, pref map[string]string, width int) form {
+	get := func(k string) string {
+		if pref == nil {
+			return ""
+		}
+		return pref[k]
+	}
+	required := func(what string) func(string) error {
+		return func(v string) error {
+			if v == "" {
+				return errors.New(what + " is required")
+			}
+			return nil
+		}
+	}
+
+	var fields []field
+	if !editing {
+		choice := 0
+		if isPps {
+			choice = 1
+		}
+		fields = append(fields, toggleField("type", "Type", []string{"kdbx", "pps"}, choice).
+			withToggleHandler(func(f form, c int) form {
+				// The type decides which fields exist, so switching it rebuilds
+				// the list — carrying the name across, since it applies to both.
+				next := buildSourceForm(c == 1, false, map[string]string{"name": f.Value("name")}, f.width)
+				next.focus = f.focus
+				return next.refocus()
+			}))
+	}
+	fields = append(fields, textField("name", "Name", "e.g. work", get("name")).
+		withValidation(required("name")))
+
+	if isPps {
+		fields = append(fields,
+			textField("url", "URL", "https://pps.example:10001", get("url")).withValidation(required("url")),
+			textField("user", "User", "service account", get("user")).withValidation(required("user")),
+			textField("cache", "Cache", "default: $XDG_DATA_HOME/harmos/<name>.kdbx", get("cache")),
+			textField("ca", "CA bundle", "optional CA bundle", get("ca")),
+		)
+	} else {
+		fields = append(fields,
+			textField("path", "Path", "/path/to/vault.kdbx", get("path")).withValidation(required("path")),
+			textField("keyfile", "Keyfile", "optional key file", get("keyfile")),
+		)
+	}
+	return newForm("Save", width, fields...)
 }
 
-// buildForm assembles the fields for a source type. On add, a Type toggle leads;
-// on edit the type is fixed. pref pre-fills values (for edit or to keep the name
-// across a type toggle).
-func buildForm(isPps, editing bool, pref map[string]string) []formField {
-	placeholders := map[string]string{
-		"name":    "e.g. work",
-		"path":    "/path/to/vault.kdbx",
-		"keyfile": "optional key file",
-		"url":     "https://pps.example:10001",
-		"user":    "service account",
-		"cache":   "default: $XDG_DATA_HOME/harmos/<name>.kdbx",
-		"ca":      "optional CA bundle",
-	}
-	mk := func(key, label string) formField {
-		ti := textinput.New()
-		ti.Prompt = ""
-		ti.Width = 48
-		ti.Placeholder = placeholders[key]
-		if pref != nil {
-			ti.SetValue(pref[key])
-		}
-		return formField{key: key, label: label, input: ti}
-	}
-	var f []formField
-	if !editing {
-		f = append(f, formField{key: "type", label: "Type", toggle: true})
-	}
-	f = append(f, mk("name", "Name"))
-	if isPps {
-		f = append(f, mk("url", "URL"), mk("user", "User"), mk("cache", "Cache"), mk("ca", "CA bundle"))
-	} else {
-		f = append(f, mk("path", "Path"), mk("keyfile", "Keyfile"))
-	}
-	return f
-}
+func (m Model) formWidth() int { return max(20, m.w-6) }
 
 func (m Model) openAddForm() Model {
 	m.setMode = setForm
 	m.setStatus = ""
-	m.formEditing, m.formOrig, m.formPps, m.formFocus = false, "", false, 0
-	m.form = buildForm(false, false, nil)
-	return m.refocusForm()
+	m.formEditing, m.formOrig, m.formPps = false, "", false
+	m.form = buildSourceForm(false, false, nil, m.formWidth())
+	return m
 }
 
 func (m Model) openEditForm(p config.Source) Model {
@@ -70,125 +81,77 @@ func (m Model) openEditForm(p config.Source) Model {
 	m.setStatus = ""
 	m.formEditing, m.formOrig = true, p.Name
 	m.formPps = p.Type == config.Pleasant
-	m.formFocus = 0
-	m.form = buildForm(m.formPps, true, map[string]string{
+	m.form = buildSourceForm(m.formPps, true, map[string]string{
 		"name": p.Name, "path": p.Path, "keyfile": p.Keyfile,
 		"url": p.URL, "user": p.User, "cache": p.Cache, "ca": p.CABundle,
-	})
-	return m.refocusForm()
-}
-
-// refocusForm focuses the input at formFocus (blurring the rest).
-func (m Model) refocusForm() Model {
-	for i := range m.form {
-		if i == m.formFocus && !m.form[i].toggle {
-			m.form[i].input.Focus()
-		} else {
-			m.form[i].input.Blur()
-		}
-	}
+	}, m.formWidth())
 	return m
 }
 
-func (m Model) formValue(key string) string {
-	for _, f := range m.form {
-		if f.key == key {
-			return strings.TrimSpace(f.input.Value())
-		}
-	}
-	return ""
-}
-
 func (m Model) updateForm(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	save := len(m.form) // formFocus == save → the Save button
-	switch key {
-	case "esc":
+	if key == "esc" {
 		m.setMode = setList
 		return m, nil
-	case "tab", "down":
-		m.formFocus = (m.formFocus + 1) % (save + 1)
-		return m.refocusForm(), nil
-	case "shift+tab", "up":
-		m.formFocus = (m.formFocus - 1 + save + 1) % (save + 1)
-		return m.refocusForm(), nil
-	case "enter":
-		return m.submitForm(), nil
 	}
 
-	// the Type toggle
-	if m.formFocus < len(m.form) && m.form[m.formFocus].toggle {
-		if key == "left" || key == "right" || key == " " {
-			m.formPps = !m.formPps
-			m.form = buildForm(m.formPps, false, map[string]string{"name": m.formValue("name")})
-			if m.formFocus >= len(m.form) {
-				m.formFocus = 0
-			}
-			return m.refocusForm(), nil
-		}
-		return m, nil
-	}
-
-	// route to the focused input
-	if m.formFocus < len(m.form) {
-		var cmd tea.Cmd
-		m.form[m.formFocus].input, cmd = m.form[m.formFocus].input.Update(msg)
+	f, cmd, submitted := m.form.Update(key, msg)
+	m.form = f
+	// The toggle can change which type is selected, and everything downstream
+	// reads that rather than the field.
+	m.formPps = m.form.Choice("type") == 1
+	if !submitted {
 		return m, cmd
 	}
-	return m, nil
+
+	f, ok := m.form.Validate()
+	m.form = f
+	if !ok {
+		return m, cmd
+	}
+	return m.submitForm(), cmd
 }
 
-// submitForm validates and writes the source, then returns to the list.
+// submitForm writes the source and returns to the list.
 func (m Model) submitForm() Model {
-	name := m.formValue("name")
-	if name == "" {
-		m.setStatus = "name is required"
-		return m
-	}
+	name := m.form.Value("name")
 
 	var verb string
 	var err error
 	if m.formPps {
-		url, user := m.formValue("url"), m.formValue("user")
-		if url == "" || user == "" {
-			m.setStatus = "url and user are required"
-			return m
-		}
-		cache := m.formValue("cache")
+		cache := m.form.Value("cache")
 		if cache == "" {
 			if cache, err = config.DefaultCachePath(name); err != nil {
-				m.setStatus = err.Error()
+				m.form = m.form.withStatus(err.Error())
 				return m
 			}
 		}
 		if cache, err = config.AbsPath(cache); err != nil {
-			m.setStatus = err.Error()
+			m.form = m.form.withStatus(err.Error())
 			return m
 		}
 		_ = os.MkdirAll(filepath.Dir(cache), 0o700)
-		ca := m.formValue("ca")
+
+		ca := m.form.Value("ca")
 		if ca != "" {
 			if ca, err = config.AbsPath(ca); err != nil {
-				m.setStatus = err.Error()
+				m.form = m.form.withStatus(err.Error())
 				return m
 			}
 		}
+		url, user := m.form.Value("url"), m.form.Value("user")
 		verb, err = m.writeSource(name, func(overwrite bool) (string, error) {
 			return config.WritePleasantSource(m.configPath, name, url, user, cache, ca, overwrite)
 		})
 	} else {
-		path := m.formValue("path")
-		if path == "" {
-			m.setStatus = "path is required"
+		path, perr := config.AbsPath(m.form.Value("path"))
+		if perr != nil {
+			m.form = m.form.withStatus(perr.Error())
 			return m
 		}
-		if path, err = config.AbsPath(path); err != nil {
-			m.setStatus = err.Error()
-			return m
-		}
-		keyfile := m.formValue("keyfile")
+		keyfile := m.form.Value("keyfile")
 		if keyfile != "" {
 			if keyfile, err = config.AbsPath(keyfile); err != nil {
-				m.setStatus = err.Error()
+				m.form = m.form.withStatus(err.Error())
 				return m
 			}
 		}
@@ -197,7 +160,7 @@ func (m Model) submitForm() Model {
 		})
 	}
 	if err != nil {
-		m.setStatus = err.Error()
+		m.form = m.form.withStatus(err.Error())
 		return m
 	}
 
@@ -240,38 +203,5 @@ func (m Model) formView() string {
 	if m.formEditing {
 		title, info = "Edit source", m.formOrig
 	}
-
-	var lines []string
-	labelW := 10
-	for i, f := range m.form {
-		sel := i == m.formFocus
-		label := theme.Dimmed.Render(pad(f.label, labelW))
-		if sel {
-			label = theme.Hi.Render(pad(f.label, labelW))
-		}
-		var val string
-		if f.toggle {
-			kdbx, pps := theme.Faded.Render("kdbx"), theme.Faded.Render("pps")
-			if m.formPps {
-				pps = theme.Acc.Render("[pps]")
-			} else {
-				kdbx = theme.Acc.Render("[kdbx]")
-			}
-			val = kdbx + "  " + pps + theme.Faded.Render("   ←/→ to change")
-		} else {
-			val = f.input.View()
-		}
-		cursor := "  "
-		if sel {
-			cursor = theme.Acc.Render("▸ ")
-		}
-		lines = append(lines, cursor+label+"  "+val)
-	}
-	lines = append(lines, "", "  "+button("Save", false, m.formFocus == len(m.form)))
-
-	hint := theme.Faded.Render("↑↓/tab move · ↵ save · esc cancel")
-	if m.setStatus != "" {
-		hint = theme.Bad.Render(m.setStatus)
-	}
-	return box(title, info, lines, m.w, max(3, m.h-1), true) + "\n" + m.footer(hint)
+	return box(title, info, m.form.View(), m.w, max(3, m.h-1), true) + "\n" + m.footer(m.form.Hint())
 }

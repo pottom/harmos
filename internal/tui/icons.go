@@ -31,6 +31,8 @@ type iconSet struct {
 	saved, search, none string
 	user, link, tag     string
 	clock, note         string
+	locked, unlocked    string
+	plus, pencil, trash string
 }
 
 // Nerd Font glyphs (private-use codepoints) — render as boxes without a Nerd
@@ -68,6 +70,13 @@ var plainIcons = iconSet{
 	tag:        "#",
 	clock:      "◷", // clock / totp
 	note:       "≡", // notes
+	// Single-cell BMP symbols, deliberately not emoji: a double-width glyph
+	// would throw off every column width computed with dw/pad.
+	locked:   "⊠", // squared times — closed
+	unlocked: "⊡", // squared dot — open
+	plus:     "+",
+	pencil:   "~",
+	trash:    "-",
 }
 
 func ic() iconSet {

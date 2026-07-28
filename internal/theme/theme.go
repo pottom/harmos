@@ -23,7 +23,11 @@ type Theme struct {
 	Faint    token  `toml:"faint"`
 	OK       token  `toml:"ok"`
 	Warn     token  `toml:"warn"`
-	SelBg    token  `toml:"sel_bg"`
+	// Note is amber: attention without alarm. Warn is red in every built-in, so
+	// there was no way to say "changed" or "worth a look" without saying "wrong"
+	// — which is why view.go had to hard-code an amber for the update marker.
+	Note  token `toml:"note"`
+	SelBg token `toml:"sel_bg"`
 }
 
 // Active tokens, set by Apply.
@@ -35,6 +39,7 @@ var (
 	Faint    lipgloss.AdaptiveColor
 	OK       lipgloss.AdaptiveColor
 	Warn     lipgloss.AdaptiveColor
+	Note     lipgloss.AdaptiveColor
 	SelBg    lipgloss.AdaptiveColor
 )
 
@@ -47,6 +52,7 @@ var (
 	Hi     lipgloss.Style
 	Ok     lipgloss.Style
 	Bad    lipgloss.Style
+	Noted  lipgloss.Style
 	Strong lipgloss.Style
 	SelRow lipgloss.Style
 	Rule   lipgloss.Style
@@ -73,6 +79,7 @@ func Apply(t Theme) {
 	Faint = adaptive(t.Faint)
 	OK = adaptive(t.OK)
 	Warn = adaptive(t.Warn)
+	Note = adaptive(t.Note)
 	SelBg = adaptive(t.SelBg)
 
 	Brand = lipgloss.NewStyle().Foreground(Accent).Bold(true)
@@ -82,6 +89,7 @@ func Apply(t Theme) {
 	Hi = lipgloss.NewStyle().Foreground(AccentHi)
 	Ok = lipgloss.NewStyle().Foreground(OK)
 	Bad = lipgloss.NewStyle().Foreground(Warn)
+	Noted = lipgloss.NewStyle().Foreground(Note)
 	Strong = lipgloss.NewStyle().Foreground(Steel).Bold(true)
 	SelRow = lipgloss.NewStyle().Background(SelBg).Foreground(AccentHi)
 	Rule = lipgloss.NewStyle().Foreground(Faint)
