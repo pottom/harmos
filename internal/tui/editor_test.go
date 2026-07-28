@@ -187,8 +187,8 @@ func TestSaveConfirmLeadsWithCancelOnPermanentDelete(t *testing.T) {
 		t.Errorf("a permanent delete should lead with Cancel, focus was %d", m2.confirmSel)
 	}
 	out := ansi.Strip(m2.View())
-	if !strings.Contains(out, "permanent deletion") {
-		t.Errorf("the write confirmation must name the permanent deletion:\n%s", out)
+	if !strings.Contains(out, "deleted permanently") {
+		t.Errorf("the write confirmation must name what goes permanently:\n%s", out)
 	}
 	// enter on the leading button must not write.
 	m2 = up(m2, tea.KeyMsg{Type: tea.KeyEnter})

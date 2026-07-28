@@ -392,6 +392,16 @@ that it changed, and that is what it says.
 Where a change lives is resolved by the TUI, not by `internal/edit`: the change
 set holds identities and operations and deliberately knows nothing about paths.
 
+**A deletion is shown three times before it happens.** One keystroke on a folder
+can remove forty entries; the reader has to be able to *see* that rather than be
+told a number. So: the vault marks the rows themselves — the folder and, without
+markers of their own, everything under it; the Changes tab draws that subtree as
+a tree, names every entry and sub-folder, and elides nothing (the pane scrolls);
+and the write confirmation counts the result in **folders and entries rather
+than in operations**, with the permanent share stated first, because "5 changes"
+is a number about the program and "2 folders and 12 entries removed, 14 of them
+permanently" is a number about their vault.
+
 ### 5.4 One source of truth, two surfaces
 
 ```go

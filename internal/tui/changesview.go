@@ -638,12 +638,17 @@ func (m Model) pathOfNode(n *node) string {
 	return ""
 }
 
-// contentsGoing lists what a folder deletion removes, so the write confirmation
-// is approving something the reader has actually seen.
+// contentsGoing lists what a folder deletion removes, as the tree it is.
 //
-// A count is a promise the reader cannot check. These rows are not selectable
-// and carry no marker: they are consequences of one staged decision, not
-// decisions of their own, and there is nothing here to revert separately.
+// A count is a promise the reader cannot check, and they are about to approve
+// it — so everything under the folder is named. Flat, it was useless in a
+// different way: every sub-folder in one block and every entry in another told
+// you what was going but not what was inside what. It is a tree, so it is drawn
+// as one.
+//
+// The rows are not selectable targets and carry a faded marker: they are
+// consequences of one staged decision, not decisions of their own, and there is
+// nothing here to revert separately.
 func (m Model) contentsGoing(c edit.Change, w int) [][]rowSeg {
 	if c.State != edit.Deleted || !isFolderKind(c.Kind) {
 		return nil
@@ -655,47 +660,57 @@ func (m Model) contentsGoing(c edit.Change, w int) [][]rowSeg {
 
 	const indent = "       "
 	del, mark := changeStyle(edit.Deleted)
-	inner := max(8, w-len(indent)-8)
-
 	i := ic()
-	var items []string
-	for _, mf := range m.mergedFolders {
-		if mf.Source == c.Source && strings.HasPrefix(mf.Path, f.Path+"/") {
-			items = append(items, i.folder+" "+strings.TrimPrefix(mf.Path, f.Path+"/"))
-		}
-	}
-	sort.Strings(items)
 
-	var entries []string
-	for _, e := range m.mergedEntries {
-		if e.Source != c.Source {
-			continue
-		}
-		if e.Path == f.Path || strings.HasPrefix(e.Path, f.Path+"/") {
-			label := e.Title
-			if rel := strings.TrimPrefix(e.Path, f.Path); rel != "" {
-				label = strings.TrimPrefix(rel, "/") + " › " + e.Title
-			}
-			entries = append(entries, i.entry+" "+label)
-		}
-	}
-	sort.Strings(entries)
-	items = append(items, entries...)
-
-	if len(items) == 0 {
-		return [][]rowSeg{{{indent + "  (empty)", theme.Faded}}}
-	}
-
-	// Everything, however long. This tab is where the reader sees what they are
-	// about to approve; a list that stops at a screenful and counts the rest is
-	// hiding exactly the part nobody checked. The pane scrolls.
 	var out [][]rowSeg
-	for _, it := range items {
-		out = append(out, []rowSeg{
-			{indent + "  ", theme.Faded},
-			{mark + " ", theme.Faded},
-			{trunc(it, inner), del},
-		})
+	var walk func(path string, depth int)
+	walk = func(path string, depth int) {
+		pad := strings.Repeat("  ", depth)
+
+		// Sub-folders first, then the entries filed here — the order the vault
+		// tree uses, so the same vault reads the same way in both places.
+		var subs []string
+		for _, mf := range m.mergedFolders {
+			if mf.Source == c.Source && parentPath(mf.Path) == path && mf.Path != path {
+				subs = append(subs, mf.Path)
+			}
+		}
+		sort.Strings(subs)
+
+		var titles []string
+		for _, e := range m.mergedEntries {
+			if e.Source == c.Source && e.Path == path {
+				titles = append(titles, e.Title)
+			}
+		}
+		sort.Strings(titles)
+
+		for _, sub := range subs {
+			name := sub
+			if j := strings.LastIndex(sub, "/"); j >= 0 {
+				name = sub[j+1:]
+			}
+			out = append(out, []rowSeg{
+				{indent + "  ", theme.Faded},
+				{mark + " ", theme.Faded},
+				{pad + i.folder + " ", del},
+				{trunc(name, max(8, w-len(indent)-len(pad)-8)), del},
+			})
+			walk(sub, depth+1)
+		}
+		for _, t := range titles {
+			out = append(out, []rowSeg{
+				{indent + "  ", theme.Faded},
+				{mark + " ", theme.Faded},
+				{pad + i.entry + " ", del},
+				{trunc(t, max(8, w-len(indent)-len(pad)-8)), del},
+			})
+		}
+	}
+	walk(f.Path, 0)
+
+	if len(out) == 0 {
+		return [][]rowSeg{{{indent + "  (empty)", theme.Faded}}}
 	}
 	return out
 }
@@ -801,4 +816,124 @@ func (m Model) selectFirstChangeIn(rows []changeRow, cur changeRow) Model {
 		}
 	}
 	return m
+}
+
+// writeImpact is what a save will do to one source, counted in the things a
+// vault is made of rather than in operations.
+//
+// "5 changes" is a number about the program. The reader is about to approve
+// something else entirely: that 4 folders and 47 entries stop existing. One of
+// those deletions was a single keystroke on a folder, and this is the only place
+// the total ever appears.
+type writeImpact struct {
+	created, modified, moved int
+	folders, entries         int // removed
+	permanent                int // of the removed, those skipping the recycle bin
+}
+
+func (m Model) impactOf(source string) writeImpact {
+	var im writeImpact
+
+	// A folder inside another staged folder is already counted by it.
+	var deleted []string
+	for _, c := range m.chg.Diff() {
+		if c.Source == source && c.State == edit.Deleted && isFolderKind(c.Kind) {
+			if f, ok := m.folderByID(c.Target); ok {
+				deleted = append(deleted, f.Path)
+			}
+		}
+	}
+	outermost := func(path string) bool {
+		for _, other := range deleted {
+			if other != path && strings.HasPrefix(path, other+"/") {
+				return false
+			}
+		}
+		return true
+	}
+
+	for _, c := range m.chg.Diff() {
+		if c.Source != source {
+			continue
+		}
+		switch c.State {
+		case edit.New:
+			im.created++
+		case edit.Modified:
+			im.modified++
+		case edit.Moved:
+			im.moved++
+		case edit.Deleted:
+			if !isFolderKind(c.Kind) {
+				im.entries++
+				if isPermanent(m.chg, c.Target) {
+					im.permanent++
+				}
+				continue
+			}
+			f, ok := m.folderByID(c.Target)
+			if !ok || !outermost(f.Path) {
+				continue
+			}
+			entries, folders := m.goesWithIt(c.Target)
+			im.folders += 1 + folders
+			im.entries += entries
+			if isPermanent(m.chg, c.Target) {
+				im.permanent += 1 + folders + entries
+			}
+		}
+	}
+	return im
+}
+
+func isPermanent(set edit.Set, target string) bool {
+	for _, op := range set.Effective() {
+		if op.Target == target {
+			return op.Perm
+		}
+	}
+	return false
+}
+
+// permanentlyRemoved is how many things, across every source, will stop
+// existing with no recycle bin to fish them out of.
+func (m Model) permanentlyRemoved() int {
+	n := 0
+	for _, src := range m.chg.Sources() {
+		n += m.impactOf(src).permanent
+	}
+	return n
+}
+
+// lines renders the impact as the sentences a reader has to agree with.
+func (im writeImpact) lines() []string {
+	var out []string
+	add := func(st edit.State, text string) {
+		style, marker := changeStyle(st)
+		out = append(out, "    "+style.Render(strings.TrimSpace(marker)+" "+text))
+	}
+	if im.created > 0 {
+		add(edit.New, plural(im.created, "new thing", "new things"))
+	}
+	if im.modified > 0 {
+		add(edit.Modified, plural(im.modified, "entry changed", "entries changed"))
+	}
+	if im.moved > 0 {
+		add(edit.Moved, plural(im.moved, "thing moved", "things moved"))
+	}
+	if im.folders > 0 || im.entries > 0 {
+		var parts []string
+		if im.folders > 0 {
+			parts = append(parts, plural(im.folders, "folder", "folders"))
+		}
+		if im.entries > 0 {
+			parts = append(parts, plural(im.entries, "entry", "entries"))
+		}
+		text := strings.Join(parts, " and ") + " removed"
+		if im.permanent > 0 {
+			text += ", " + itoa(im.permanent) + " of them permanently"
+		}
+		add(edit.Deleted, text)
+	}
+	return out
 }

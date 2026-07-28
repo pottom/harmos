@@ -549,3 +549,104 @@ func TestArrowsWalkEveryRow(t *testing.T) {
 		t.Errorf("x from inside a change should revert it, %d left", m.dirtyCount())
 	}
 }
+
+// What a folder deletion takes is a tree, and reads as one: a flat list of
+// folders followed by a flat list of entries says what is going but not what is
+// inside what.
+func TestDoomedContentsAreATree(t *testing.T) {
+	m := up(New([]vault.Entry{
+		{ID: "e1", Source: "s", Path: "top", Title: "loose", Password: secret.New("p")},
+		{ID: "e2", Source: "s", Path: "top/sub", Title: "nested", Password: secret.New("p")},
+		{ID: "e3", Source: "s", Path: "top/sub/deep", Title: "buried", Password: secret.New("p")},
+	}, []vault.Folder{
+		{ID: "g1", Source: "s", Path: "top", Name: "top"},
+		{ID: "g2", Source: "s", Path: "top/sub", Name: "sub"},
+		{ID: "g3", Source: "s", Path: "top/sub/deep", Name: "deep"},
+	}, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 26})
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "g1", Name: "top"})
+	m = m.switchTab(tabChanges)
+
+	indent := map[string]int{}
+	for _, r := range m.changeRows(m.contentW()) {
+		text := r.text()
+		for _, name := range []string{"sub", "deep", "nested", "buried", "loose"} {
+			if strings.HasSuffix(strings.TrimRight(text, " "), name) {
+				indent[name] = strings.Index(text, name) // how far in the name starts
+			}
+		}
+	}
+	for _, name := range []string{"sub", "deep", "nested", "buried", "loose"} {
+		if _, ok := indent[name]; !ok {
+			t.Fatalf("%q is being deleted but is not in the review", name)
+		}
+	}
+	if indent["deep"] <= indent["sub"] {
+		t.Errorf("a sub-folder should sit under its parent: sub=%d deep=%d", indent["sub"], indent["deep"])
+	}
+	if indent["nested"] <= indent["sub"] {
+		t.Errorf("an entry should sit under its folder: sub=%d nested=%d", indent["sub"], indent["nested"])
+	}
+	if indent["buried"] <= indent["deep"] {
+		t.Errorf("and at whatever depth it lives: deep=%d buried=%d", indent["deep"], indent["buried"])
+	}
+	if indent["loose"] >= indent["nested"] {
+		t.Errorf("an entry in the deleted folder itself is not nested: loose=%d nested=%d",
+			indent["loose"], indent["nested"])
+	}
+}
+
+// The write confirmation counts what a save does to the vault, not how many
+// operations it took to say it. One keystroke on a folder can remove forty
+// entries, and this is the last screen before it happens.
+func TestWriteConfirmationCountsThings(t *testing.T) {
+	var ents []vault.Entry
+	for i := range 12 {
+		ents = append(ents, vault.Entry{ID: fmt.Sprintf("e%d", i), Source: "own", Path: "doomed/sub",
+			Title: fmt.Sprintf("entry-%d", i), Password: secret.New("p")})
+	}
+	m := up(New(ents, []vault.Folder{
+		{ID: "g1", Source: "own", Path: "doomed", Name: "doomed"},
+		{ID: "g2", Source: "own", Path: "doomed/sub", Name: "sub"},
+	}, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 30})
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "own", Target: "g1", Name: "doomed", Perm: true})
+
+	im := m.impactOf("own")
+	if im.folders != 2 {
+		t.Errorf("the folder and its sub-folder go: counted %d", im.folders)
+	}
+	if im.entries != 12 {
+		t.Errorf("every entry inside goes: counted %d", im.entries)
+	}
+	if im.permanent != 14 {
+		t.Errorf("all of it permanently: counted %d", im.permanent)
+	}
+
+	m, _ = m.switchTab(tabChanges).askToSave()
+	out := ansi.Strip(m.View())
+	if !strings.Contains(out, "14 things deleted permanently") {
+		t.Errorf("the confirmation should count the things, not the operations:\n%s", out)
+	}
+	if !strings.Contains(out, "12 entries") {
+		t.Errorf("and say what they are:\n%s", out)
+	}
+	if m.confirmSel != 1 {
+		t.Error("a permanent deletion should leave the cursor on Cancel")
+	}
+}
+
+// A folder staged inside another staged folder must not be counted twice.
+func TestImpactDoesNotDoubleCount(t *testing.T) {
+	m := up(New([]vault.Entry{
+		{ID: "e1", Source: "s", Path: "top/sub", Title: "one", Password: secret.New("p")},
+	}, []vault.Folder{
+		{ID: "g1", Source: "s", Path: "top", Name: "top"},
+		{ID: "g2", Source: "s", Path: "top/sub", Name: "sub"},
+	}, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 24})
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "g1", Name: "top"})
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "g2", Name: "sub"})
+
+	im := m.impactOf("s")
+	if im.folders != 2 || im.entries != 1 {
+		t.Errorf("counted %d folders and %d entries, want 2 and 1", im.folders, im.entries)
+	}
+}

@@ -331,11 +331,12 @@ func (m Model) saveConfirmView() string {
 	counts := m.chg.Counts()
 	lines := []string{"", "  " + theme.Strong.Render("Write these changes?"), ""}
 
-	// The permanent deletes come first and in their own words. Everything else
-	// here is recoverable from the backup; this is not recoverable from the file.
-	if n := m.permanentDeletes(); n > 0 {
+	// What cannot be undone comes first, and counted in things rather than in
+	// operations: one keystroke on a folder can remove forty entries, and this
+	// is the number the reader is agreeing to.
+	if n := m.permanentlyRemoved(); n > 0 {
 		lines = append(lines,
-			"  "+theme.Bad.Render(fmt.Sprintf("%d permanent deletion(s)", n))+
+			"  "+theme.Bad.Render(plural(n, "thing", "things")+" deleted permanently")+
 				theme.Dimmed.Render(" — not into the recycle bin"),
 			"  "+theme.Faded.Render("the backup below still holds them; the vault will not"),
 			"")
@@ -350,7 +351,13 @@ func (m Model) saveConfirmView() string {
 			backup = h.BackupPath()
 		}
 		lines = append(lines,
-			"  "+theme.Noted.Render(fmt.Sprintf("%s — %d change(s)", src, counts[src])),
+			"  "+theme.Noted.Render(fmt.Sprintf("%s — %s", src, plural(counts[src], "change", "changes"))),
+		)
+		// What the changes come to, counted in the things a vault is made of.
+		// The operation count is a number about the program; this is the one the
+		// reader is actually agreeing to.
+		lines = append(lines, m.impactOf(src).lines()...)
+		lines = append(lines,
 			"  "+theme.Dimmed.Render(trunc(path, max(10, m.w-8))),
 		)
 		if backup != "" {
