@@ -17,6 +17,8 @@ A CLI/TUI tool for browsing and copying my passwords. Two sources:
 
 **v1 is strictly read-only.** Browse, search, copy. No writing back to the server, no entry editing, no bidirectional sync. This is a deliberate scope decision — see §3.
 
+> **Amended by M6.** Read-only against the **Pleasant server is permanent** — every argument in §3 still holds. **Local `.kdbx` sources became writable** in M6: they are read-only by default, unlocked per source for one run, edited as staged changes, and written only after an explicit confirmation. The design is `docs/design/harmos-write-model.md`; §3 below is the reasoning that keeps the *server* side closed.
+
 ### Ship it in two stages, and stop after the first
 
 **v0.1 is `harmos sync` and nothing else.** No TUI. No bubbletea in `go.mod`. It authenticates, pulls the offline package, writes the kdbx, and exits. That's it — and it's already useful, because KeePassXC and MacPass both open the result (proven in the PoC).
@@ -70,8 +72,10 @@ I will have several sources at once: more than one Pleasant server, plus several
 **The two source types are asymmetric — don't paper over it.** A `type = "kdbx"` source has no cache, no sync, no meaningful "cache age": the file *is* the source. `harmos sync` on one is a no-op, not an error. A `pleasant` source has no meaningful `path`.
 
 > **Safety requirement:** for a local kdbx source, open the file **read-only**. Never write to it, never create a `.lock` file beside it, never rewrite it. State it in code as an invariant and test it (assert mtime and bytes unchanged after a full browse session).
+>
+> **M6 narrows this, it does not repeal it.** A *browse* session still leaves the file byte- and mtime-unchanged, and that test stays. The only thing that may ever write is an explicit, confirmed save on a source the user unlocked this run. No `.lock` file is created even then — concurrent modification is detected by fingerprint, not by locking.
 
-## 3. Why read-only (do not talk me out of this)
+## 3. Why the server side stays read-only (do not talk me out of this)
 
 Writing back would require bidirectional reconcile, and Pleasant's API makes it nasty:
 
@@ -81,6 +85,8 @@ Writing back would require bidirectional reconcile, and Pleasant's API makes it 
 - **No visible optimistic locking.** Probably last-write-wins.
 
 Read-only sidesteps all of it. If v2 ever adds writes, it'll be explicit per-entry pushes with confirmation, never an automatic merge.
+
+**M6 took the local half of that bargain and left the server half alone.** None of the four problems above exists for a local `.kdbx`: harmos holds the whole file, there is nothing to reconcile against, and a deletion is a deletion. So local writing is explicit, staged and confirmed — exactly the "per-entry pushes with confirmation" shape — while the Pleasant cache stays unwritable, structurally: no code path constructs a write handle for it.
 
 ## 4. Stack
 
@@ -352,7 +358,7 @@ cache = "~/.local/share/harmos/work.kdbx"
 [[profile]]
 name = "personal"
 type = "kdbx"
-path = "~/vaults/personal.kdbx"              # read-only, never written
+path = "~/vaults/personal.kdbx"              # read-only until unlocked for writing (M6)
 keyfile = "~/.keys/personal.key"
 ```
 
