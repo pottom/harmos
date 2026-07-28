@@ -113,6 +113,7 @@ type Model struct {
 	chg     edit.Set                 // staged changes, not yet written
 
 	confirmUnlock string // source awaiting an unlock confirmation ("" = none)
+	confirmSel    int    // which button is focused in a confirmation
 
 	// The editor. edit is the surface that is open; everything else is what it
 	// is working on. Nothing here writes — staging lands on m.chg.

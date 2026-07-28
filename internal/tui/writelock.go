@@ -80,13 +80,29 @@ func (m Model) toggleWriteLock() Model {
 		return m
 	}
 	m.confirmUnlock = source
+	m.confirmSel = 0 // Unlock is the default: it is what the user came for
 	return m
 }
 
 // updateWriteConfirm handles the unlock confirmation.
 func (m Model) updateWriteConfirm(key string) Model {
+	if sel, moved := confirmNav(key, m.confirmSel, len(unlockChoices())); moved {
+		m.confirmSel = sel
+		return m
+	}
+
+	unlock := false
 	switch key {
-	case "y", "Y", "enter":
+	case "enter":
+		unlock = m.confirmSel == 0
+	case "y", "Y":
+		unlock = true // the shortcut still works wherever the cursor is
+	case "n", "N", "esc":
+	default:
+		return m // an unrelated key does not dismiss a confirmation
+	}
+
+	if unlock {
 		if m.writeOK == nil {
 			m.writeOK = map[string]bool{}
 		}
@@ -115,7 +131,8 @@ func (m Model) writeConfirmView() string {
 		"  " + theme.Faded.Render("lasts for this run only — it is not remembered."),
 		"",
 	}
-	return m.modal("Write lock", source, lines, "y unlock · n cancel")
+	lines = append(lines, confirmButtons(unlockChoices(), m.confirmSel, "←/→ choose · ↵ confirm · esc cancel")...)
+	return m.modal("Write lock", source, lines, "")
 }
 
 // lockBadge is the write state shown beside a source in the tree.
