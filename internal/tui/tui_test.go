@@ -45,7 +45,7 @@ func TestSettingsThemePicker(t *testing.T) {
 	if _, err := config.WriteKdbxSource(cfgPath, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
 		t.Fatal(err)
 	}
-	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 16})
+	m := up(New(nil, nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 16})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}}) // jump into the Theme pane
 	if m.setCat != catTheme || m.focus != 1 {
@@ -73,7 +73,7 @@ func TestSettingsSavePassword(t *testing.T) {
 	if _, err := config.WriteKdbxSource(cfgPath, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
 		t.Fatal(err)
 	}
-	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 18})
+	m := up(New(nil, nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 18})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
 	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the Sources pane
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
@@ -98,7 +98,7 @@ func TestSettingsSyncNeedsCredentials(t *testing.T) {
 	if _, err := config.WritePleasantSource(cfgPath, "work", "https://x.invalid", "u", filepath.Join(dir, "w.kdbx"), "", false); err != nil {
 		t.Fatal(err)
 	}
-	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 18})
+	m := up(New(nil, nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 18})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
 	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the Sources pane
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
@@ -113,7 +113,7 @@ func TestSettingsSyncNeedsCredentials(t *testing.T) {
 func TestSettingsAddForm(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
-	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 20})
+	m := up(New(nil, nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 20})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}) // Settings
 	m = up(m, tea.KeyMsg{Type: tea.KeyTab})                       // into the Sources pane
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}) // add form
@@ -144,7 +144,7 @@ func TestPreferencesPersist(t *testing.T) {
 	if _, err := config.WriteKdbxSource(cfgPath, "own", "/data/own.kdbx", "", false); err != nil {
 		t.Fatal(err)
 	}
-	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 18})
+	m := up(New(nil, nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 18})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}) // Settings
 	for range 3 {                                                 // Sources → … → Preferences
 		m = up(m, tea.KeyMsg{Type: tea.KeyDown})
@@ -172,7 +172,7 @@ func TestPreferencesPersist(t *testing.T) {
 		t.Errorf("persisted stale-after = %v", loaded.CacheStaleAfter.Duration)
 	}
 	// A fresh model loads the saved stale-after (New reads it from config).
-	if got := New(nil, cfgPath, 0).staleAfter; got != 23*time.Hour {
+	if got := New(nil, nil, cfgPath, 0).staleAfter; got != 23*time.Hour {
 		t.Errorf("reloaded stale-after = %v, want 23h", got)
 	}
 }
@@ -193,7 +193,7 @@ func TestSettingsSourceStatus(t *testing.T) {
 	if _, err := config.WritePleasantSource(cfgPath, "acme", "https://x.invalid", "u", cache, "", false); err != nil {
 		t.Fatal(err)
 	}
-	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 120, Height: 16})
+	m := up(New(nil, nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 120, Height: 16})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}) // Settings / Sources
 	out := ansi.Strip(m.View())
 	for _, want := range []string{"STATUS", "own password", "cache just now"} {
@@ -206,7 +206,7 @@ func TestSettingsSourceStatus(t *testing.T) {
 // With no config, onboarding lands on Sources with a welcome, and 'a' opens the
 // add-source form.
 func TestOnboardingFlow(t *testing.T) {
-	m := New(nil, "", 30*time.Second)
+	m := New(nil, nil, "", 30*time.Second)
 	m.tab, m.setCat, m.focus, m.onboarding = 1, catSources, 1, true
 	m = up(m, tea.WindowSizeMsg{Width: 90, Height: 20})
 	if !strings.Contains(ansi.Strip(m.View()), "Welcome to harmos") {
@@ -225,7 +225,7 @@ func TestSettingsTabToggles(t *testing.T) {
 	if _, err := config.WriteKdbxSource(cfgPath, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
 		t.Fatal(err)
 	}
-	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 20})
+	m := up(New(nil, nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 20})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}) // Settings
 	if m.focus != 0 {
 		t.Fatalf("Settings should start on the category pane, focus=%d", m.focus)
@@ -250,7 +250,7 @@ func TestSettingsRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := up(New(nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m := up(New(nil, nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}) // Settings
 	m = up(m, tea.KeyMsg{Type: tea.KeyTab})                       // into the Sources pane
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}) // remove the selected (a)
@@ -270,7 +270,7 @@ func TestPageKeysPageThroughResults(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		es = append(es, vault.Entry{Source: "s", Path: "F", Title: fmt.Sprintf("host-%02d", i), Password: secret.New("p")})
 	}
-	m := New(es, "", 30*time.Second)
+	m := New(es, nil, "", 30*time.Second)
 	m = up(m, tea.WindowSizeMsg{Width: 100, Height: 20})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	m = typeStr(m, "host")
@@ -338,7 +338,7 @@ func TestSnippetAndMatchedField(t *testing.T) {
 func TestResultsShowMatchExcerpt(t *testing.T) {
 	m := New([]vault.Entry{
 		{Source: "s", Path: "Net", Title: "gateway", Password: secret.New("p"), URL: "https://ppk.example.internal"},
-	}, "", 30*time.Second)
+	}, nil, "", 30*time.Second)
 	m = up(m, tea.WindowSizeMsg{Width: 160, Height: 30})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	m = typeStr(m, "ppk")
@@ -353,7 +353,7 @@ func TestResultsShowMatchExcerpt(t *testing.T) {
 func TestResultsRowShowsTitleWhereMatch(t *testing.T) {
 	m := New([]vault.Entry{
 		{Source: "4iG", Path: "HS Expert/Linux/COLEKDOCP01", Password: secret.New("p"), URL: "ssh://172.16.0.180"},
-	}, "", 30*time.Second)
+	}, nil, "", 30*time.Second)
 	m = up(m, tea.WindowSizeMsg{Width: 120, Height: 20})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	m = typeStr(m, "url:ssh://")
@@ -375,7 +375,7 @@ func TestTruncLeftKeepsTail(t *testing.T) {
 // A URL column appears in the entry table when there's room (e.g. tree collapsed).
 func TestEntryTableURLColumn(t *testing.T) {
 	es := []vault.Entry{{Source: "s", Path: "F", Title: "gw", Username: "a", URL: "https://example.test", Password: secret.New("p")}}
-	m := New(es, "", 30*time.Second)
+	m := New(es, nil, "", 30*time.Second)
 	m = up(m, tea.WindowSizeMsg{Width: 80, Height: 20})
 	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the table
 	if strings.Contains(ansi.Strip(m.View()), "example.test") {
@@ -421,7 +421,7 @@ func testModel() Model {
 		{Source: "work", Path: "Infra", Title: "db-prod", Username: "svc_admin", Password: secret.New("p1")},
 		{Source: "work", Path: "Infra", Title: "db-staging", Username: "svc", Password: secret.New("p2")},
 		{Source: "personal", Path: "Net", Title: "router", Username: "admin", Password: secret.New("p3"), URL: "https://10.0.0.1"},
-	}, "", 30*time.Second)
+	}, nil, "", 30*time.Second)
 }
 
 func up(m Model, msg tea.Msg) Model {
@@ -604,7 +604,7 @@ func TestDetailTOTP(t *testing.T) {
 			TOTP: "otpauth://totp/s:x?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&digits=6"},
 		{Source: "s", Path: "p", Title: "plain", Password: secret.New("p")},
 	}
-	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 16})
+	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 16})
 
 	// open the TOTP entry via search
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
@@ -641,7 +641,7 @@ func TestDetailNotes(t *testing.T) {
 		Source: "s", Path: "p", Title: "withnotes", Password: secret.New("p"),
 		Notes: "line one here\nsecond line of the note",
 	}}
-	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 18})
+	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 18})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	m = typeStr(m, "withnotes")
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -661,7 +661,7 @@ func TestDetailCustomFields(t *testing.T) {
 			{Name: "Recovery", Value: "8842", Protected: true},
 		},
 	}}
-	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 18})
+	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 18})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	m = typeStr(m, "cf")
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -683,7 +683,7 @@ func TestDetailCustomFields(t *testing.T) {
 func TestDetailScroll(t *testing.T) {
 	long := strings.Repeat("a reasonably long line of the runbook notes here\n", 40)
 	ents := []vault.Entry{{Source: "s", Path: "p", Title: "big", Password: secret.New("p"), Notes: long}}
-	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 14})
+	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 14})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	m = typeStr(m, "big")
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -719,7 +719,7 @@ func TestScrollbarAndWheel(t *testing.T) {
 	for range 20 {
 		ents = append(ents, vault.Entry{Source: "s", Path: "f", Title: "entry", Password: secret.New("p")})
 	}
-	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 12})
+	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 12})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRight}) // into the entry table
 	if m.focus != 1 {
 		t.Fatalf("→ should focus the table, got focus=%d", m.focus)
@@ -751,7 +751,7 @@ func TestMouseClick(t *testing.T) {
 		{Source: "s", Path: "f", Title: "b", Password: secret.New("p")},
 		{Source: "s", Path: "f", Title: "c", Password: secret.New("p")},
 	}
-	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
 	// visible tree = [s (0), f (1)]; panel content starts at Y=2, left pane X<40
 
 	m = up(m, click(5, 2)) // tree row 0 → source "s"
@@ -774,18 +774,15 @@ func TestMouseClick(t *testing.T) {
 	}
 
 	m = up(m, tea.KeyMsg{Type: tea.KeyEsc}) // leave detail
-	// tab indicator on the last line (Y=29), right-aligned: "Vault · Generate · Settings"
-	m = up(m, click(95, 29)) // in the "Settings" region
-	if m.tab != 1 {
-		t.Errorf("clicking the Settings tab should switch to it, got tab=%d", m.tab)
-	}
-	m = up(m, click(84, 29)) // "Generate"
-	if m.tab != 2 {
-		t.Errorf("clicking the Generate tab should switch to it, got tab=%d", m.tab)
-	}
-	m = up(m, click(75, 29)) // "Vault"
-	if m.tab != 0 {
-		t.Errorf("clicking the Vault tab should switch back, got tab=%d", m.tab)
+	// The tab indicator is right-aligned on the last line. Compute where each
+	// label lands rather than hard-coding columns, so adding a tab does not
+	// silently move the test's clicks onto a neighbour.
+	for _, want := range tabOrder() {
+		x := tabClickX(m, want.label)
+		m = up(m, click(x, 29))
+		if m.tab != want.idx {
+			t.Errorf("clicking %q should switch to it, got tab=%d", want.label, m.tab)
+		}
 	}
 }
 
@@ -800,7 +797,7 @@ func TestRightClickCopies(t *testing.T) {
 		{Source: "s", Path: "f", Title: "b", Password: secret.New("p")},
 		{Source: "s", Path: "f", Title: "c", Password: secret.New("p")},
 	}
-	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = up(m, rclick(50, 5)) // right-click entry "c" (row 2, Y=5)
 	if m.esel != 2 || m.focus != 1 {
 		t.Errorf("right-click should select the entry under it, got esel=%d focus=%d", m.esel, m.focus)
@@ -813,7 +810,7 @@ func TestRightClickCopies(t *testing.T) {
 // Right-click copies while viewing an entry's detail (without leaving it).
 func TestRightClickInDetail(t *testing.T) {
 	ents := []vault.Entry{{Source: "s", Path: "f", Title: "a", Password: secret.New("p")}}
-	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = up(m, click(50, 3)) // select
 	m = up(m, click(50, 3)) // open detail
 	if !m.detail {
@@ -831,7 +828,7 @@ func TestDetailClickTreeExits(t *testing.T) {
 		{Source: "s", Path: "f", Title: "a", Password: secret.New("p")},
 		{Source: "s", Path: "f", Title: "b", Password: secret.New("p")},
 	}
-	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = up(m, click(50, 3)) // select entry
 	m = up(m, click(50, 3)) // double-click → open detail
 	if !m.detail {
@@ -849,7 +846,7 @@ func TestDetailClickTreeExits(t *testing.T) {
 // Double-clicking a folder expands/collapses it (like Enter).
 func TestFolderDoubleClick(t *testing.T) {
 	ents := []vault.Entry{{Source: "s", Path: "parent/child", Title: "x", Password: secret.New("p")}}
-	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
 	// visible tree = [s, parent]; "parent" is collapsed so "child" is hidden
 	before := len(m.visible())
 
@@ -882,11 +879,11 @@ func TestEmptySearchShowsTree(t *testing.T) {
 // matchCounts tags each folder with how many hits it (and its descendants) hold.
 func TestMatchCounts(t *testing.T) {
 	ents := []vault.Entry{
-		{Source: "s", Path: "a", Title: "foo1", Password: secret.New("p")},
-		{Source: "s", Path: "a", Title: "foo2", Password: secret.New("p")},
-		{Source: "s", Path: "b", Title: "bar", Password: secret.New("p")},
+		{ID: "s:1", Source: "s", Path: "a", Title: "foo1", Password: secret.New("p")},
+		{ID: "s:2", Source: "s", Path: "a", Title: "foo2", Password: secret.New("p")},
+		{ID: "s:3", Source: "s", Path: "b", Title: "bar", Password: secret.New("p")},
 	}
-	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
 	if m.matchCounts() != nil {
 		t.Error("no counts without an active query")
 	}
@@ -1019,4 +1016,24 @@ func TestHelpToggles(t *testing.T) {
 	if m.help {
 		t.Error("a non-navigation key should close help")
 	}
+}
+
+// tabClickX is the x of the middle of a tab's label in the right-aligned bar.
+func tabClickX(m Model, label string) int {
+	tabs := tabOrder()
+	total := 0
+	for i, t := range tabs {
+		total += dw(t.label)
+		if i < len(tabs)-1 {
+			total += dw(" · ")
+		}
+	}
+	off := m.w - total
+	for _, t := range tabs {
+		if t.label == label {
+			return off + dw(t.label)/2
+		}
+		off += dw(t.label) + dw(" · ")
+	}
+	return 0
 }

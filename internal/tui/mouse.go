@@ -149,11 +149,7 @@ func (m Model) tabHit(x, y int) (int, bool) {
 	if y != m.h-1 {
 		return 0, false
 	}
-	// Display order Vault · Generate · Settings, each mapping to its tab index.
-	tabs := []struct {
-		label string
-		idx   int
-	}{{"Vault", 0}, {"Generate", 2}, {"Settings", 1}}
+	tabs := tabOrder()
 	total := 0
 	for i, t := range tabs {
 		total += dw(t.label)

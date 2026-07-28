@@ -15,6 +15,7 @@ import (
 
 	"github.com/pottom/harmos/internal/clip"
 	"github.com/pottom/harmos/internal/config"
+	"github.com/pottom/harmos/internal/edit"
 	"github.com/pottom/harmos/internal/keyring"
 	"github.com/pottom/harmos/internal/otp"
 	"github.com/pottom/harmos/internal/pwgen"
@@ -103,6 +104,16 @@ type Model struct {
 
 	excluded []session.Excluded // sources that could not be opened, shown while browsing
 
+	// Writing. Every source starts locked on every run: writeOK is empty at
+	// launch and is never persisted, so a vault is only ever editable because
+	// the user said so during this session. Deliberately not called "locked" —
+	// that already means the unlock phase.
+	handles map[string]*vault.Handle // sources harmos could write, from the session
+	writeOK map[string]bool          // sources the user has unlocked, this run only
+	chg     edit.Set                 // staged changes, not yet written
+
+	confirmUnlock string // source awaiting an unlock confirmation ("" = none)
+
 	timeout    time.Duration
 	copied     string
 	copiedWhat string
@@ -134,14 +145,14 @@ const doubleClick = 450 * time.Millisecond
 
 // New builds the model over the given entries. configPath is the config file the
 // Settings tab reads and edits (may be "" when there is no Settings work).
-func New(entries []vault.Entry, configPath string, timeout time.Duration) Model {
+func New(entries []vault.Entry, folders []vault.Folder, configPath string, timeout time.Duration) Model {
 	ti := textinput.New()
 	ti.Prompt = ""
 	ti.Placeholder = "press / to search every source…"
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	roots := buildTree(entries)
+	roots := buildTree(entries, folders)
 	themeName := "charm"
 	srcType := map[string]config.Type{}
 	var loaded *config.Config
@@ -184,8 +195,8 @@ func firstFolderWithEntries(roots []*node) int {
 }
 
 // Run launches the TUI in the alt screen.
-func Run(entries []vault.Entry, configPath string, timeout time.Duration) error {
-	_, err := tea.NewProgram(New(entries, configPath, timeout), tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
+func Run(entries []vault.Entry, folders []vault.Folder, configPath string, timeout time.Duration) error {
+	_, err := tea.NewProgram(New(entries, folders, configPath, timeout), tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	return err
 }
 
@@ -219,15 +230,79 @@ func checkUpdateCmd() tea.Cmd {
 
 // intoBrowsing rebuilds the browsing surface from freshly opened entries and
 // leaves the unlock phase.
-func (m Model) intoBrowsing(entries []vault.Entry) Model {
-	m.matcher = search.New(entries)
-	m.roots = buildTree(entries)
-	m.nSrc = len(m.roots)
+func (m Model) intoBrowsing(res *session.Result) Model {
+	m.handles = res.Handles
+	m.writeOK = map[string]bool{} // every source starts locked, every run
+	m = m.rebuild(res.Entries, res.Folders)
 	m.tsel = firstFolderWithEntries(m.roots)
 	m.locked = false
 	m.cfg = nil
 	m.ulSteps = nil
 	m.ulBusy = false
+	return m
+}
+
+// rebuild re-derives the matcher and the tree from a fresh set of entries and
+// folders, keeping the user roughly where they were.
+//
+// Selection is restored by ID rather than by index: a save can add, remove or
+// move rows, so the row that was under the cursor is not the row at that index
+// any more. Expanded folders are restored the same way, or reloading after a
+// save would collapse the tree the user had just arranged.
+func (m Model) rebuild(entries []vault.Entry, folders []vault.Folder) Model {
+	expanded := map[string]bool{}
+	var collect func(ns []*node)
+	collect = func(ns []*node) {
+		for _, n := range ns {
+			if n.expanded {
+				expanded[n.source+"\x00"+n.id] = true
+			}
+			collect(n.children)
+		}
+	}
+	collect(m.roots)
+
+	var selectedEntry string
+	if e := m.selEntry(); e != nil {
+		selectedEntry = e.ID
+	}
+
+	m.matcher = search.New(entries)
+	m.roots = buildTree(entries, folders)
+	m.nSrc = len(m.roots)
+
+	if len(expanded) > 0 {
+		var restore func(ns []*node)
+		restore = func(ns []*node) {
+			for _, n := range ns {
+				if expanded[n.source+"\x00"+n.id] {
+					n.expanded = true
+				}
+				restore(n.children)
+			}
+		}
+		restore(m.roots)
+	}
+
+	if selectedEntry != "" {
+		m = m.selectEntryByID(selectedEntry)
+	}
+	m.refilter()
+	return m
+}
+
+// selectEntryByID puts the cursor back on an entry after a rebuild, if it is
+// still there.
+func (m Model) selectEntryByID(id string) Model {
+	flat := m.visible()
+	for i, tl := range flat {
+		for j, e := range tl.node.entries {
+			if e.ID == id {
+				m.tsel, m.esel, m.focus = i, j, 1
+				return m
+			}
+		}
+	}
 	return m
 }
 
@@ -472,6 +547,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.attach != attachNone {
 			return m.updateAttach(key, msg)
 		}
+		// The unlock confirmation owns every key while it is up.
+		if m.confirmUnlock != "" {
+			return m.updateWriteConfirm(key), nil
+		}
 		if key == "?" && !m.searchMode {
 			m.help = !m.help
 			m.helpScroll = 0
@@ -488,22 +567,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Tab switching (1 = Vault, 2 = Generate, 3 = Settings — display order, not the
 		// internal m.tab indices) — not while typing a
 		// search, and not while a Settings overlay (form/remove) is capturing keys.
-		inOverlay := m.searchMode || (m.tab == 1 && m.setMode != setList)
+		inOverlay := m.searchMode || (m.tab == tabSettings && m.setMode != setList)
 		if !inOverlay {
-			switch key {
-			case "1":
-				m.tab, m.detail, m.focus = 0, false, 0
-				return m, nil
-			case "2": // 2 = Generate (displayed second; internal tab index 2)
-				m.tab, m.detail, m.focus = 2, false, 1 // land on the password, not the options
-				if len(m.genList) == 0 {
-					m.resetGen() // first visit: roll a password so the pane isn't empty
-				}
-				return m, nil
-			case "3": // 3 = Settings (displayed last; internal tab index 1)
-				m.tab, m.detail, m.focus = 1, false, 0
-				m.setKeyring = keyringStatus(m.sources())
-				return m, nil
+			if idx, ok := tabForKey(key); ok {
+				return m.switchTab(idx), nil
 			}
 		}
 
@@ -514,6 +581,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The Generate tab handles its own keys.
 		if m.tab == 2 {
 			return m.updateGenerate(key)
+		}
+
+		// ctrl+w unlocks the source under the cursor for writing, or locks it
+		// again. Deliberately a control chord rather than a letter: it changes
+		// what the program is allowed to do, so it should not be reachable by a
+		// stray keystroke.
+		if key == "ctrl+w" && !m.searchMode {
+			return m.toggleWriteLock(), nil
 		}
 
 		// ctrl+b collapses/expands the folder tree (Vault tab), reclaiming width for
@@ -755,4 +830,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
+}
+
+// switchTab moves to a tab and puts its focus somewhere sensible.
+func (m Model) switchTab(idx int) Model {
+	m.tab, m.detail = idx, false
+	switch idx {
+	case tabGenerate:
+		m.focus = 1 // land on the password, not the options
+		if len(m.genList) == 0 {
+			m.resetGen() // first visit: roll one so the pane is not empty
+		}
+	case tabSettings:
+		m.focus = 0
+		m.setKeyring = keyringStatus(m.sources())
+	default:
+		m.focus = 0
+	}
+	return m
 }

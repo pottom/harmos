@@ -16,7 +16,7 @@ import (
 func openFileEntry(t *testing.T, files []vault.Attachment) Model {
 	t.Helper()
 	ents := []vault.Entry{{Source: "s", Path: "p", Title: "withfiles", Password: secret.New("p"), Files: files}}
-	m := up(New(ents, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 18})
+	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 18})
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 	m = typeStr(m, "withfiles")
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})

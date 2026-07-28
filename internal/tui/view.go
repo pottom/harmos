@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -133,11 +134,16 @@ func (m Model) View() string {
 	if m.help {
 		return m.helpView()
 	}
-	if m.tab == 1 {
-		return m.settingsView()
+	if m.confirmUnlock != "" {
+		return m.writeConfirmView()
 	}
-	if m.tab == 2 {
+	switch m.tab {
+	case tabSettings:
+		return m.settingsView()
+	case tabGenerate:
 		return m.generateView()
+	case tabChanges:
+		return m.changesView()
 	}
 	return m.vaultBody() // browse, search, and entry detail share this frame
 }
@@ -145,16 +151,30 @@ func (m Model) View() string {
 // tabIndicator is the small "Vault · Settings" marker shown bottom-right, the
 // active tab in accent (switched with 1/2/3).
 func (m Model) tabIndicator() string {
-	tab := func(n int, name string) string {
-		if m.tab == n {
-			return theme.Acc.Render(name)
+	var parts []string
+	for _, t := range tabOrder() {
+		label := t.label
+		// The Changes tab carries the pending count, so a dirty session is
+		// visible without switching to it.
+		if t.idx == tabChanges {
+			if n := len(m.chg.Effective()); n > 0 {
+				label += theme.Noted.Render(" " + itoa(n))
+			}
 		}
-		return theme.Faded.Render(name)
+		if m.tab == t.idx {
+			parts = append(parts, theme.Acc.Render(t.label)+strings.TrimPrefix(label, t.label))
+		} else {
+			parts = append(parts, theme.Faded.Render(t.label)+strings.TrimPrefix(label, t.label))
+		}
 	}
-	// Display order Vault · Generate · Settings (Settings last); the number keys
-	// follow this order (1/2/3), though the internal tab indices are 0/1/2.
-	sep := theme.Faded.Render(" · ")
-	return tab(0, "Vault") + sep + tab(2, "Generate") + sep + tab(1, "Settings")
+	return strings.Join(parts, theme.Faded.Render(" · "))
+}
+
+func itoa(n int) string {
+	if n < 10 {
+		return string(rune('0' + n))
+	}
+	return strconv.Itoa(n)
 }
 
 // spread puts left at the start and right at the end of a width-w line.
@@ -631,13 +651,21 @@ func (m Model) treeLines(w, rows int) []string {
 		if countN > 0 {
 			count = fmt.Sprintf(" %d", countN)
 		}
+		// A source root also carries its write lock, so the state is visible
+		// without opening anything.
+		badge := ""
+		if flat[k].depth == 0 {
+			if b := m.lockBadge(n.source); b != "" {
+				badge = "  " + b
+			}
+		}
 
 		if k == m.tsel {
 			st := theme.Hi
 			if m.focus == 0 && !m.showResults() {
 				st = theme.SelRow.Width(w)
 			}
-			out = append(out, st.Render(trunc(indent+icon+" "+n.name+count, w)))
+			out = append(out, st.Render(trunc(indent+icon+" "+n.name+count, w))+badge)
 			continue
 		}
 
@@ -646,7 +674,7 @@ func (m Model) treeLines(w, rows int) []string {
 			nameStyle, iconStyle = theme.Dimmed, theme.Faded
 		}
 		name := nameStyle.Render(trunc(n.name, max(1, w-dw(indent)-2-dw(count))))
-		out = append(out, iconStyle.Render(indent+icon)+" "+name+countStyle.Render(count))
+		out = append(out, iconStyle.Render(indent+icon)+" "+name+countStyle.Render(count)+badge)
 	}
 	return out
 }

@@ -27,9 +27,12 @@ keyring are entered **in the TUI**, never on stdin.
 
 ## Tabs
 
-Three top-level tabs, switched by `1` / `2` / `3` once unlocked. Displayed order
-is Vault / Generate / Settings; the internal `m.tab` values are Vault `0`,
-Settings `1`, Generate `2`.
+Four top-level tabs, switched by `1` / `2` / `3` / `4` once unlocked. **The order
+lives in one place — `tabOrder()` in `tabs.go`** — because it used to be spelled
+out in the indicator, the mouse hit-test, the number-key switch and the help
+overlay, and the internal indices do not match the display order. Displayed order
+is Vault / Generate / Settings / Changes; the internal `m.tab` values are Vault
+`0`, Settings `1`, Generate `2`, Changes `3`.
 
 - **Vault (0)** — the browse/search surface: a folder tree on the left (collapsible
   with `ctrl+b` to a thin rail), entry list / detail on the right. The header
@@ -41,6 +44,17 @@ Settings `1`, Generate `2`.
   `harmos gen`; saved options persist to the config.
 - **Settings (1)** — a two-pane layout mirroring the Vault; resets `m.focus` to 0
   (the left pane) on switch.
+- **Changes (3)** — the staged edits. Always present, even when empty, where it
+  explains how to unlock a source rather than vanishing.
+
+## Writing
+
+`m.writeOK` is the per-source write lock, and it starts **empty on every run**:
+nothing is persisted, so a vault is editable only because the user unlocked it
+this session. Do not conflate it with `m.locked`, which means the unlock phase.
+`m.handles` holds the sources the session could open for writing — a Pleasant
+cache never gets one — and `m.chg` is the staged change set. `ctrl+w` toggles the
+lock, asking before unlocking and never before locking.
 
 ## Settings: two-pane
 
