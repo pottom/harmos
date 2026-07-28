@@ -692,7 +692,7 @@ func (m Model) treeLines(w, rows int) []string {
 			continue
 		}
 
-		nameStyle, iconStyle := theme.Strong, theme.Acc
+		nameStyle, iconStyle := theme.Strong, m.iconStyleFor(n)
 		if st := changed[n]; st != 0 {
 			nameStyle, _ = changeStyle(st)
 		}
@@ -1174,4 +1174,21 @@ func changeStyle(st edit.State) (lipgloss.Style, string) {
 		return theme.Bad.Strikethrough(true), i.trash
 	}
 	return theme.Strong, i.entry
+}
+
+// iconStyleFor is the colour a tree row's icon takes.
+//
+// The icons of an unlocked source carry the write colour, all the way down. It
+// is ambient rather than a badge on one row: the question the tree answers while
+// you move around in it is "can I change things here?", and the answer should
+// not depend on scrolling back to the source line to check.
+//
+// It is a named decision rather than an inline condition so it can be tested —
+// under `go test` there is no terminal, so lipgloss renders every style as plain
+// text and a colour cannot be observed in the output.
+func (m Model) iconStyleFor(n *node) lipgloss.Style {
+	if m.writeUnlocked(n.source) {
+		return theme.Editable
+	}
+	return theme.Acc
 }

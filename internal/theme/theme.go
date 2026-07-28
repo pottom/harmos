@@ -26,8 +26,14 @@ type Theme struct {
 	// Note is amber: attention without alarm. Warn is red in every built-in, so
 	// there was no way to say "changed" or "worth a look" without saying "wrong"
 	// — which is why view.go had to hard-code an amber for the update marker.
-	Note  token `toml:"note"`
-	SelBg token `toml:"sel_bg"`
+	Note token `toml:"note"`
+	// Writable marks a source that is unlocked for editing, and the editor itself.
+	// Its own token rather than a reuse of Note: "this row changed" and "you are
+	// standing in writable territory" are different statements, and a theme
+	// should be able to make them look different. Each built-in picks from its
+	// own palette rather than every one landing on the same amber.
+	Writable token `toml:"writable"`
+	SelBg    token `toml:"sel_bg"`
 }
 
 // Active tokens, set by Apply.
@@ -40,22 +46,24 @@ var (
 	OK       lipgloss.AdaptiveColor
 	Warn     lipgloss.AdaptiveColor
 	Note     lipgloss.AdaptiveColor
+	Writable lipgloss.AdaptiveColor
 	SelBg    lipgloss.AdaptiveColor
 )
 
 // Active styles built from the tokens, set by Apply.
 var (
-	Brand  lipgloss.Style
-	Dimmed lipgloss.Style
-	Faded  lipgloss.Style
-	Acc    lipgloss.Style
-	Hi     lipgloss.Style
-	Ok     lipgloss.Style
-	Bad    lipgloss.Style
-	Noted  lipgloss.Style
-	Strong lipgloss.Style
-	SelRow lipgloss.Style
-	Rule   lipgloss.Style
+	Brand    lipgloss.Style
+	Dimmed   lipgloss.Style
+	Faded    lipgloss.Style
+	Acc      lipgloss.Style
+	Hi       lipgloss.Style
+	Ok       lipgloss.Style
+	Bad      lipgloss.Style
+	Noted    lipgloss.Style
+	Editable lipgloss.Style
+	Strong   lipgloss.Style
+	SelRow   lipgloss.Style
+	Rule     lipgloss.Style
 )
 
 func adaptive(t token) lipgloss.AdaptiveColor {
@@ -80,6 +88,11 @@ func Apply(t Theme) {
 	OK = adaptive(t.OK)
 	Warn = adaptive(t.Warn)
 	Note = adaptive(t.Note)
+	// A custom TOML theme written before this token existed has no value for
+	// it. Falling back keeps such a theme working — an empty colour is not an
+	// error to lipgloss, it simply renders as the terminal default, which would
+	// silently lose the distinction rather than complain.
+	Writable = adaptive(firstToken(t.Writable, t.Note, t.Accent))
 	SelBg = adaptive(t.SelBg)
 
 	Brand = lipgloss.NewStyle().Foreground(Accent).Bold(true)
@@ -90,9 +103,21 @@ func Apply(t Theme) {
 	Ok = lipgloss.NewStyle().Foreground(OK)
 	Bad = lipgloss.NewStyle().Foreground(Warn)
 	Noted = lipgloss.NewStyle().Foreground(Note)
+	Editable = lipgloss.NewStyle().Foreground(Writable)
 	Strong = lipgloss.NewStyle().Foreground(Steel).Bold(true)
 	SelRow = lipgloss.NewStyle().Background(SelBg).Foreground(AccentHi)
 	Rule = lipgloss.NewStyle().Foreground(Faint)
 }
 
 func init() { Apply(Charm) }
+
+// firstToken is the first token that has a colour, so a theme missing a newer
+// one degrades to a sensible neighbour instead of to nothing.
+func firstToken(ts ...token) token {
+	for _, t := range ts {
+		if t.Light != "" || t.Dark != "" {
+			return t
+		}
+	}
+	return token{}
+}

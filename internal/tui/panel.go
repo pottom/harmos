@@ -40,7 +40,9 @@ const (
 func borderStyle(st panelState) lipgloss.Style {
 	switch st {
 	case panelEditing:
-		return lipgloss.NewStyle().Foreground(theme.Note)
+		// The same token as the tree icons: one colour means "writable
+		// territory" everywhere, so a theme has a single knob for it.
+		return lipgloss.NewStyle().Foreground(theme.Writable)
 	case panelActive:
 		return lipgloss.NewStyle().Foreground(theme.Accent)
 	}

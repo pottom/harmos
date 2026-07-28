@@ -172,7 +172,7 @@ func (m Model) lockBadge(source string) string {
 		return theme.Faded.Render(i.locked + " ro fixed")
 	}
 	if m.writeOK[source] {
-		return theme.Noted.Render(i.unlocked + " rw")
+		return theme.Editable.Render(i.unlocked + " rw")
 	}
 	return theme.Faded.Render(i.locked + " ro")
 }
