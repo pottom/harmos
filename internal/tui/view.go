@@ -677,30 +677,45 @@ func (m Model) treeLines(w, rows int) []string {
 		}
 		nameW := max(1, w-badgeW)
 
+		chg := changed[n]
+		nameStyle, iconStyle, marker := m.treeRowStyle(n, chg)
+		markerPlain := ansi.Strip(marker)
+		if markerPlain != "" {
+			markerPlain = " " + markerPlain
+		}
+
 		if k == m.tsel {
-			// The badge goes *inside* the selected row rather than after it.
-			// SelRow pads to the full width, so anything appended afterwards is
-			// pushed past the edge and clipped by the panel — which looked like
-			// the padlock vanishing whenever the cursor landed on a source. It
-			// is plain text here for the same reason the rest of the row is: the
-			// selection's colours own the line.
+			// The badge and the marker go *inside* the selected row rather than
+			// after it. SelRow pads to the full width, so anything appended
+			// afterwards is pushed past the edge and clipped by the panel — which
+			// looked like the padlock vanishing whenever the cursor landed on a
+			// source. They are plain text here for the same reason the rest of the
+			// row is: the selection's colours own the line.
 			st := theme.Hi
 			if m.focus == 0 && !m.showResults() {
 				st = theme.SelRow.Width(w)
 			}
-			out = append(out, st.Render(trunc(indent+icon+" "+n.name+count, nameW)+badgePlain))
+			// The one thing the selection does not get to own: a row staged for
+			// deletion stays struck through under the cursor. Losing the mark on
+			// the row you are standing on is losing it exactly when you are
+			// looking at it.
+			if chg.own == edit.Deleted {
+				st = st.Strikethrough(true).StrikethroughSpaces(false)
+			}
+			plain := trunc(indent+icon+" "+n.name+count+markerPlain, nameW) + badgePlain
+			out = append(out, st.Render(plain))
 			continue
 		}
 
-		nameStyle, iconStyle := theme.Strong, m.iconStyleFor(n)
-		if st := changed[n]; st != 0 {
-			nameStyle, _ = changeStyle(st)
-		}
 		if counts != nil && counts[n] == 0 { // searching: dim folders with no hits
 			nameStyle, iconStyle = theme.Dimmed, theme.Faded
 		}
-		name := nameStyle.Render(trunc(n.name, max(1, nameW-dw(indent)-2-dw(count))))
-		out = append(out, iconStyle.Render(indent+icon)+" "+name+countStyle.Render(count)+badge)
+		name := nameStyle.Render(trunc(n.name, max(1, nameW-dw(indent)-2-dw(count)-dw(markerPlain))))
+		row := iconStyle.Render(indent+icon) + " " + name + countStyle.Render(count)
+		if marker != "" {
+			row += " " + marker
+		}
+		out = append(out, row+badge)
 	}
 	return out
 }
@@ -751,11 +766,19 @@ func (m Model) entryLines(w, rows int) []string {
 			continue
 		}
 		titleStyle, marker := changeStyle(states[e.ID])
-		line := theme.Faded.Render(marker+" ") +
+		// A deleted row is deleted all the way across: title, username and URL.
+		// Striking the title alone read as "this title is going", which is not
+		// what is about to happen, and left the row looking half-marked.
+		rest := theme.Dimmed
+		markerStyle := titleStyle
+		if states[e.ID] == edit.Deleted {
+			rest = titleStyle
+		}
+		line := markerStyle.Render(marker+" ") +
 			titleStyle.Render(pad(trunc(e.Title, titleW-2), titleW-2)) + " " +
-			theme.Dimmed.Render(pad(trunc(e.Username, userW), userW))
+			rest.Render(pad(trunc(e.Username, userW), userW))
 		if urlCol {
-			line += " " + theme.Dimmed.Render(trunc(e.URL, urlW))
+			line += " " + rest.Render(trunc(e.URL, urlW))
 		}
 		out = append(out, line)
 	}

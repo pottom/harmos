@@ -104,10 +104,11 @@ func titleOf(op Op) string {
 		return op.After.Title
 	case op.Before != nil && op.Before.Title != "":
 		return op.Before.Title
-	case op.After != nil || op.Before != nil:
-		return "(untitled)"
 	}
-	return op.Target
+	// Never the raw target: it is an opaque, base64 identity token, and a row
+	// reading "own:g:5nhn6H1wWEyWa4KEebc2rQ" tells the reader nothing they can
+	// act on. A caller that stages a change owes it a name.
+	return "(untitled)"
 }
 
 // diffDrafts compares two drafts field by field. A nil before means a creation,

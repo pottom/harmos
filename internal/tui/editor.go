@@ -10,6 +10,7 @@ import (
 	"github.com/pottom/harmos/internal/pwgen"
 	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/theme"
+	"github.com/pottom/harmos/internal/vault"
 )
 
 // The editor.
@@ -234,14 +235,14 @@ func (m Model) openFolderEditor(parentID, existingID, name string) Model {
 // So the confirmation lives at the write, once, and it names what is about to
 // happen — including a permanent delete, which is the only part of this that
 // cannot be taken back afterwards.
-func (m Model) stageDelete(target string, isFolder, permanent bool) Model {
+func (m Model) stageDelete(target, name string, isFolder, permanent bool) Model {
 	kind := edit.DeleteEntry
 	if isFolder {
 		kind = edit.DeleteGroup
 	}
 	perm := permanent || !m.binEnabled(m.editSource)
 
-	op := edit.Op{Kind: kind, Source: m.editSource, Target: target, Perm: perm}
+	op := edit.Op{Kind: kind, Source: m.editSource, Target: target, Name: name, Perm: perm}
 	if !isFolder {
 		if d, err := m.handles[m.editSource].EntryDraft(target); err == nil {
 			op.Before = &d
@@ -406,7 +407,7 @@ func (m Model) editKey(key string) (Model, bool) {
 	}
 	m.editSource = source
 
-	entry := m.selEntry()
+	entry := m.editEntryTarget()
 	folderID, folderName := m.currentFolderID()
 
 	switch key {
@@ -432,10 +433,10 @@ func (m Model) editKey(key string) (Model, bool) {
 	case "d", "D":
 		perm := key == "D"
 		if entry != nil {
-			return m.stageDelete(entry.ID, false, perm), true
+			return m.stageDelete(entry.ID, entry.Title, false, perm), true
 		}
 		if folderID != "" {
-			return m.stageDelete(folderID, true, perm), true
+			return m.stageDelete(folderID, folderName, true, perm), true
 		}
 	case "m":
 		if entry != nil {
@@ -446,6 +447,24 @@ func (m Model) editKey(key string) (Model, bool) {
 		}
 	}
 	return m, true
+}
+
+// editEntryTarget is the entry an edit key acts on — and it is nil when the
+// cursor is in the tree.
+//
+// selEntry answers a different question: which entry is "current", which is the
+// selected row of the open folder's table whether or not the table has focus,
+// because that is what the copy keys and the detail pane want. Using it here
+// meant d on a folder row deleted an entry inside the folder instead of the
+// folder — the wrong object, silently, with no way to tell from the screen.
+func (m Model) editEntryTarget() *vault.Entry {
+	if m.showResults() {
+		return m.selEntry() // in the results list there are only entries
+	}
+	if m.focus != 1 {
+		return nil // the tree has focus: the folder under the cursor is the target
+	}
+	return m.selEntry()
 }
 
 // currentFolderID is the folder under the cursor, if the cursor is on one.

@@ -255,3 +255,101 @@ func TestGeneratorFillsThePasswordField(t *testing.T) {
 }
 
 func readFile(p string) ([]byte, error) { return os.ReadFile(p) }
+
+// d acts on what the cursor is on. It used to act on the entry table's selected
+// row even while the tree had focus, so deleting a folder deleted an entry
+// inside it — the wrong object, with nothing on screen to say so.
+func TestDeleteTargetsWhatTheCursorIsOn(t *testing.T) {
+	m := editModel(t)
+
+	var folder *node
+	for i, tl := range m.visible() {
+		if tl.node.id != "" {
+			m.tsel, m.focus, folder = i, 0, tl.node
+			break
+		}
+	}
+	if folder == nil {
+		t.Fatal("no folder row in the tree")
+	}
+	m = up(m, key2("d"))
+	ops := m.chg.Effective()
+	if len(ops) != 1 || ops[0].Kind != edit.DeleteGroup {
+		t.Fatalf("d on a folder row should stage a folder deletion, got %+v", ops)
+	}
+	if ops[0].Target != folder.id {
+		t.Errorf("staged %q, want the folder under the cursor %q", ops[0].Target, folder.id)
+	}
+	if ops[0].Name != folder.name {
+		t.Errorf("a staged folder deletion needs its name for the diff, got %q", ops[0].Name)
+	}
+
+	// In the table, the same key means the entry.
+	m2 := up(editModel(t), tea.KeyMsg{Type: tea.KeyTab})
+	entry := m2.selEntry()
+	m2 = up(m2, key2("d"))
+	ops2 := m2.chg.Effective()
+	if len(ops2) != 1 || ops2[0].Kind != edit.DeleteEntry || ops2[0].Target != entry.ID {
+		t.Fatalf("d in the entry table should stage that entry, got %+v", ops2)
+	}
+}
+
+// A staged deletion stays where it was and is marked there: the row keeps its
+// place in the tree, takes the delete colour, and is struck through — with the
+// icon following, cursor or no cursor.
+func TestDeletedFolderStaysAndIsMarked(t *testing.T) {
+	m := editModel(t)
+	var folder *node
+	for i, tl := range m.visible() {
+		if tl.node.id != "" {
+			m.tsel, m.focus, folder = i, 0, tl.node
+			break
+		}
+	}
+	rowsBefore := len(m.visible())
+	m = up(m, key2("d"))
+
+	if len(m.visible()) != rowsBefore {
+		t.Errorf("a folder staged for deletion must stay in the tree: %d rows, was %d",
+			len(m.visible()), rowsBefore)
+	}
+
+	chg := m.changeStates()[folder]
+	if chg.own != edit.Deleted {
+		t.Fatalf("the folder's own state should be Deleted, got %v", chg)
+	}
+	name, icon, marker := m.treeRowStyle(folder, chg)
+	del, delMarker := changeStyle(edit.Deleted)
+	if name.GetForeground() != del.GetForeground() {
+		t.Error("a deleted row's name must take the delete colour")
+	}
+	if icon.GetForeground() != del.GetForeground() {
+		t.Error("its icon must take it too — an icon left in the writable colour reads as 'fine'")
+	}
+	if !name.GetStrikethrough() {
+		t.Error("a deleted row must be struck through, for readers without colour")
+	}
+	if marker != delMarker {
+		t.Errorf("marker = %q, want the delete glyph %q", marker, delMarker)
+	}
+
+	// And the parent above it is marked as containing a deletion, without being
+	// dressed up as deleted itself.
+	parent := parentOf(m.roots)[folder]
+	if parent != nil {
+		pc := m.changeStates()[parent]
+		if pc.own != 0 {
+			t.Errorf("the parent is not being deleted; own = %v", pc.own)
+		}
+		if pc.inside != edit.Deleted {
+			t.Errorf("the parent should show that something inside it is going, got %v", pc.inside)
+		}
+		pn, _, pm := m.treeRowStyle(parent, pc)
+		if pn.GetStrikethrough() {
+			t.Error("a folder that merely contains a deletion must not be struck through")
+		}
+		if pm == "" {
+			t.Error("but it should carry a marker, so a collapsed folder still says so")
+		}
+	}
+}

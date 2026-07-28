@@ -4,7 +4,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/pottom/harmos/internal/edit"
+	"github.com/pottom/harmos/internal/theme"
 	"github.com/pottom/harmos/internal/vault"
 )
 
@@ -343,36 +346,77 @@ func (m Model) folderCrumb(flat []treeLine, sel int) string {
 	return trail
 }
 
-// changeStates maps each node to how its contents have been staged, so a
+// nodeChange is what a tree row has to say about staged work, split in two
+// because the two mean different things to whoever is reading the row.
+//
+// own is the folder itself: it is being deleted, created or renamed, so the row
+// carries the state — struck through, for a deletion. inside is only that
+// something below it changed. Conflating them made a folder holding one deleted
+// entry look exactly like a folder that was itself about to be deleted.
+type nodeChange struct {
+	own    edit.State
+	inside edit.State
+}
+
+// changeStates maps each node to how it and its contents have been staged, so a
 // collapsed folder still shows that something inside it is pending.
 //
 // Same shape as matchCounts, and consumed the same way: the decoration and the
 // diff are both derived from one change set, so a row's colour and the Changes
 // tab cannot disagree.
-func (m Model) changeStates() map[*node]edit.State {
+func (m Model) changeStates() map[*node]nodeChange {
 	if m.chg.Empty() {
 		return nil
 	}
-	byFolder := m.chg.Parents()
-	out := map[*node]edit.State{}
+	byFolder := m.chg.Parents() // where a changed target lives
+	byTarget := m.chg.State()   // what a target itself is
+	out := map[*node]nodeChange{}
 
 	var walk func(ns []*node) edit.State
 	walk = func(ns []*node) edit.State {
 		var strongest edit.State
 		for _, n := range ns {
-			st := byFolder[n.id]
-			if child := walk(n.children); child > st {
-				st = child
+			c := nodeChange{own: byTarget[n.id], inside: byFolder[n.id]}
+			if below := walk(n.children); below > c.inside {
+				c.inside = below
 			}
-			if st > 0 {
-				out[n] = st
+			if c.own != 0 || c.inside != 0 {
+				out[n] = c
 			}
-			if st > strongest {
-				strongest = st
+			// A deleted folder takes its contents with it, so it reads upward as
+			// the strongest thing under its parent.
+			if c.own > strongest {
+				strongest = c.own
+			}
+			if c.inside > strongest {
+				strongest = c.inside
 			}
 		}
 		return strongest
 	}
 	walk(m.roots)
 	return out
+}
+
+// treeRowStyle is how one tree row reads: the style for its name, the style for
+// its icon, and a trailing marker.
+//
+// A named decision rather than an inline condition, because under `go test`
+// there is no terminal — lipgloss renders every style as plain text, so a colour
+// can only be tested by comparing the style, not the output.
+func (m Model) treeRowStyle(n *node, c nodeChange) (name, icon lipgloss.Style, marker string) {
+	if c.own != 0 {
+		// The row is the thing that changed: colour, strikethrough and marker,
+		// icon included — an icon left in the writable colour reads as "this is
+		// fine" next to a struck-through name.
+		st, mk := changeStyle(c.own)
+		return st, st, mk
+	}
+	if c.inside != 0 {
+		// Something below changed. The marker says which kind, in that colour,
+		// but the name stays as it was: this folder is not going anywhere.
+		st, mk := changeStyle(c.inside)
+		return theme.Strong, m.iconStyleFor(n), st.Render(mk)
+	}
+	return theme.Strong, m.iconStyleFor(n), ""
 }

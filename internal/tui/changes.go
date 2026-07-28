@@ -339,8 +339,18 @@ func (m Model) changesBody(w int) []string {
 	var out []string
 	for i, c := range changes {
 		style, marker := changeStyle(c.State)
+		// One row shape, whether or not the cursor is on it: marker, name,
+		// what is happening, which source. The selected row used to drop the
+		// source and the deletion's strikethrough, so the row under the cursor
+		// was the one row that did not say what it was — while being the row
+		// the reader is looking at.
+		text := marker + " " + c.Title + "  " + c.Detail + "  " + c.Source
 		if i == m.chgSel {
-			out = append(out, theme.SelRow.Width(w).Render(trunc(ansiStrip(marker+" "+c.Title+"  "+c.Detail), w)))
+			st := theme.SelRow.Width(w)
+			if c.State == edit.Deleted {
+				st = st.Strikethrough(true).StrikethroughSpaces(false)
+			}
+			out = append(out, st.Render(trunc(ansiStrip(text), w)))
 		} else {
 			out = append(out, style.Render(marker+" "+c.Title)+
 				theme.Dimmed.Render("  "+c.Detail)+theme.Faded.Render("  "+c.Source))
