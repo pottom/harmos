@@ -895,6 +895,32 @@ func isPermanent(set edit.Set, target string) bool {
 	return false
 }
 
+// impactSummary is the whole session in one line, counted in the things a vault
+// is made of: what the reader would tell a colleague they had done.
+//
+// It sits under the review, where the operation summary used to — "own: 3,
+// work: 1" says how much typing happened, which is nobody's question.
+func (m Model) impactSummary() string {
+	var total writeImpact
+	for _, src := range m.chg.Sources() {
+		im := m.impactOf(src)
+		total.created += im.created
+		total.modified += im.modified
+		total.moved += im.moved
+		total.folders += im.folders
+		total.entries += im.entries
+		total.permanent += im.permanent
+	}
+	parts := total.lines()
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, theme.Faded.Render("  ·  "))
+}
+
 // permanentlyRemoved is how many things, across every source, will stop
 // existing with no recycle bin to fish them out of.
 func (m Model) permanentlyRemoved() int {

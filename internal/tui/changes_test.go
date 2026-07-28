@@ -650,3 +650,34 @@ func TestImpactDoesNotDoubleCount(t *testing.T) {
 		t.Errorf("counted %d folders and %d entries, want 2 and 1", im.folders, im.entries)
 	}
 }
+
+// The line under the review says what the session comes to, in the things a
+// vault is made of. "own: 3, work: 1" says how much typing happened.
+func TestChangesShowsTheImpactStat(t *testing.T) {
+	var ents []vault.Entry
+	for i := range 6 {
+		ents = append(ents, vault.Entry{ID: fmt.Sprintf("e%d", i), Source: "own", Path: "doomed",
+			Title: fmt.Sprintf("entry-%d", i), Password: secret.New("p")})
+	}
+	ents = append(ents, vault.Entry{ID: "k", Source: "own", Path: "Other", Title: "kept", Password: secret.New("p")})
+
+	m := up(New(ents, []vault.Folder{
+		{ID: "g1", Source: "own", Path: "doomed", Name: "doomed"},
+		{ID: "g2", Source: "own", Path: "Other", Name: "Other"},
+	}, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "own", Target: "g1", Name: "doomed"})
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.EditEntry, Source: "own", Target: "k",
+		Before: &edit.Draft{ID: "k", Title: "kept"}, After: &edit.Draft{ID: "k", Title: "kept!"}})
+	m = m.switchTab(tabChanges)
+
+	out := ansi.Strip(m.View())
+	for _, want := range []string{"1 entry changed", "1 folder and 6 entries removed"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the stat line should say %q:\n%s", want, out)
+		}
+	}
+	// The old operation summary counted keystrokes, not consequences.
+	if strings.Contains(out, "own: 2") {
+		t.Errorf("the operation count is not the reader's question:\n%s", out)
+	}
+}

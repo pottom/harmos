@@ -246,8 +246,8 @@ func (m Model) changesView() string {
 	ctx := ""
 	if m.remaining > 0 {
 		ctx = m.countdown()
-	} else if n := m.dirtyCount(); n > 0 {
-		ctx = theme.Faded.Render(trunc("^s writes "+m.chg.Summary(), m.w))
+	} else if m.dirtyCount() > 0 {
+		ctx = " " + theme.Faded.Render("^s writes") + "  " + trunc(m.impactSummary(), max(10, m.w-12))
 	}
 
 	return header + "\n" +
