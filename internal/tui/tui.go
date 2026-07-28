@@ -650,7 +650,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			nm, cmd := m.updateEditor(key, msg)
 			return nm, cmd
 		}
-		if key == "?" && !m.searchMode {
+		if key == "?" && !m.typingText() {
 			m.help = !m.help
 			m.helpScroll = 0
 			return m, nil
@@ -658,8 +658,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.help {
 			return m.updateHelp(key), nil
 		}
-		// q quits everywhere except while typing a search (where it's a character).
-		if key == "q" && !m.searchMode {
+		// q quits everywhere except where a surface is capturing what you type.
+		if key == "q" && !m.typingText() {
 			if m.dirtyCount() > 0 {
 				m.quitGuard = true
 				m.confirmSel = 0 // Save and quit leads; discarding is the danger
@@ -667,16 +667,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Sequence(clearClip, tea.Quit)
 		}
-		// ctrl+s asks to write, from anywhere.
-		if key == "ctrl+s" && !m.searchMode {
+		// ctrl+s asks to write, from anywhere except inside a modal that is
+		// waiting for its own answer.
+		if key == "ctrl+s" && !m.searchMode && !m.inSettingsModal() {
 			return m.askToSave()
 		}
 
-		// Tab switching (1 = Vault, 2 = Generate, 3 = Settings — display order, not the
-		// internal m.tab indices) — not while typing a
-		// search, and not while a Settings overlay (form/remove) is capturing keys.
-		inOverlay := m.searchMode || (m.tab == tabSettings && m.setMode != setList)
-		if !inOverlay {
+		// Tab switching — display order comes from tabOrder(); the digits do not
+		// match the internal m.tab indices. Not while something is capturing what
+		// you type: 1 to 4 are characters there.
+		if !m.typingText() {
 			if idx, ok := tabForKey(key); ok {
 				return m.switchTab(idx), nil
 			}
@@ -744,6 +744,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				_, step := m.panelRows()
 				m.sel = clampIndex(m.sel+max(1, step), len(m.results))
 				return m, nil
+			case "ctrl+y", "ctrl+u", "ctrl+o", "ctrl+t":
+				// The copy chords work from inside the search box, because that
+				// is where the result is chosen — ↑↓ are already moving the
+				// selection here. They cannot collide with what is being typed:
+				// they are chords, not characters. Requiring ↵ first was a rule
+				// nobody would guess, and the help promised otherwise.
+				cmd := m.copySel(copyWhat(key))
+				return m, cmd
 			}
 			var cmd tea.Cmd
 			m.input, cmd = m.input.Update(msg)
@@ -985,4 +993,48 @@ func (m Model) switchTab(idx int) Model {
 		m.focus = 0
 	}
 	return m
+}
+
+// Who owns the keyboard.
+//
+// The global keys — ?, q, ctrl+s and the tab digits — are handled before the
+// per-tab dispatch, so any surface that captures what you type has to be
+// excluded here or its characters are eaten. It used to name only the search
+// box, and the cost was not theoretical: a password containing "q" typed into
+// the save-password prompt quit the program mid-entry, and the Generate tab's
+// exclude field could not be given the digits 1 to 4 — the very characters
+// somebody excluding digits from generated passwords needs.
+//
+// One predicate, so the next surface that takes text has one place to declare
+// itself rather than three ifs to be forgotten in.
+func (m Model) typingText() bool {
+	switch {
+	case m.searchMode:
+		return true
+	case m.inSettingsModal():
+		return true // the add/edit form, the password prompt, the remove overlay
+	case m.tab == tabGenerate && m.focus == 0 && m.genRow == genExclude:
+		return true
+	}
+	return false
+}
+
+// inSettingsModal is the Settings tab showing something that owns the keyboard
+// until it is answered or cancelled.
+func (m Model) inSettingsModal() bool {
+	return m.tab == tabSettings && m.setMode != setList
+}
+
+// copyWhat maps a copy chord to the field it copies, so the four bindings do
+// not have to be spelled out on every surface that offers them.
+func copyWhat(key string) string {
+	switch key {
+	case "ctrl+u":
+		return "username"
+	case "ctrl+o":
+		return "URL"
+	case "ctrl+t":
+		return "totp"
+	}
+	return "password"
 }

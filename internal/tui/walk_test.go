@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	gokeepasslib "github.com/tobischo/gokeepasslib/v3"
 
+	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/vault"
 	"github.com/pottom/harmos/internal/vault/vaulttest"
@@ -281,4 +283,92 @@ func currentName(m Model) string {
 		return f.name
 	}
 	return ""
+}
+
+// The global keys are handled before the per-tab dispatch, so a surface that
+// captures what you type has to be excluded from them. It used to name only the
+// search box: a password with a "q" in it quit the program mid-entry.
+func TestTypedTextIsNotAGlobalKey(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.toml")
+	if _, err := config.WriteKdbxSource(cfg, "own", filepath.Join(dir, "own.kdbx"), "", false); err != nil {
+		t.Fatal(err)
+	}
+
+	// The save-password prompt: a masked field, reached from Settings → Sources.
+	m := up(New(nil, nil, cfg, 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 24})
+	m = up(m, tabKey(tabSettings))
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = up(m, key2("p"))
+	if m.setMode != setPrompt {
+		t.Fatalf("p should open the password prompt, mode %d", m.setMode)
+	}
+	m = typeStr(m, "Qq?1x")
+	if got := m.promptInput.Value(); got != "Qq?1x" {
+		t.Errorf("the prompt should have every character typed into it, it has %q", got)
+	}
+	if m.help {
+		t.Error("? typed into a password opened the help")
+	}
+	if m.tab != tabSettings {
+		t.Error("a digit typed into a password switched tab")
+	}
+
+	// The Generate tab's exclude field, where the digits are the point.
+	g := up(New(nil, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 24})
+	g = up(g, tabKey(tabGenerate))
+	g.focus, g.genRow = 0, genExclude
+	g = typeStr(g, "q1234?")
+	if got := g.genOpts.Exclude; got != "q1234?" {
+		t.Errorf("excluding characters should accept all of them, got %q", got)
+	}
+	if g.tab != tabGenerate || g.help {
+		t.Error("typing into the exclude field left the tab")
+	}
+}
+
+// Marking a deletion in the entry-detail split must not swap the entry the pane
+// is rendering: the reader believes they are still on what they marked.
+func TestDeleteInDetailKeepsTheEntry(t *testing.T) {
+	m, _ := walkModel(t)
+	m = onEntry(t, m, "db", "db-prod")
+	m = up(m, tea.KeyMsg{Type: tea.KeyRight}) // into the detail
+	if !m.detail {
+		t.Fatal("→ should open the detail")
+	}
+	before := m.selEntry().ID
+
+	m = up(m, key2("d"))
+	if !m.detail {
+		t.Fatal("staging should not leave the detail view")
+	}
+	if got := m.selEntry(); got == nil || got.ID != before {
+		t.Errorf("the detail pane changed entry under the reader: %v", got)
+	}
+	if strings.Contains(m.flash, "↑ then") {
+		t.Errorf("the cursor did not move, so the hint must not say it did: %q", m.flash)
+	}
+	// And the same key takes it back, as the hint now says.
+	m = up(m, key2("d"))
+	if m.dirtyCount() != 0 {
+		t.Errorf("d again should undo it, %d staged", m.dirtyCount())
+	}
+}
+
+// The copy chords work while the search box has focus — that is where results
+// are picked, and requiring ↵ first is a rule nobody would guess.
+func TestCopyChordsWhileSearching(t *testing.T) {
+	m, _ := walkModel(t)
+	m = up(m, key2("/"))
+	m = typeStr(m, "db-prod")
+	if !m.searchMode || len(m.results) == 0 {
+		t.Fatalf("expected results while searching: mode=%v n=%d", m.searchMode, len(m.results))
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyCtrlY})
+	if m.copiedWhat != "password" {
+		t.Errorf("ctrl+y should copy the selected result's password, copied %q", m.copiedWhat)
+	}
+	if !m.searchMode {
+		t.Error("and leave the search box where it was")
+	}
 }

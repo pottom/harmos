@@ -328,6 +328,14 @@ func (m Model) stageDelete(target, name string, isFolder, permanent bool) Model 
 // it actually moved — at the end of a list it stays, and the caller has to know,
 // because a hint that names a key for "the row above" is a lie if there is none.
 func (m Model) advanceCursor() (Model, bool) {
+	// Only in a list. In the entry-detail split there is nothing to advance
+	// through — moving the selection swaps the entry the pane is rendering
+	// while the reader believes they are still looking at the one they marked,
+	// which is a plausible route to copying the wrong password. In the results
+	// list the move is to the tree cursor, which is not even on screen.
+	if m.detail || m.showResults() {
+		return m, false
+	}
 	if m.focus == 1 {
 		if f := m.currentFolder(); f != nil && m.esel < len(f.entries)-1 {
 			m.esel++
