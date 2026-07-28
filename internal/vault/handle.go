@@ -92,7 +92,13 @@ func OpenHandle(path, source string, creds Credentials) (*Handle, error) {
 	if err != nil {
 		return nil, err
 	}
+	return openHandle(path, source, dbCreds)
+}
 
+// openHandle is OpenHandle once the credentials are built. Reopen enters here
+// with the credentials the first open produced — they are sha256 hashes, so a
+// handle can re-read its own file without holding, or asking for, a password.
+func openHandle(path, source string, dbCreds *gokeepasslib.DBCredentials) (*Handle, error) {
 	fp, err := fingerprintOf(path)
 	if err != nil {
 		return nil, err
@@ -204,4 +210,18 @@ func (h *Handle) Snapshot() *Vault {
 		},
 	)
 	return v
+}
+
+// Reopen re-reads the file behind a handle, with the same credentials.
+//
+// For after a save, when the caller needs a view of what is now on disk — and
+// for recovering from a concurrent modification, where the honest move is to
+// re-read rather than to reconcile. The old handle is left alone; the caller
+// swaps in the new one.
+//
+// No password is needed or asked for: DBCredentials holds sha256 hashes, not
+// the secrets themselves, so the handle can reopen its own file without ever
+// having kept one.
+func Reopen(h *Handle) (*Handle, error) {
+	return openHandle(h.path, h.source, h.creds)
 }
