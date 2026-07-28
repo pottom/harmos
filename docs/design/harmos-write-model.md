@@ -103,6 +103,7 @@ contribution or a vendored fork — its own milestone.
 | `DeletedObjectData.setKdbxFormatVersion` does not nil-check `DeletionTime` | `deleted_object_data.go` | Leaving it unset panics. |
 | `DBCredentials` stores **sha256 hashes**, not plaintext | `credentials.go` | The handle can retain credentials for re-saving **without holding a password in memory**. No re-prompt at save time. |
 | `bubbles/textarea` is **already** available | `bubbles` v1.0.0 module | Multi-line Notes needs no new dependency. |
+| Every new header points at the **same package-level signature variable** (`Signature: &DefaultKDBX4Sig`) | `header.go` | Writing through `db.Header.Signature` mutates the default for every database built afterwards in the process. harmos never sets it in production, but anything that does — a test fixture, a future format shim — must swap in a copy first. Found the hard way in PR1: one 4.1 fixture turned every later fixture in the test binary into a 4.1 file. |
 
 ---
 
@@ -429,6 +430,12 @@ one at a time, on green CI plus human approval.
 | **9** | `test/write-oracle` | The CI oracle job proves `keepassxc-cli` reads back the recycle bin, the history record **and** a tombstone from a harmos-written file. |
 
 ### PR1 notes
+
+**As shipped**, PR1 deferred the ID index to PR2: nothing in "open and save
+unchanged" needs to address an individual entry, so the index arrives with the
+mutations that do. PR1 also brought its own oracle test forward from PR9, because
+its acceptance line names `keepassxc-cli`; PR9 extends that test with the recycle
+bin, history and tombstones.
 
 New: `internal/atomicfile/atomicfile.go` — and migrate both existing copies onto it
 (`internal/source/pleasant/sync.go` `writeAtomic`, `internal/config/edit.go`

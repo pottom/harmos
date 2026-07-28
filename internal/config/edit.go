@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/pottom/harmos/internal/atomicfile"
 )
 
 // ErrSourceExists is returned by WriteKdbxSource/WritePleasantSource when a
@@ -469,25 +471,8 @@ func parseKV(line string) (key, val string, ok bool) {
 	return key, val, true
 }
 
+// writeFileAtomic replaces the config in one step, at 0600 — a half-written
+// config is a config that will not load.
 func writeFileAtomic(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".harmos-config-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
-
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, path)
+	return atomicfile.WriteBytes(path, 0o600, data)
 }

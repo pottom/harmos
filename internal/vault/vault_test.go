@@ -6,85 +6,27 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	gokeepasslib "github.com/tobischo/gokeepasslib/v3"
-	w "github.com/tobischo/gokeepasslib/v3/wrappers"
 
 	"github.com/pottom/harmos/internal/secret"
+	"github.com/pottom/harmos/internal/vault/vaulttest"
 )
 
-func val(k, v string) gokeepasslib.ValueData {
-	return gokeepasslib.ValueData{Key: k, Value: gokeepasslib.V{Content: v}}
-}
-func pval(k, v string) gokeepasslib.ValueData {
-	return gokeepasslib.ValueData{Key: k, Value: gokeepasslib.V{Content: v, Protected: w.NewBoolWrapper(true)}}
-}
+// These wrap internal/vault/vaulttest so the fixture lives in one place; three
+// packages used to carry their own copy of it.
 
-// makeKDBX writes a small KDBX4 file (Root/Infra/db-prod) with the given creds.
+func val(k, v string) gokeepasslib.ValueData  { return vaulttest.Val(k, v) }
+func pval(k, v string) gokeepasslib.ValueData { return vaulttest.PVal(k, v) }
+
 func makeKDBX(t *testing.T, path string, creds *gokeepasslib.DBCredentials) {
 	t.Helper()
-	db := gokeepasslib.NewDatabase(gokeepasslib.WithDatabaseKDBXVersion4())
-	db.Credentials = creds
-	e := gokeepasslib.NewEntry()
-	e.Values = append(e.Values,
-		val("Title", "db-prod"),
-		val("UserName", "svc"),
-		pval("Password", "secret-pw"),
-		val("URL", "https://db"),
-		pval("otp", "otpauth://totp/db-prod?secret=GEZDGNBVGY3TQOJQ&digits=6&period=30"),
-		val("Notes", "primary box\nrotate quarterly"),
-		val("pps.cuf.Environment", "prod"), // custom field → "Environment"
-		pval("Recovery", "r3c0v3ry"),       // protected custom field
-		val("pps.Id", "srv-123"),           // internal — must be hidden
-	)
-	e.Tags = "infra;prod"
-	e.Times = gokeepasslib.NewTimeData()
-	e.Times.LastModificationTime = &w.TimeWrapper{Time: time.Date(2026, 1, 15, 9, 0, 0, 0, time.UTC)}
-	bin := db.AddBinary([]byte("attachment-bytes"))
-	e.Binaries = append(e.Binaries, bin.CreateReference("notes.txt"))
-	infra := gokeepasslib.NewGroup()
-	infra.Name = "Infra"
-	infra.Entries = []gokeepasslib.Entry{e}
-	root := gokeepasslib.NewGroup()
-	root.Name = "Root"
-	root.Groups = []gokeepasslib.Group{infra}
-	db.Content.Root = &gokeepasslib.RootData{Groups: []gokeepasslib.Group{root}}
-	if err := db.LockProtectedEntries(); err != nil {
-		t.Fatal(err)
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := gokeepasslib.NewEncoder(f).Encode(db); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
+	vaulttest.Write(t, path, vaulttest.WithCredentials(creds))
 }
 
-func makeKeyfile(t *testing.T) string {
-	t.Helper()
-	p := filepath.Join(t.TempDir(), "key.keyx")
-	if err := os.WriteFile(p, []byte("synthetic-keyfile-content-0123456789"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return p
-}
+func makeKeyfile(t *testing.T) string { return vaulttest.Keyfile(t) }
 
-// keyData reads a keyfile's bytes. Use the *DataCredentials constructors in
-// tests too: gokeepasslib's path-based constructors leak the file handle, which
-// blocks temp-dir cleanup on Windows.
-func keyData(t *testing.T, path string) []byte {
-	t.Helper()
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return b
-}
+func keyData(t *testing.T, path string) []byte { return vaulttest.KeyData(t, path) }
 
 func assertOneEntry(t *testing.T, v *Vault) {
 	t.Helper()
@@ -189,8 +131,11 @@ func TestOpenPasswordAndKeyfile(t *testing.T) {
 	}
 }
 
-// The core M3 invariant: reading an external kdbx never modifies it.
-func TestReadOnlyInvariant(t *testing.T) {
+// The core M3 invariant, still true now that writing exists: a browse session
+// never modifies the file. Only Handle.Save writes, and only when asked — so this
+// test also takes a writable Handle and declines to save, which is the state the
+// TUI sits in for the whole time a source is unlocked but unsaved.
+func TestBrowseSessionLeavesFileUnchanged(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "ro.kdbx")
 	makeKDBX(t, p, gokeepasslib.NewPasswordCredentials("pw"))
 
@@ -205,6 +150,18 @@ func TestReadOnlyInvariant(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, e := range v.Entries { // touch every field, including secrets
+		_ = e.Password.Reveal()
+	}
+
+	// A handle that *could* write, that is browsed and then dropped unsaved.
+	h, err := OpenHandle(p, "s", Credentials{Password: secret.New("pw")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, why := h.Writable(); !ok {
+		t.Fatalf("fixture should be writable: %s", why)
+	}
+	for _, e := range h.Snapshot().Entries {
 		_ = e.Password.Reveal()
 	}
 

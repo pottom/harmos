@@ -15,6 +15,7 @@ import (
 	gokeepasslib "github.com/tobischo/gokeepasslib/v3"
 	w "github.com/tobischo/gokeepasslib/v3/wrappers"
 
+	"github.com/pottom/harmos/internal/atomicfile"
 	"github.com/pottom/harmos/internal/secret"
 )
 
@@ -113,12 +114,21 @@ func Map(zr *zip.Reader, meta Meta) (*Result, error) {
 	}, nil
 }
 
-// Write encrypts db and writes it to path as a 0600 KDBX4 file. When keyfile is
-// non-empty the cache is locked with a composite key — the master password *and*
-// the keyfile's bytes — so a copied-away cache cannot be opened with the master
-// alone (spec §15). An empty keyfile falls back to a password-only cache.
-func Write(db *gokeepasslib.Database, path string, master secret.Secret, keyfile string) (err error) {
-	// Strengthen the Argon2 cost beyond gokeepasslib's weak default (§14).
+// Write encrypts db and writes it to path as a 0600 KDBX4 file, atomically —
+// an interrupted sync leaves the previous cache intact rather than a truncated
+// one. When keyfile is non-empty the cache is locked with a composite key — the
+// master password *and* the keyfile's bytes — so a copied-away cache cannot be
+// opened with the master alone (spec §15). An empty keyfile falls back to a
+// password-only cache.
+//
+// Unlike a user's own vault, the cache needs no nonce regeneration: every sync
+// builds a brand-new database (see Map), and gokeepasslib seeds a fresh master
+// seed, IV and salt for each one. Nothing is ever re-encrypted under a header we
+// read back off disk, so there is no keystream to reuse.
+func Write(db *gokeepasslib.Database, path string, master secret.Secret, keyfile string) error {
+	// Strengthen the Argon2 cost beyond gokeepasslib's weak default (§14). This
+	// is ours to set because the cache is ours; never do it to a file the user
+	// owns.
 	if kdf := db.Header.FileHeaders.KdfParameters; kdf != nil {
 		kdf.Memory = cacheKDFMemoryBytes
 		kdf.Iterations = cacheKDFIterations
@@ -133,19 +143,12 @@ func Write(db *gokeepasslib.Database, path string, master secret.Secret, keyfile
 	if err := db.LockProtectedEntries(); err != nil {
 		return fmt.Errorf("lock entries: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if cerr := f.Close(); cerr != nil && err == nil {
-			err = cerr
+	return atomicfile.Write(path, 0o600, func(f *os.File) error {
+		if err := gokeepasslib.NewEncoder(f).Encode(db); err != nil {
+			return fmt.Errorf("encode kdbx: %w", err)
 		}
-	}()
-	if err := gokeepasslib.NewEncoder(f).Encode(db); err != nil {
-		return fmt.Errorf("encode kdbx: %w", err)
-	}
-	return nil
+		return nil
+	})
 }
 
 // cacheCredentials builds the cache's KDBX credentials: master + keyfile when a

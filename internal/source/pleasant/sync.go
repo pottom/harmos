@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"time"
 
-	gokeepasslib "github.com/tobischo/gokeepasslib/v3"
-
 	"github.com/pottom/harmos/internal/secret"
 )
 
@@ -88,7 +86,7 @@ func Sync(ctx context.Context, c *Client, sourceURL string, opt SyncOptions) (*R
 	}
 
 	phase("writing cache")
-	if err := writeAtomic(res.DB, opt.CachePath, opt.Master, opt.Keyfile); err != nil {
+	if err := Write(res.DB, opt.CachePath, opt.Master, opt.Keyfile); err != nil {
 		return nil, err
 	}
 	return res, nil
@@ -114,24 +112,4 @@ func fetchPackage(ctx context.Context, c *Client, dir, comment string, onBytes f
 		return "", err
 	}
 	return path, nil
-}
-
-func writeAtomic(db *gokeepasslib.Database, cachePath string, master secret.Secret, keyfile string) error {
-	dir := filepath.Dir(cachePath)
-	tmp, err := os.CreateTemp(dir, ".harmos-cache-*.kdbx")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	_ = tmp.Close() // Write reopens with O_TRUNC
-
-	if err := Write(db, tmpPath, master, keyfile); err != nil {
-		_ = os.Remove(tmpPath)
-		return err
-	}
-	if err := os.Rename(tmpPath, cachePath); err != nil {
-		_ = os.Remove(tmpPath)
-		return err
-	}
-	return nil
 }
