@@ -738,27 +738,40 @@ func (m Model) entryLines(w, rows int) []string {
 		return out
 	}
 	states := m.chg.State()
+	doomed := m.doomedPrefixes()
 	avail := max(1, rows-1)
 	start := windowStart(m.esel, avail, len(f.entries))
 	end := min(start+avail, len(f.entries))
 	for k := start; k < end; k++ {
 		e := f.entries[k]
+		// An entry in a folder staged for deletion is going too, and says so —
+		// without a marker, since nothing was staged against the entry itself.
+		state, staged := states[e.ID], true
+		if state == 0 && atOrUnderDoomedFolder(doomed, e.Source, e.Path) {
+			state, staged = edit.Deleted, false
+		}
 		if k == m.esel && m.focus == 1 {
-			_, marker := changeStyle(states[e.ID])
+			_, marker := changeStyle(state)
+			if !staged {
+				marker = " "
+			}
 			plain := pad(marker+" "+e.Title, titleW) + " " + pad(e.Username, userW)
 			if urlCol {
 				plain += " " + e.URL
 			}
-			out = append(out, selRowStyle(theme.SelRow.Width(w), states[e.ID]).Render(trunc(plain, w)))
+			out = append(out, selRowStyle(theme.SelRow.Width(w), state).Render(trunc(plain, w)))
 			continue
 		}
-		titleStyle, marker := changeStyle(states[e.ID])
+		titleStyle, marker := changeStyle(state)
+		if !staged {
+			marker = " "
+		}
 		// A deleted row is deleted all the way across: title, username and URL.
 		// Striking the title alone read as "this title is going", which is not
 		// what is about to happen, and left the row looking half-marked.
 		rest := theme.Dimmed
 		markerStyle := titleStyle
-		if states[e.ID] == edit.Deleted {
+		if state == edit.Deleted {
 			rest = titleStyle
 		}
 		line := markerStyle.Render(marker+" ") +

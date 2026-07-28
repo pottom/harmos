@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	gokeepasslib "github.com/tobischo/gokeepasslib/v3"
 
 	"github.com/pottom/harmos/internal/edit"
 	"github.com/pottom/harmos/internal/secret"
@@ -398,5 +399,164 @@ func TestDeleteKeyToggles(t *testing.T) {
 	}
 	if ops := m2.chg.Effective(); len(ops) != 1 || ops[0].Kind != edit.EditEntry {
 		t.Errorf("what survived should be the edit, got %+v", ops)
+	}
+}
+
+// A folder deletion is one operation — one decision, one undo — but everything
+// inside it is going, and the screen has to say so.
+func TestFolderDeletionCarriesItsContents(t *testing.T) {
+	m := editModel(t)
+
+	var folder *node
+	for i, tl := range m.visible() {
+		if tl.node.id != "" && len(tl.node.entries) > 0 {
+			m.tsel, m.focus, folder = i, 0, tl.node
+			break
+		}
+	}
+	if folder == nil {
+		t.Fatal("no folder with entries in the fixture")
+	}
+	m = up(m, key2("d"))
+
+	if n := len(m.chg.Effective()); n != 1 {
+		t.Fatalf("a folder deletion is one operation, got %d", n)
+	}
+
+	// The entries inside it read as going, without a marker of their own.
+	doomed := m.doomedPrefixes()
+	for _, e := range folder.entries {
+		if !atOrUnderDoomedFolder(doomed, e.Source, e.Path) {
+			t.Errorf("%q is inside the deleted folder but does not know it", e.Title)
+		}
+		if m.chg.StateOf(e.ID) != 0 {
+			t.Errorf("%q must not be staged separately — one folder, one undo", e.Title)
+		}
+	}
+
+	// And the change says how much goes with it.
+	var line string
+	for _, r := range m.changeRows(m.contentW()) {
+		if r.kind == rowChange {
+			line = ansiStrip(r.text)
+		}
+	}
+	if !strings.Contains(line, "with") {
+		t.Errorf("the change should say what goes with it, got %q", line)
+	}
+	if entries, _ := m.goesWithIt(folder.id); entries != len(folder.entries) {
+		t.Errorf("counted %d entries, the folder holds %d", entries, len(folder.entries))
+	}
+}
+
+// A sub-folder of a deleted folder wears the deletion but carries no marker:
+// nothing was staged against it, so there is nothing there to undo.
+func TestSubfoldersOfADeletedFolderAreMarkedButNotStaged(t *testing.T) {
+	m := up(New([]vault.Entry{
+		{ID: "s:1", GroupID: "s:g:2", Source: "s", Path: "Top/Inner", Title: "e", Password: secret.New("p")},
+	}, []vault.Folder{
+		{ID: "s:g:1", Source: "s", Path: "Top", Name: "Top"},
+		{ID: "s:g:2", Source: "s", ParentID: "s:g:1", Path: "Top/Inner", Name: "Inner"},
+	}, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m.handles = map[string]*vault.Handle{"s": nil}
+
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "s:g:1", Name: "Top"})
+	m = m.expandAll(true) // so the sub-folder is a visible row
+
+	states := m.changeStates()
+	var top, inner *node
+	for _, tl := range m.visible() {
+		switch tl.node.id {
+		case "s:g:1":
+			top = tl.node
+		case "s:g:2":
+			inner = tl.node
+		}
+	}
+	if top == nil || inner == nil {
+		t.Fatalf("expected both folders in the tree: top=%v inner=%v", top, inner)
+	}
+	if states[top].own != edit.Deleted {
+		t.Errorf("the folder itself is staged: %v", states[top])
+	}
+	if !states[inner].doomed {
+		t.Errorf("the sub-folder is going with it: %v", states[inner])
+	}
+	if states[inner].own != 0 {
+		t.Error("but nothing was staged against the sub-folder")
+	}
+
+	del, _ := changeStyle(edit.Deleted)
+	name, icon, marker := m.treeRowStyle(inner, states[inner])
+	if name.GetForeground() != del.GetForeground() || icon.GetForeground() != del.GetForeground() {
+		t.Error("a doomed sub-folder should wear the delete colour")
+	}
+	if !name.GetStrikethrough() {
+		t.Error("and be struck through")
+	}
+	if marker != "" {
+		t.Errorf("but carry no marker — there is nothing here to undo, got %q", marker)
+	}
+}
+
+// Marking a run of rows costs one key per row: the cursor moves on by itself.
+func TestDeleteAdvancesTheCursor(t *testing.T) {
+	// Two entries in one folder, which the standard fixture does not have.
+	dir := t.TempDir()
+	path := dir + "/two.kdbx"
+	vaulttest.Write(t, path, vaulttest.RecycleBin(), vaulttest.Shape(func(db *gokeepasslib.Database) []gokeepasslib.Group {
+		mk := func(title string) gokeepasslib.Entry {
+			e := gokeepasslib.NewEntry()
+			e.Values = append(e.Values,
+				vaulttest.Val("Title", title),
+				vaulttest.PVal("Password", "pw-"+title))
+			e.Times = gokeepasslib.NewTimeData()
+			return e
+		}
+		infra := gokeepasslib.NewGroup()
+		infra.Name = "Infra"
+		infra.Entries = []gokeepasslib.Entry{mk("one"), mk("two")}
+		root := gokeepasslib.NewGroup()
+		root.Name = "Root"
+		root.Groups = []gokeepasslib.Group{infra}
+		return []gokeepasslib.Group{root}
+	}))
+
+	h, err := vault.OpenHandle(path, "own", vault.Credentials{Password: secret.New("pw")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := h.Snapshot()
+	m := up(New(v.Entries, v.Folders, "", 30*time.Second), tea.WindowSizeMsg{Width: 110, Height: 34})
+	m.handles = map[string]*vault.Handle{"own": h}
+	m.writeOK = map[string]bool{"own": true}
+
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the entry table
+	if f := m.currentFolder(); f == nil || len(f.entries) < 2 {
+		t.Fatalf("expected two entries in the folder, got %v", f)
+	}
+
+	m = up(m, key2("d"))
+	if m.esel != 1 {
+		t.Errorf("the cursor should move on after staging, esel = %d", m.esel)
+	}
+	if !strings.Contains(m.flash, "↑ then d") {
+		t.Errorf("once the cursor has moved, the hint must say so: %q", m.flash)
+	}
+
+	// Two keys, two rows staged.
+	m = up(m, key2("d"))
+	if m.dirtyCount() != 2 {
+		t.Errorf("two presses should stage two deletions, got %d", m.dirtyCount())
+	}
+
+	// Un-staging leaves the cursor where it is: it is a correction, not a run.
+	m.esel = 0
+	m = up(m, key2("d"))
+	if m.esel != 0 {
+		t.Errorf("un-staging should not move the cursor, esel = %d", m.esel)
+	}
+	if !strings.Contains(m.flash, "no longer staged") {
+		t.Errorf("flash = %q", m.flash)
 	}
 }

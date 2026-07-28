@@ -356,6 +356,7 @@ func (m Model) folderCrumb(flat []treeLine, sel int) string {
 type nodeChange struct {
 	own    edit.State
 	inside edit.State
+	doomed bool // going because a folder above it is
 }
 
 // changeStates maps each node to how it and its contents have been staged, so a
@@ -370,17 +371,22 @@ func (m Model) changeStates() map[*node]nodeChange {
 	}
 	byFolder := m.chg.Parents() // where a changed target lives
 	byTarget := m.chg.State()   // what a target itself is
+	doomed := m.doomedPrefixes()
 	out := map[*node]nodeChange{}
 
 	var walk func(ns []*node) edit.State
 	walk = func(ns []*node) edit.State {
 		var strongest edit.State
 		for _, n := range ns {
-			c := nodeChange{own: byTarget[n.id], inside: byFolder[n.id]}
+			c := nodeChange{
+				own:    byTarget[n.id],
+				inside: byFolder[n.id],
+				doomed: underDoomedFolder(doomed, n.source, m.pathOfNode(n)),
+			}
 			if below := walk(n.children); below > c.inside {
 				c.inside = below
 			}
-			if c.own != 0 || c.inside != 0 {
+			if c.own != 0 || c.inside != 0 || c.doomed {
 				out[n] = c
 			}
 			// A deleted folder takes its contents with it, so it reads upward as
@@ -405,6 +411,13 @@ func (m Model) changeStates() map[*node]nodeChange {
 // there is no terminal — lipgloss renders every style as plain text, so a colour
 // can only be tested by comparing the style, not the output.
 func (m Model) treeRowStyle(n *node, c nodeChange) (name, icon lipgloss.Style, marker string) {
+	if c.own == 0 && c.doomed {
+		// Going because a folder above it is going. It wears the deletion — it
+		// is true — but carries no marker: nothing was staged against this row,
+		// and a marker would suggest there is something here to undo.
+		st, _ := changeStyle(edit.Deleted)
+		return st, st, ""
+	}
 	if c.own != 0 {
 		// The row is the thing that changed: colour, strikethrough and marker,
 		// icon included — an icon left in the writable colour reads as "this is

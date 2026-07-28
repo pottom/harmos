@@ -181,7 +181,7 @@ func (m Model) changeRows(w int) []changeRow {
 				kind:   rowChange,
 				seq:    c.Seq,
 				target: c.Target,
-				text:   " " + changeHeading(c, hunkFolded, w),
+				text:   " " + changeHeading(c, m.alsoGoing(c), hunkFolded, w),
 			})
 			if hunkFolded {
 				continue
@@ -269,7 +269,7 @@ func folderHeading(g changeGroup, folded bool, w int) string {
 }
 
 // changeHeading is one staged item: its marker, its name, and what will happen.
-func changeHeading(c edit.Change, folded bool, w int) string {
+func changeHeading(c edit.Change, extra string, folded bool, w int) string {
 	style, marker := changeStyle(c.State)
 	name := style.Render(marker + " " + c.Title)
 
@@ -281,7 +281,7 @@ func changeHeading(c edit.Change, folded bool, w int) string {
 		}
 	}
 	left := "    " + name
-	right := theme.Faded.Render(detail)
+	right := theme.Faded.Render(detail + extra)
 	return spread(trunc(left, max(1, w-dw(right)-1)), right, max(1, w))
 }
 
@@ -422,3 +422,116 @@ func (m Model) groupOf(rows []changeRow, target changeRow) string {
 // contentW is the width a full-width panel gives its content. The key handlers
 // build the same rows the view does, so they must measure them the same way.
 func (m Model) contentW() int { return max(1, m.w-2) }
+
+// What a folder deletion takes with it.
+//
+// Deleting a folder stages one operation, deliberately: one thing was decided,
+// so there is one thing to undo, and exploding it into an operation per child
+// would make reverting it a scavenger hunt. But the contents are going, and a
+// screen that shows the folder struck through while its entries sit there in
+// ordinary type is telling the reader something false.
+//
+// So the deletion is one operation and the whole subtree wears it. Only the
+// folder carries the marker, because only the folder is staged.
+
+// doomedPrefixes is, per source, the folder paths staged for deletion.
+func (m Model) doomedPrefixes() map[string][]string {
+	if m.chg.Empty() {
+		return nil
+	}
+	out := map[string][]string{}
+	for _, c := range m.chg.Diff() {
+		if c.State != edit.Deleted || !isFolderKind(c.Kind) {
+			continue
+		}
+		if f, ok := m.folderByID(c.Target); ok {
+			out[c.Source] = append(out[c.Source], f.Path)
+		}
+	}
+	return out
+}
+
+func isFolderKind(k edit.Kind) bool {
+	return k == edit.CreateGroup || k == edit.DeleteGroup || k == edit.RenameGroup || k == edit.MoveGroup
+}
+
+// underDoomedFolder reports whether a path in a source sits inside one of the
+// folders staged for deletion — the folder itself excluded, since it carries its
+// own state.
+func underDoomedFolder(doomed map[string][]string, source, path string) bool {
+	for _, p := range doomed[source] {
+		if strings.HasPrefix(path, p+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// atOrUnderDoomedFolder is the same question including the folder itself, which
+// is what an entry filed directly in it needs to ask.
+func atOrUnderDoomedFolder(doomed map[string][]string, source, path string) bool {
+	for _, p := range doomed[source] {
+		if path == p || strings.HasPrefix(path, p+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// goesWithIt counts what a folder deletion takes along, so the change can say so
+// rather than leaving the reader to work it out from the tree.
+func (m Model) goesWithIt(folderID string) (entries, folders int) {
+	f, ok := m.folderByID(folderID)
+	if !ok {
+		return 0, 0
+	}
+	source := ""
+	for _, mf := range m.mergedFolders {
+		if mf.ID == folderID {
+			source = mf.Source
+			break
+		}
+	}
+	for _, e := range m.mergedEntries {
+		if e.Source == source && (e.Path == f.Path || strings.HasPrefix(e.Path, f.Path+"/")) {
+			entries++
+		}
+	}
+	for _, mf := range m.mergedFolders {
+		if mf.Source == source && strings.HasPrefix(mf.Path, f.Path+"/") {
+			folders++
+		}
+	}
+	return entries, folders
+}
+
+// alsoGoing is the phrase appended to a folder deletion's summary.
+func (m Model) alsoGoing(c edit.Change) string {
+	if c.State != edit.Deleted || !isFolderKind(c.Kind) {
+		return ""
+	}
+	entries, folders := m.goesWithIt(c.Target)
+	if entries == 0 && folders == 0 {
+		return " · empty"
+	}
+	var parts []string
+	if entries > 0 {
+		parts = append(parts, plural(entries, "entry", "entries"))
+	}
+	if folders > 0 {
+		parts = append(parts, plural(folders, "folder", "folders"))
+	}
+	return " · with " + strings.Join(parts, " and ")
+}
+
+// pathOfNode is a tree node's folder path within its source, rebuilt from the
+// folder it stands for. A source root has no path of its own.
+func (m Model) pathOfNode(n *node) string {
+	if n == nil || n.id == "" {
+		return ""
+	}
+	if f, ok := m.folderByID(n.id); ok {
+		return f.Path
+	}
+	return ""
+}

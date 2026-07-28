@@ -260,8 +260,8 @@ func (m Model) stageDelete(target, name string, isFolder, permanent bool) Model 
 	}
 
 	op := edit.Op{Kind: kind, Source: m.editSource, Target: target, Name: name, Perm: perm}
-	if !isFolder {
-		if d, err := m.handles[m.editSource].EntryDraft(target); err == nil {
+	if h := m.handles[m.editSource]; h != nil && !isFolder {
+		if d, err := h.EntryDraft(target); err == nil {
 			op.Before = &d
 		}
 	}
@@ -281,8 +281,37 @@ func (m Model) stageDelete(target, name string, isFolder, permanent bool) Model 
 			where = "permanently (this database has no recycle bin)"
 		}
 	}
-	m.flash = "staged: delete " + what + " " + where + " · " + toggleKey(permanent) + " again undoes it"
+	// Move on. Marking a run of rows should cost one key per row, not a key and
+	// an arrow, which is how every file manager has done it for thirty years.
+	// Only after staging: un-staging is a correction, and moving away from a
+	// correction is the wrong direction.
+	moved := false
+	m, moved = m.advanceCursor()
+
+	undo := toggleKey(permanent) + " again undoes it"
+	if moved {
+		undo = "↑ then " + toggleKey(permanent) + " undoes it"
+	}
+	m.flash = "staged: delete " + what + " " + where + " · " + undo
 	return m
+}
+
+// advanceCursor steps one row down whichever list has focus, and reports whether
+// it actually moved — at the end of a list it stays, and the caller has to know,
+// because a hint that names a key for "the row above" is a lie if there is none.
+func (m Model) advanceCursor() (Model, bool) {
+	if m.focus == 1 {
+		if f := m.currentFolder(); f != nil && m.esel < len(f.entries)-1 {
+			m.esel++
+			return m, true
+		}
+		return m, false
+	}
+	if m.tsel < len(m.visible())-1 {
+		m.tsel, m.esel = m.tsel+1, 0
+		return m, true
+	}
+	return m, false
 }
 
 // toggleKey is the key that staged this deletion, so the hint names the key the
