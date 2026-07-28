@@ -75,11 +75,47 @@ func TestApplyLeavesNoEmptyToken(t *testing.T) {
 		for label, c := range map[string]lipgloss.AdaptiveColor{
 			"Accent": Accent, "AccentHi": AccentHi, "Steel": Steel,
 			"Dim": Dim, "Faint": Faint, "OK": OK, "Warn": Warn,
-			"Note": Note, "SelBg": SelBg,
+			"Note": Note, "Writable": Writable, "SelBg": SelBg,
 		} {
 			if c.Light == "" || c.Dark == "" {
 				t.Errorf("theme %q leaves %s empty after Apply: %+v", name, label, c)
 			}
 		}
+	}
+}
+
+// A custom TOML theme written before a token existed has no value for it.
+// lipgloss treats an empty colour as "the terminal default" rather than as an
+// error, so without a fallback such a theme would silently lose the distinction.
+func TestMissingTokenFallsBack(t *testing.T) {
+	defer Apply(Charm)
+
+	custom := Theme{
+		Name:     "old-custom",
+		Accent:   token{"#112233", "#445566"},
+		AccentHi: token{"#112233", "#445566"},
+		Steel:    token{"#112233", "#445566"},
+		Dim:      token{"#112233", "#445566"},
+		Faint:    token{"#112233", "#445566"},
+		OK:       token{"#112233", "#445566"},
+		Warn:     token{"#112233", "#445566"},
+		Note:     token{"#abcdef", "#abcdef"},
+		SelBg:    token{"#112233", "#445566"},
+		// Writable deliberately unset.
+	}
+	Apply(custom)
+
+	if Writable.Light == "" || Writable.Dark == "" {
+		t.Fatalf("a missing token should fall back, got %+v", Writable)
+	}
+	if Writable.Light != "#abcdef" {
+		t.Errorf("it should fall back to the nearest neighbour (Note), got %q", Writable.Light)
+	}
+
+	// And with neither, it still resolves rather than rendering as nothing.
+	custom.Note = token{}
+	Apply(custom)
+	if Writable.Light == "" {
+		t.Error("with no neighbour either, it should still resolve to something")
 	}
 }

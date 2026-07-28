@@ -11,6 +11,7 @@ import (
 
 	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/secret"
+	"github.com/pottom/harmos/internal/theme"
 	"github.com/pottom/harmos/internal/vault"
 	"github.com/pottom/harmos/internal/vault/vaulttest"
 )
@@ -379,5 +380,65 @@ func TestConfigCannotUnlockAnUnwritableFile(t *testing.T) {
 	)
 	if got["old"] {
 		t.Error("a file harmos will not write must not start unlocked")
+	}
+}
+
+// An unlocked source colours its icons all the way down, not just its own row.
+//
+// The question the tree answers while you move around in it is "can I change
+// things here?", and the answer should not depend on scrolling back to the
+// source line to check.
+func TestUnlockedSourceColoursItsIcons(t *testing.T) {
+	m := New(
+		[]vault.Entry{
+			{ID: "own:1", Source: "own", Path: "Infra", Title: "a", Password: secret.New("p")},
+			{ID: "own:2", Source: "own", Path: "Net", Title: "b", Password: secret.New("p")},
+		},
+		[]vault.Folder{
+			{ID: "own:g:1", Source: "own", Path: "Infra", Name: "Infra"},
+			{ID: "own:g:2", Source: "own", Path: "Net", Name: "Net"},
+		}, "", 30*time.Second)
+	m = up(m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	m.handles = map[string]*vault.Handle{"own": {}}
+	m.tsel = 0 // the source row, so both folder rows render unselected
+
+	// Colour cannot be read back from the output: under go test there is no
+	// terminal, so lipgloss renders every style as plain text. The decision is
+	// what gets asserted.
+	for _, tl := range m.visible() {
+		if tl.node.source != "own" {
+			t.Errorf("every node should know its source, %q does not", tl.node.name)
+		}
+		if got := m.iconStyleFor(tl.node); got.GetForeground() != theme.Acc.GetForeground() {
+			t.Errorf("while locked, %q should use the ordinary icon colour", tl.node.name)
+		}
+	}
+
+	m.writeOK = map[string]bool{"own": true}
+	for _, tl := range m.visible() {
+		if got := m.iconStyleFor(tl.node); got.GetForeground() != theme.Editable.GetForeground() {
+			t.Errorf("under an unlocked source, %q should use the write colour", tl.node.name)
+		}
+	}
+	// And the two are genuinely different, or the whole thing signals nothing.
+	if theme.Acc.GetForeground() == theme.Editable.GetForeground() {
+		t.Error("the write colour is indistinguishable from the ordinary one")
+	}
+}
+
+// The write colour is one token, so a theme has a single knob for "writable
+// territory" rather than three places to keep in step.
+func TestWriteColourIsThemeable(t *testing.T) {
+	defer theme.Apply(theme.Charm)
+
+	seen := map[string]bool{}
+	for _, name := range theme.Names() {
+		th, _ := theme.Builtin(name)
+		theme.Apply(th)
+		seen[theme.Writable.Dark] = true
+	}
+	if len(seen) < 5 {
+		t.Errorf("the built-ins should not all land on the same colour, got %d distinct: %v",
+			len(seen), seen)
 	}
 }

@@ -422,6 +422,19 @@ style will not survive: use
 `theme.SelRow.Width(w).Strikethrough(true).StrikethroughSpaces(false)`. The
 `StrikethroughSpaces(false)` keeps the line from running across the width padding.
 
+### 6.1a Writable territory
+
+A source unlocked for editing colours **its tree icons all the way down**, not
+just its own row, and the editor's border uses the same colour. The question the
+tree answers while you move around in it is "can I change things here?", and the
+answer should not depend on scrolling back to the source line.
+
+That colour is `theme.Writable`, its own token — "this row changed" and "you are
+standing in writable territory" are different statements, and a theme should be
+able to make them look different. Each built-in draws from its own palette; the
+`Note` token's mistake was giving all ten the same amber, which is why it reads
+as hard-coded even though it is themeable.
+
 ### 6.2 Edit mode — vim-like
 
 - **The border turns amber.** `borderStyle(active bool)` (`panel.go`) is binary today;
