@@ -123,7 +123,6 @@ type Model struct {
 	editParent       string      // destination folder for a create or a move
 	editNew          bool        // creating rather than changing
 	editFolderTarget bool        // the target is a folder
-	editPerm         bool        // delete: permanently
 	editBefore       *edit.Draft // the entry as it was, for the diff
 	editForm         form
 	moveDests        []vaultFolderRef
@@ -578,6 +577,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// most reflexive way to leave — so it asks too, not just q.
 			if m.dirtyCount() > 0 && !m.quitGuard && !m.saving {
 				m.quitGuard = true
+				m.confirmSel = 0 // Save and quit leads; discarding is the danger
 				return m, nil
 			}
 			return m, tea.Sequence(clearClip, tea.Quit)
@@ -628,6 +628,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key == "q" && !m.searchMode {
 			if m.dirtyCount() > 0 {
 				m.quitGuard = true
+				m.confirmSel = 0 // Save and quit leads; discarding is the danger
 				return m, nil
 			}
 			return m, tea.Sequence(clearClip, tea.Quit)

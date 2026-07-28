@@ -129,17 +129,24 @@ func TestEditorShowsItIsAMode(t *testing.T) {
 	}
 }
 
-// The delete prompt must describe what will actually happen. With the recycle
-// bin off, a "move to bin" delete is permanent, and saying otherwise is a lie.
-func TestDeletePromptTellsTheTruthAboutTheBin(t *testing.T) {
+// Deleting stages straight away — no prompt, because nothing is written — and
+// says which of the two deletions it staged. With the recycle bin off, a "move
+// to bin" delete is permanent, and saying otherwise is a lie.
+func TestDeleteStagesWithoutAskingAndSaysWhichKind(t *testing.T) {
 	m := editModel(t)
 	m = up(m, tea.KeyMsg{Type: tea.KeyTab})
 	m = up(m, key2("d"))
-	if m.edit != editDelete {
-		t.Fatalf("d should ask before staging a delete, got %d", m.edit)
+	if m.edit != editNone {
+		t.Fatalf("staging a delete must not open a modal, got mode %d", m.edit)
 	}
-	if out := ansi.Strip(m.View()); !strings.Contains(out, "recycle bin") {
-		t.Errorf("with a bin, the prompt should say so:\n%s", out)
+	if m.dirtyCount() != 1 {
+		t.Fatalf("d should stage one deletion, staged %d", m.dirtyCount())
+	}
+	if !strings.Contains(m.flash, "recycle bin") {
+		t.Errorf("with a bin, it should say so, got %q", m.flash)
+	}
+	if !strings.Contains(m.flash, "undoes it") {
+		t.Errorf("it should say how to take it back, got %q", m.flash)
 	}
 
 	// Now with the bin switched off.
@@ -147,12 +154,45 @@ func TestDeletePromptTellsTheTruthAboutTheBin(t *testing.T) {
 	m2.handles["own"].DisableRecycleBinForTest()
 	m2 = up(m2, tea.KeyMsg{Type: tea.KeyTab})
 	m2 = up(m2, key2("d"))
-	out := ansi.Strip(m2.View())
-	if !strings.Contains(out, "PERMANENTLY") {
-		t.Errorf("with no bin, a plain delete is permanent and must say so:\n%s", out)
+	if !strings.Contains(m2.flash, "permanently") {
+		t.Errorf("with no bin, a plain delete is permanent and must say so, got %q", m2.flash)
 	}
-	if !strings.Contains(out, "switched off") {
-		t.Errorf("and should explain why:\n%s", out)
+	if !strings.Contains(m2.flash, "no recycle bin") {
+		t.Errorf("and should explain why, got %q", m2.flash)
+	}
+}
+
+// The one confirmation in the flow is the write, and it leads with Cancel when
+// the set contains something the vault cannot get back.
+func TestSaveConfirmLeadsWithCancelOnPermanentDelete(t *testing.T) {
+	m := editModel(t)
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = up(m, key2("d")) // to the bin: recoverable
+	m = up(m, tabKey(tabChanges))
+	m = up(m, tea.KeyMsg{Type: tea.KeyCtrlS})
+	if !m.saveConfirm {
+		t.Fatal("^s should ask before writing")
+	}
+	if m.confirmSel != 0 {
+		t.Errorf("an ordinary write should lead with Write, focus was %d", m.confirmSel)
+	}
+
+	m2 := editModel(t)
+	m2 = up(m2, tea.KeyMsg{Type: tea.KeyTab})
+	m2 = up(m2, key2("D")) // permanent
+	m2 = up(m2, tabKey(tabChanges))
+	m2 = up(m2, tea.KeyMsg{Type: tea.KeyCtrlS})
+	if m2.confirmSel != 1 {
+		t.Errorf("a permanent delete should lead with Cancel, focus was %d", m2.confirmSel)
+	}
+	out := ansi.Strip(m2.View())
+	if !strings.Contains(out, "permanent deletion") {
+		t.Errorf("the write confirmation must name the permanent deletion:\n%s", out)
+	}
+	// enter on the leading button must not write.
+	m2 = up(m2, tea.KeyMsg{Type: tea.KeyEnter})
+	if m2.saving {
+		t.Error("enter on Cancel started a write")
 	}
 }
 
