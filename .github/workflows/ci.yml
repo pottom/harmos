@@ -46,10 +46,31 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+      # KeePassXC's own AppImage, not the distro package: apt drags in the whole
+      # Qt/X11 desktop stack to run a console binary — eight minutes of install
+      # for a five-second test, on every pull request.
+      #
+      # Pinned and checksummed on purpose. An oracle that moves under us cannot
+      # tell "harmos broke something" from "the other tool changed", so bumping
+      # the version is a deliberate commit, not something a mirror decides.
       - name: Install keepassxc-cli
+        env:
+          KPXC: "2.7.12"
+          KPXC_SHA256: 564fe8b751b9ef7aa057e4d3d0b2878db24eaa0f6b1c855c82e699ab0913ae49
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends keepassxc
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fsSL -o kpxc.AppImage \
+            "https://github.com/keepassxreboot/keepassxc/releases/download/${KPXC}/KeePassXC-${KPXC}-x86_64.AppImage"
+          echo "${KPXC_SHA256}  kpxc.AppImage" | sha256sum -c -
+          chmod +x kpxc.AppImage
+          ./kpxc.AppImage --appimage-extract >/dev/null   # extract: the runner has no FUSE
+          sudo tee /usr/local/bin/keepassxc-cli >/dev/null <<EOF
+          #!/bin/sh
+          export LD_LIBRARY_PATH="$RUNNER_TEMP/squashfs-root/usr/lib:\${LD_LIBRARY_PATH:-}"
+          exec "$RUNNER_TEMP/squashfs-root/usr/bin/keepassxc-cli" "\$@"
+          EOF
+          sudo chmod +x /usr/local/bin/keepassxc-cli
           keepassxc-cli --version
       - name: Oracle test
         run: go test -run TestKeepassXC ./internal/source/pleasant/ ./internal/vault/
