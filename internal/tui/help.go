@@ -111,6 +111,24 @@ func (m Model) keyList(w int) []string {
 			row("←/→ -/+", "adjust a preference"),
 			row("esc ⇥", "leave (an unsaved theme reverts)"),
 		)
+	case tabChanges:
+		out = append(out,
+			head("REVIEW"),
+			row("↑↓", "move between changes"),
+			row("PgUp/Dn", "scroll the review"),
+			row("home/end", "top / bottom"),
+			row("↵", "go to it in the vault"),
+			"",
+			head("FOLD  (as in the tree)"),
+			row("z / Z", "fold this / every change"),
+			row("← →", "close / open one step"),
+			row("⇧← ⇧→", "close / open a whole folder"),
+			"",
+			head("STAGED WORK"),
+			row("x", "revert this change, or a folder's"),
+			row("^s", "review and write everything"),
+			row("1", "back to the vault"),
+		)
 	case 2:
 		out = append(out,
 			head("GENERATE — OPTIONS"),

@@ -35,10 +35,7 @@ func (m Model) updateChanges(key string) (Model, tea.Cmd) {
 
 	rows := m.changeRows(m.contentW())
 	sel := selectableRows(rows)
-	cur := changeRow{}
-	if i := m.chgCursor(rows); i >= 0 {
-		cur = rows[i]
-	}
+	cur := m.contextRow(rows)
 
 	visible := m.changesVisibleRows()
 
@@ -66,19 +63,33 @@ func (m Model) updateChanges(key string) (Model, tea.Cmd) {
 	case "end":
 		m.chgScroll = clampScroll(len(rows), len(rows), visible)
 		return m, nil
+	// Folding uses the vault tree's keys, doing the vault tree's things, because
+	// this is the same shape and the reader already knows how to work it.
 	case "z":
-		// The same key as the vault tree, doing the same thing: fold what is
-		// under the cursor. On a folder it hides the whole group, on a change it
-		// hides that change's diff.
-		if cur.target != "" {
-			if m.chgFold == nil {
-				m.chgFold = map[string]bool{}
-			}
-			k := foldKey(cur.kind, cur.target)
-			m.chgFold[k] = !m.chgFold[k]
-		}
+		m = m.setFold(cur, !m.folded(cur))
 	case "Z":
 		m = m.foldAllChanges()
+	case "left":
+		// Close what is open; from something already closed, step out to the
+		// heading above it — the tree's ← exactly.
+		if m.folded(cur) || cur.kind == rowFolder && m.folded(cur) {
+			m = m.selectHeadingOf(rows, cur)
+		} else if cur.target != "" {
+			m = m.setFold(cur, true)
+		} else {
+			m = m.selectHeadingOf(rows, cur)
+		}
+	case "right":
+		// Open what is closed; from something already open, step into it.
+		if m.folded(cur) {
+			m = m.setFold(cur, false)
+		} else if cur.kind == rowFolder {
+			m = m.selectFirstChangeIn(rows, cur)
+		}
+	case "shift+left":
+		m = m.foldBranch(rows, cur, true)
+	case "shift+right":
+		m = m.foldBranch(rows, cur, false)
 	case "x":
 		// x undoes what the cursor is on — one change, or, on a heading, the
 		// whole group under it. Reverting a creation takes everything staged

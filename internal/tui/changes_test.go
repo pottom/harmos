@@ -444,3 +444,108 @@ func TestChangesScrollsThroughEverything(t *testing.T) {
 		t.Errorf("home should go to the top, offset %d", m.chgScroll)
 	}
 }
+
+// Folding is worked by the tree's keys, because it is the tree's idea.
+func TestChangesFoldsWithTheTreeKeys(t *testing.T) {
+	m := up(stageAnEdit(t, editModel(t)), tabKey(tabChanges))
+	rowsOf := func(m Model) int { return len(m.changeRows(m.contentW())) }
+	full := rowsOf(m)
+
+	m = up(m, tea.KeyMsg{Type: tea.KeyLeft}) // close this change
+	folded := rowsOf(m)
+	if folded >= full {
+		t.Fatalf("← should close the change under the cursor: %d rows, was %d", folded, full)
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyRight}) // and open it again
+	if got := rowsOf(m); got != full {
+		t.Errorf("→ should open it: %d rows, want %d", got, full)
+	}
+
+	// ← from something already closed steps out to the heading.
+	m = up(m, tea.KeyMsg{Type: tea.KeyLeft}) // close
+	m = up(m, tea.KeyMsg{Type: tea.KeyLeft}) // step out
+	rows := m.changeRows(m.contentW())
+	if cur := rows[m.chgCursor(rows)]; cur.kind != rowFolder {
+		t.Errorf("a second ← should land on the folder heading, got kind %v", cur.kind)
+	}
+
+	// ⇧← closes the heading and everything under it; ⇧→ opens the lot.
+	m = up(m, tea.KeyMsg{Type: tea.KeyShiftLeft})
+	for _, r := range m.changeRows(m.contentW()) {
+		if r.kind == rowChange || r.kind == rowHunk {
+			t.Errorf("⇧← should close the whole folder, %q is still shown", r.text())
+		}
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyShiftRight})
+	if got := rowsOf(m); got != full {
+		t.Errorf("⇧→ should open it all: %d rows, want %d", got, full)
+	}
+
+	// → from an open heading steps into it.
+	m = m.selectHeadingOf(m.changeRows(m.contentW()), changeRow{})
+	rows = m.changeRows(m.contentW())
+	for i, idx := range selectableRows(rows) {
+		if rows[idx].kind == rowFolder {
+			m.chgSel = i
+			break
+		}
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyRight})
+	rows = m.changeRows(m.contentW())
+	if cur := rows[m.chgCursor(rows)]; cur.kind != rowChange {
+		t.Errorf("→ on an open heading should step into it, got kind %v", cur.kind)
+	}
+}
+
+// The help on this tab describes this tab. It used to show the vault's keys.
+func TestChangesHelpIsItsOwn(t *testing.T) {
+	m := up(testModel(), tabKey(tabChanges))
+	out := strings.Join(m.keyList(60), "\n")
+	for _, want := range []string{"revert", "fold", "scroll"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the Changes help should mention %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "save attachments") {
+		t.Errorf("it should not be the vault's list:\n%s", out)
+	}
+}
+
+// The arrows walk every row, so everything in the review can be reached the way
+// anyone would first try to reach it.
+func TestArrowsWalkEveryRow(t *testing.T) {
+	entries := make([]vault.Entry, 0, 40)
+	for i := range 40 {
+		entries = append(entries, vault.Entry{
+			ID: fmt.Sprintf("s:%d", i), GroupID: "s:g:1", Source: "s", Path: "Big",
+			Title: fmt.Sprintf("entry-%02d", i), Password: secret.New("p"),
+		})
+	}
+	m := up(New(entries, []vault.Folder{{ID: "s:g:1", Source: "s", Path: "Big", Name: "Big"}},
+		"", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 20})
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "s:g:1", Name: "Big"})
+	m = m.switchTab(tabChanges)
+
+	rows := m.changeRows(m.contentW())
+	start := m.chgScroll
+	for range len(rows) {
+		m = up(m, tea.KeyMsg{Type: tea.KeyDown})
+	}
+	if m.chgScroll <= start {
+		t.Error("holding ↓ should scroll the review, not stop at the first change")
+	}
+	last := strings.TrimSpace(ansiStrip(rows[len(rows)-1].text()))
+	if !strings.Contains(ansi.Strip(m.View()), last) {
+		t.Errorf("↓ should reach the last row:\n%s", ansi.Strip(m.View()))
+	}
+
+	// And the keys still act on the change the cursor is inside, not on the
+	// line it happens to be standing on.
+	if cur := m.contextRow(m.changeRows(m.contentW())); cur.kind != rowChange {
+		t.Errorf("deep inside a listing, the context should still be the change, got %v", cur.kind)
+	}
+	m = up(m, key2("x"))
+	if m.dirtyCount() != 0 {
+		t.Errorf("x from inside a change should revert it, %d left", m.dirtyCount())
+	}
+}

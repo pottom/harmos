@@ -91,7 +91,14 @@ func (r changeRow) render(w int, selected bool) string {
 }
 
 // selectable reports whether the cursor stops on this row.
-func (r changeRow) selectable() bool { return r.kind == rowChange || r.kind == rowFolder }
+//
+// Every row with something on it. The cursor used to stop only on changes and
+// headings, which meant ↑↓ jumped over the hunks and over everything a folder
+// deletion takes with it — the reader could reach those rows with the wheel and
+// the page keys but not with the arrows, which is not a distinction anybody
+// expects to have to know. What the keys act on is a separate question: see
+// contextRow.
+func (r changeRow) selectable() bool { return strings.TrimSpace(r.text()) != "" }
 
 // changeGroup is the changes that live in one folder of one source.
 type changeGroup struct {
@@ -435,6 +442,18 @@ func textLine(t edit.TextLine, w int) []rowSeg {
 	}
 }
 
+// contextRow is the change or heading the cursor is inside — what z, x and ↵
+// act on, whether the cursor is on the change itself or on one of its lines.
+func (m Model) contextRow(rows []changeRow) changeRow {
+	i := m.chgCursor(rows)
+	for ; i >= 0; i-- {
+		if rows[i].kind == rowChange || rows[i].kind == rowFolder {
+			return rows[i]
+		}
+	}
+	return changeRow{}
+}
+
 // selectableRows are the indices of the rows the cursor can stop on.
 func selectableRows(rows []changeRow) []int {
 	var out []int
@@ -711,4 +730,75 @@ func (m Model) firstChangeSel(rows []changeRow) int {
 		}
 	}
 	return 0
+}
+
+// Folding, worked by the vault tree's keys.
+//
+// The Changes tab is the same shape as the tree — sources, folders, the things
+// inside them — so it takes the same keys rather than inventing a second way to
+// open and close the same idea. z toggles what the cursor is on, Z the lot,
+// ←/→ close and open one step, ⇧←/⇧→ a whole branch. Everything starts open:
+// the reader is here to see what is staged, and hiding it by default would be
+// answering a question they came to ask.
+
+func (m Model) folded(r changeRow) bool {
+	return r.target != "" && m.chgFold[foldKey(r.kind, r.target)]
+}
+
+func (m Model) setFold(r changeRow, fold bool) Model {
+	if r.target == "" {
+		return m
+	}
+	if m.chgFold == nil {
+		m.chgFold = map[string]bool{}
+	}
+	m.chgFold[foldKey(r.kind, r.target)] = fold
+	return m
+}
+
+// foldBranch folds a heading and everything filed under it, or opens the lot.
+//
+// The members come from the change set rather than from the visible rows: a
+// folded group has no visible members, so a version that read the rows could
+// close a branch but never fully open it again.
+func (m Model) foldBranch(_ []changeRow, cur changeRow, fold bool) Model {
+	if cur.kind == rowChange {
+		return m.setFold(cur, fold)
+	}
+	m = m.setFold(cur, fold)
+	for _, g := range m.groupChanges() {
+		if g.source+"\x00"+g.path != cur.target {
+			continue
+		}
+		for _, c := range g.items {
+			m = m.setFold(changeRow{kind: rowChange, target: c.Target}, fold)
+		}
+	}
+	return m
+}
+
+// selectHeadingOf moves the cursor to the folder heading a change sits under.
+func (m Model) selectHeadingOf(rows []changeRow, cur changeRow) Model {
+	if cur.kind != rowChange {
+		return m
+	}
+	group := m.groupOf(rows, cur)
+	for i, idx := range selectableRows(rows) {
+		if rows[idx].kind == rowFolder && rows[idx].target == group {
+			m.chgSel = i
+			return m
+		}
+	}
+	return m
+}
+
+// selectFirstChangeIn steps from a heading into the first change under it.
+func (m Model) selectFirstChangeIn(rows []changeRow, cur changeRow) Model {
+	for i, idx := range selectableRows(rows) {
+		if rows[idx].kind == rowChange && m.groupOf(rows, rows[idx]) == cur.target {
+			m.chgSel = i
+			return m
+		}
+	}
+	return m
 }
