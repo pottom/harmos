@@ -695,13 +695,7 @@ func (m Model) treeLines(w, rows int) []string {
 			if m.focus == 0 && !m.showResults() {
 				st = theme.SelRow.Width(w)
 			}
-			// The one thing the selection does not get to own: a row staged for
-			// deletion stays struck through under the cursor. Losing the mark on
-			// the row you are standing on is losing it exactly when you are
-			// looking at it.
-			if chg.own == edit.Deleted {
-				st = st.Strikethrough(true).StrikethroughSpaces(false)
-			}
+			st = selRowStyle(st, chg.own)
 			plain := trunc(indent+icon+" "+n.name+count+markerPlain, nameW) + badgePlain
 			out = append(out, st.Render(plain))
 			continue
@@ -755,14 +749,7 @@ func (m Model) entryLines(w, rows int) []string {
 			if urlCol {
 				plain += " " + e.URL
 			}
-			// The selected row renders a plain string, so a nested style does not
-			// survive — the strikethrough has to go on the row style itself.
-			// StrikethroughSpaces(false) keeps the line off the width padding.
-			st := theme.SelRow.Width(w)
-			if states[e.ID] == edit.Deleted {
-				st = st.Strikethrough(true).StrikethroughSpaces(false)
-			}
-			out = append(out, st.Render(trunc(plain, w)))
+			out = append(out, selRowStyle(theme.SelRow.Width(w), states[e.ID]).Render(trunc(plain, w)))
 			continue
 		}
 		titleStyle, marker := changeStyle(states[e.ID])
@@ -1197,6 +1184,29 @@ func changeStyle(st edit.State) (lipgloss.Style, string) {
 		return theme.Bad.Strikethrough(true), i.trash
 	}
 	return theme.Strong, i.entry
+}
+
+// selRowStyle is the selected row, tinted by whatever is staged against it.
+//
+// The selection owns the line: it renders a plain string, so a nested style does
+// not survive and the state has to travel on the row style itself — the state's
+// colour as the foreground, over the selection's background, plus the
+// strikethrough for a deletion. Without this the row under the cursor was the
+// one row that did not say what was about to happen to it, which is the row the
+// reader is looking at.
+//
+// Used by all three lists — tree, entries, changes — so the cursor never changes
+// what a row means, only which row is current.
+func selRowStyle(base lipgloss.Style, st edit.State) lipgloss.Style {
+	if st == 0 {
+		return base
+	}
+	s, _ := changeStyle(st)
+	base = base.Foreground(s.GetForeground())
+	if st == edit.Deleted {
+		base = base.Strikethrough(true).StrikethroughSpaces(false)
+	}
+	return base
 }
 
 // iconStyleFor is the colour a tree row's icon takes.

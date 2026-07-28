@@ -9,7 +9,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/pottom/harmos/internal/edit"
 	"github.com/pottom/harmos/internal/secret"
+	"github.com/pottom/harmos/internal/theme"
 	"github.com/pottom/harmos/internal/vault"
 )
 
@@ -227,5 +229,30 @@ func TestAuditConfirmationsAreUniform(t *testing.T) {
 				t.Errorf("a confirmation must say which key takes the focused button:\n%s", out)
 			}
 		})
+	}
+}
+
+// The cursor changes which row is current, never what a row means. A row staged
+// for deletion keeps the delete colour and the strikethrough underneath it, in
+// every list that has rows.
+func TestAuditSelectionKeepsTheState(t *testing.T) {
+	for _, st := range []edit.State{edit.New, edit.Modified, edit.Deleted} {
+		want, _ := changeStyle(st)
+		got := selRowStyle(theme.SelRow, st)
+		if got.GetForeground() != want.GetForeground() {
+			t.Errorf("state %v: selected row keeps the selection colour instead of the state's", st)
+		}
+		if got.GetBackground() != theme.SelRow.GetBackground() {
+			t.Errorf("state %v: the selection background was lost, so the cursor disappears", st)
+		}
+	}
+	if !selRowStyle(theme.SelRow, edit.Deleted).GetStrikethrough() {
+		t.Error("a deleted row under the cursor must stay struck through")
+	}
+	if selRowStyle(theme.SelRow, edit.Modified).GetStrikethrough() {
+		t.Error("only deletions are struck through")
+	}
+	if s := selRowStyle(theme.SelRow, 0); s.GetForeground() != theme.SelRow.GetForeground() {
+		t.Error("an unstaged row keeps the plain selection colours")
 	}
 }

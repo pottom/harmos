@@ -346,11 +346,7 @@ func (m Model) changesBody(w int) []string {
 		// the reader is looking at.
 		text := marker + " " + c.Title + "  " + c.Detail + "  " + c.Source
 		if i == m.chgSel {
-			st := theme.SelRow.Width(w)
-			if c.State == edit.Deleted {
-				st = st.Strikethrough(true).StrikethroughSpaces(false)
-			}
-			out = append(out, st.Render(trunc(ansiStrip(text), w)))
+			out = append(out, selRowStyle(theme.SelRow.Width(w), c.State).Render(trunc(ansiStrip(text), w)))
 		} else {
 			out = append(out, style.Render(marker+" "+c.Title)+
 				theme.Dimmed.Render("  "+c.Detail)+theme.Faded.Render("  "+c.Source))
