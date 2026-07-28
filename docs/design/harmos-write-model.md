@@ -34,12 +34,17 @@ The spec anticipated this milestone (`docs/harmos-spec.md` §3):
 | Review surface | **Both**: in-place colouring in the tree and entry list, *and* a separate Changes tab with a git-style diff. |
 | Extra scope | All four: password generator in the editor, custom field add/remove, KeePass history writing, move/rename. |
 | Edit-mode affordance | vim-like: the active panel border turns amber and the UI says it is in edit mode. |
+| KDBX 4.1 | **Teach the library**, do not refuse (decided 2026-07-28, after finding the target vault is 4.1 and uses 4.1 elements). Offer the change upstream; consume it via `replace` until it lands. Do the library work to publishable quality — see `kdbx-4.1-support.md`. |
 
 ### Non-goals
 
 - **No `harmos edit` CLI.** Writing is an explicit, confirmed TUI act. A headless
   write command would open exactly the surface the spec closes.
-- **No KDBX 3.1 writing** (see §4.1). The gate refuses it with a reason.
+- **No KDBX 3.1 writing** (see §4.1). The gate refuses it with a reason. Note
+  that `keepassxc-cli db-create` produces 3.1, and the CLI offers no way to
+  create or convert to KDBX 4 — only the GUI can. So a 3.1 file is a plausible
+  thing to meet, and this exclusion may need revisiting if one turns up in
+  practice.
 - **No three-way reconcile.** If the file changed underneath us, we refuse and offer
   reload or an explicitly confirmed overwrite. Nothing merges.
 - **No Pleasant writes, ever.**
@@ -75,20 +80,45 @@ fields, so setting `Salt` on the struct is sufficient.
 `Version`) on a user's file. `internal/source/pleasant/mapper.go` `Write` deliberately
 overrides these — correct for a cache we own, forbidden for a vault we do not.
 
-### 1.2 KDBX 4.1 silent data loss — why we refuse
+### 1.2 KDBX 4.1 silent data loss — and why we no longer refuse
 
-`Signature.MinorVersion` is read from the file and written back verbatim
-(`header.go`), but `IsKdbx4()` only inspects `MajorVersion`. The library does **not**
-model 4.1-only elements: `Entry.PreviousParentGroup`, `Group.PreviousParentGroup`,
-`Entry.QualityCheck`, `Group.Tags`, `Group.CustomData`. `Group.unmarshalGroupToken`
-ends in `default: return nil` — unknown elements are **dropped silently**.
+`Signature.MinorVersion` is read from the file and **written back verbatim**,
+but `IsKdbx4()` inspects only the `MajorVersion`. The library **does not model**
+the elements KDBX 4.1 added, and Go's `encoding/xml` discards unknown elements
+silently — `Group.unmarshalGroupToken` even ends in `default: return nil`.
 
-So saving a 4.1 file written by KeePassXC 2.7 would strip those fields while keeping
-the 4.1 label. That is silent corruption of the user's primary vault.
+So a 4.1 file is parsed as 4.0, its 4.1-only elements are dropped, and the result
+is written **still labelled 4.1**. Nothing warns anyone.
 
-**The gate refuses `MinorVersion >= 1` with a reason.** This is the one place in the
-milestone where the correct answer is "no". Supporting 4.1 means an upstream
-contribution or a vendored fork — its own milestone.
+**This is not hypothetical — it is the normal case here.** The vault that drove
+this milestone is KDBX 4.1 and genuinely uses three of the affected elements:
+
+| Element | Occurrences in the real vault |
+|---|---|
+| `Group>PreviousParentGroup` | 28, **all real references**, none null |
+| `Meta>CustomData>Item>LastModificationTime` | 4 |
+| `Meta>CustomIcons>Icon>LastModificationTime` | 1 |
+
+**Decision (2026-07-28): teach the library 4.1 rather than refuse 4.1 files.**
+Refusing was the original plan. It is safe but useless: it would leave the whole
+milestone unable to touch the vaults it was built for. The library change turned
+out to be small and well-bounded — seven elements plus one pre-existing gap — and
+is specified in full in `kdbx-4.1-support.md`, which doubles as the upstream
+pull-request description. harmos consumes it through a `replace` directive until
+upstream merges it; then the `replace` is deleted.
+
+**A version label is not evidence of content.** Whatever the library supports,
+the writer's gate is **content-based**, not version-based: it refuses only when
+the file actually contains something that would be lost, and it names it. That is
+both more permissive (a 4.1 file using no 4.1 element writes fine) and stricter
+(it catches elements nobody enumerated, including future format additions).
+
+The mechanism: `Decoder.Decode` leaves the decrypted XML in the exported
+`db.Content.RawData`. Slicing from `<KeePassFile` and walking it with
+`encoding/xml` yields a census of element paths and counts — no values, so it is
+safe to run against real vaults and safe to log. The save pipeline takes that
+census before writing and again from the verify-decode, and **aborts before the
+rename if anything disappeared**.
 
 ### 1.3 Other traps
 
@@ -103,6 +133,7 @@ contribution or a vendored fork — its own milestone.
 | `DeletedObjectData.setKdbxFormatVersion` does not nil-check `DeletionTime` | `deleted_object_data.go` | Leaving it unset panics. |
 | `DBCredentials` stores **sha256 hashes**, not plaintext | `credentials.go` | The handle can retain credentials for re-saving **without holding a password in memory**. No re-prompt at save time. |
 | `bubbles/textarea` is **already** available | `bubbles` v1.0.0 module | Multi-line Notes needs no new dependency. |
+| Every new header points at the **same package-level signature variable** (`Signature: &DefaultKDBX4Sig`) | `header.go` | Writing through `db.Header.Signature` mutates the default for every database built afterwards in the process. harmos never sets it in production, but anything that does — a test fixture, a future format shim — must swap in a copy first. Found the hard way in PR1: one 4.1 fixture turned every later fixture in the test binary into a 4.1 file. |
 
 ---
 
@@ -263,7 +294,16 @@ model — the 4.1 fields — is covered by the format gate.)
 
 3.1 needs a different set of regenerated header fields — `TransformSeed` 32 B,
 `StreamStartBytes` 32 B, `ProtectedStreamKey` 32 B, `EncryptionIV` 16 B, and the
-Salsa20 inner stream. Achievable, but a separate blast radius. The gate refuses
+Salsa20 inner stream. Running the current `Rekey` over a 3.1 file would be worse
+than useless: it would refresh the 4.0 fields, leave the actual 3.1 nonces
+untouched, and so reintroduce exactly the keystream reuse it exists to prevent —
+silently, since the file would still open.
+
+Measured 2026-07-28: `keepassxc-cli db-create` writes **KDBX 3.1**, and neither
+`db-create` nor `db-edit` exposes any format-version option. Converting to 4.0
+is a GUI-only operation (Database → Database Security → Encryption Settings). The
+refusal message should say that, since "upgrade it in KeePassXC" is not
+actionable from the command line. Achievable, but a separate blast radius. The gate refuses
 honestly; the user can upgrade to 4.0 in KeePassXC with one click. If it is ever
 wanted: its own PR, with its own acceptance ("two saves of a 3.1 file reuse no seed,
 IV or stream key, and `keepassxc-cli` opens it").
@@ -418,6 +458,7 @@ one at a time, on green CI plus human approval.
 | PR | Branch | Acceptance |
 |---|---|---|
 | **0** | `docs/m6-write-model` | This document exists; the workflow and spec name M6 and its limits. Zero code change. |
+| **1a** | `feat/kdbx-4.1` | The patched library round-trips a 4.1 file losing nothing, an XML census proves it, and `keepassxc-cli` opens the result. Offered upstream. Specified in `kdbx-4.1-support.md`. |
 | **1** | `feat/vault-write-engine` | A kdbx opened and saved with **no changes** differs in bytes (fresh nonces), decodes field-for-field identically, and `keepassxc-cli db-info` reports the same group/entry counts. |
 | **2** | `feat/vault-mutations` | create/edit/move/delete round-trip on a temp kdbx; `keepassxc-cli show` reads the new entry, the bin group holds the binned one, and a permanently deleted UUID appears in `DeletedObjects`. |
 | **3** | `feat/edit-change-model` | A table-driven test walks every composition pair and asserts the derived diff and decoration map; reverting any single op leaves a consistent set. **← stop-and-wait gate** |
@@ -429,6 +470,12 @@ one at a time, on green CI plus human approval.
 | **9** | `test/write-oracle` | The CI oracle job proves `keepassxc-cli` reads back the recycle bin, the history record **and** a tombstone from a harmos-written file. |
 
 ### PR1 notes
+
+**As shipped**, PR1 deferred the ID index to PR2: nothing in "open and save
+unchanged" needs to address an individual entry, so the index arrives with the
+mutations that do. PR1 also brought its own oracle test forward from PR9, because
+its acceptance line names `keepassxc-cli`; PR9 extends that test with the recycle
+bin, history and tombstones.
 
 New: `internal/atomicfile/atomicfile.go` — and migrate both existing copies onto it
 (`internal/source/pleasant/sync.go` `writeAtomic`, `internal/config/edit.go`
@@ -550,7 +597,7 @@ are covered.
 
 | # | Risk | Mitigation |
 |---|---|---|
-| 1 | KDBX 4.1 silent data loss | Refuse `MinorVersion >= 1` with a reason (§1.2) |
+| 1 | KDBX 4.1 silent data loss | Model the 4.1 elements in a patched library (`kdbx-4.1-support.md`), **and** gate on content rather than version label, **and** compare the element census across every save |
 | 2 | ChaCha20 keystream reuse | `Rekey` before every write; an IV-collision test pins it (§1.1) |
 | 3 | `cleanupBinaries` attachment loss | Root-group gate **and** an attachment census before the rename |
 | 4 | A corrupt write replaces the vault | Verify-decode before rename; session backup; fsync; atomic rename |

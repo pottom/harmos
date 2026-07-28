@@ -6,33 +6,14 @@ import (
 	"path/filepath"
 	"testing"
 
-	gokeepasslib "github.com/tobischo/gokeepasslib/v3"
-
 	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/secret"
+	"github.com/pottom/harmos/internal/vault/vaulttest"
 )
 
 func makeKDBX(t *testing.T, path, password, title string) {
 	t.Helper()
-	db := gokeepasslib.NewDatabase(gokeepasslib.WithDatabaseKDBXVersion4())
-	db.Credentials = gokeepasslib.NewPasswordCredentials(password)
-	e := gokeepasslib.NewEntry()
-	e.Values = append(e.Values, gokeepasslib.ValueData{Key: "Title", Value: gokeepasslib.V{Content: title}})
-	g := gokeepasslib.NewGroup()
-	g.Name = "Root"
-	g.Entries = []gokeepasslib.Entry{e}
-	db.Content.Root = &gokeepasslib.RootData{Groups: []gokeepasslib.Group{g}}
-	if err := db.LockProtectedEntries(); err != nil {
-		t.Fatal(err)
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := gokeepasslib.NewEncoder(f).Encode(db); err != nil {
-		t.Fatal(err)
-	}
-	_ = f.Close()
+	vaulttest.Write(t, path, vaulttest.WithPassword(password), vaulttest.WithTitle(title))
 }
 
 func writeConfig(t *testing.T, dir string) *config.Config {

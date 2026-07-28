@@ -1,37 +1,16 @@
 package localkdbx
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
-	gokeepasslib "github.com/tobischo/gokeepasslib/v3"
-
 	"github.com/pottom/harmos/internal/secret"
+	"github.com/pottom/harmos/internal/vault/vaulttest"
 )
 
 func TestSourceOpen(t *testing.T) {
-	// write a small password-protected kdbx
 	path := filepath.Join(t.TempDir(), "personal.kdbx")
-	db := gokeepasslib.NewDatabase(gokeepasslib.WithDatabaseKDBXVersion4())
-	db.Credentials = gokeepasslib.NewPasswordCredentials("pw")
-	e := gokeepasslib.NewEntry()
-	e.Values = append(e.Values, gokeepasslib.ValueData{Key: "Title", Value: gokeepasslib.V{Content: "router"}})
-	g := gokeepasslib.NewGroup()
-	g.Name = "Root"
-	g.Entries = []gokeepasslib.Entry{e}
-	db.Content.Root = &gokeepasslib.RootData{Groups: []gokeepasslib.Group{g}}
-	if err := db.LockProtectedEntries(); err != nil {
-		t.Fatal(err)
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := gokeepasslib.NewEncoder(f).Encode(db); err != nil {
-		t.Fatal(err)
-	}
-	_ = f.Close()
+	vaulttest.Write(t, path, vaulttest.WithPassword("pw"), vaulttest.WithTitle("router"))
 
 	src := Source{Name: "personal", Path: path, Password: secret.New("pw")}
 	v, err := src.Open()

@@ -52,7 +52,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends keepassxc
           keepassxc-cli --version
       - name: Oracle test
-        run: go test -run TestKeepassXCOpensCache ./internal/source/pleasant/
+        run: go test -run TestKeepassXC ./internal/source/pleasant/ ./internal/vault/
 
   lint:
     runs-on: ubuntu-latest
