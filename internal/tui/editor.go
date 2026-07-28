@@ -59,7 +59,12 @@ func (m Model) openEntryEditor(id string) Model {
 	m.edit = editEntry
 	m.editTarget = id
 	m.editNew = m.chg.StateOf(id) == edit.New
+	// Where it lives is where the projection says it lives — the draft's own
+	// group can be older than a move staged since.
 	m.editParent = d.GroupID
+	if home := m.homeOf(id); home != "" {
+		m.editParent = home
+	}
 	m.editBefore = nil
 	if !m.editNew {
 		before := d
@@ -151,8 +156,14 @@ func (m Model) draftFromForm() edit.Draft {
 		Fields:   fields,
 	}
 	if m.editBefore != nil {
-		d.GroupID = m.editBefore.GroupID
 		d.Expires, d.ExpiryTime = m.editBefore.Expires, m.editBefore.ExpiryTime
+		if d.GroupID == "" {
+			// Where it lives is not the editor's business, and the draft it was
+			// loaded from came off the file: taking the group from there undid a
+			// move staged earlier, so the projection put the entry in one folder
+			// while its GroupID named another.
+			d.GroupID = m.editBefore.GroupID
+		}
 	}
 	return d
 }
@@ -586,6 +597,20 @@ func (m Model) editKey(key string) (Model, bool) {
 
 	entry := m.editEntryTarget()
 	folderID, folderName := m.currentFolderID()
+
+	// In the results list the tree cursor is not on screen, so it cannot be the
+	// parent for anything created here: it belongs to whichever source the user
+	// last browsed, and staging against it produced ops whose source and parent
+	// came from different vaults. The result's own folder is the answer.
+	if m.showResults() {
+		folderID, folderName = "", ""
+		if entry != nil {
+			folderID = entry.GroupID
+			if f, ok := m.folderByID(folderID); ok {
+				folderName = f.Name
+			}
+		}
+	}
 
 	switch key {
 	case "e":

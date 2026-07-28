@@ -76,9 +76,16 @@ func project(entries []vault.Entry, folders []vault.Folder, set edit.Set) ([]vau
 		case edit.EditEntry:
 			if op.After != nil {
 				for i := range outE {
-					if outE[i].ID == op.Target {
-						outE[i] = entryFromDraft(op.Source, outE[i].Path, *op.After)
+					if outE[i].ID != op.Target {
+						continue
 					}
+					// An edit changes fields, never location. The draft carries a
+					// group because it was loaded with one, and if that load
+					// predates a staged move, taking it here would quietly undo
+					// the move.
+					where, group := outE[i].Path, outE[i].GroupID
+					outE[i] = entryFromDraft(op.Source, where, *op.After)
+					outE[i].GroupID = group
 				}
 			}
 		case edit.RenameGroup:

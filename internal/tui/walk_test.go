@@ -649,3 +649,96 @@ func TestRevertingAFolderTakesItsStagedContents(t *testing.T) {
 		t.Errorf("and say how many went with it: %q", c.flash)
 	}
 }
+
+// From the results list the tree cursor is not on screen, so it cannot be the
+// parent for anything created there — it belongs to whichever source was last
+// browsed, and staging against it produced operations whose source and parent
+// came from different vaults.
+func TestCreatingFromTheResultsListUsesTheResultsFolder(t *testing.T) {
+	m, _ := walkModel(t)
+	m, _ = secondSource(t, m, "two")
+
+	// Park the tree cursor in the first source, then search and pick a result
+	// that lives in the second.
+	m = onRow(t, m, "db")
+	m = up(m, key2("/"))
+	m = typeStr(m, "db-prod")
+
+	var picked *vault.Entry
+	for i, r := range m.results {
+		if r.Entry.Source == "two" {
+			m.sel = i
+			e := r.Entry
+			picked = &e
+			break
+		}
+	}
+	if picked == nil {
+		t.Skip("the second source has no matching entry")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter}) // leave the box, keep the results
+
+	m = up(m, key2("N"))
+	if m.edit != editFolder {
+		t.Fatalf("N should open the folder editor, got mode %d (%q)", m.edit, m.flash)
+	}
+	m = typeStr(m, "FromResults")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	ops := m.chg.Effective()
+	if len(ops) != 1 {
+		t.Fatalf("expected one staged folder, got %+v", ops)
+	}
+	if ops[0].Source != picked.Source {
+		t.Errorf("staged against %q, but the result is in %q", ops[0].Source, picked.Source)
+	}
+	if ops[0].Parent != "" && !strings.HasPrefix(ops[0].Parent, picked.Source+":") {
+		t.Errorf("the parent %q belongs to another source", ops[0].Parent)
+	}
+}
+
+// Editing an entry after moving it must not put it back: the draft it was
+// loaded from came off the file, and taking the group from there undid the move
+// in the projection.
+func TestEditingAfterAMoveKeepsTheMove(t *testing.T) {
+	m, _ := walkModel(t)
+	m = onEntry(t, m, "db", "db-prod")
+	id := m.selEntry().ID
+
+	m = up(m, key2("m"))
+	var dest string
+	for i, d := range m.moveDests {
+		if strings.TrimSpace(d.label) == "Net" {
+			m.moveSel, dest = i, d.id
+		}
+	}
+	if dest == "" {
+		t.Fatal("expected Net as a destination")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	m = m.revealTarget(id, false)
+	m = up(m, key2("e"))
+	if m.edit != editEntry {
+		t.Fatalf("e should open the editor, got %d (%q)", m.edit, m.flash)
+	}
+	m = typeStr(m, "-edited")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	for _, e := range m.viewEntries {
+		if e.ID != id {
+			continue
+		}
+		if e.Path != "Net" {
+			t.Errorf("the entry should still be where it was moved: %q", e.Path)
+		}
+		if e.GroupID != dest {
+			t.Errorf("and its folder should say so: %q, want %q", e.GroupID, dest)
+		}
+		if home := m.homeOf(id); home != dest {
+			t.Errorf("homeOf says %q — the move picker would offer the folder it is in", home)
+		}
+		return
+	}
+	t.Error("the entry left the projection")
+}
