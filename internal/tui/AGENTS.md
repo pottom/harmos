@@ -5,6 +5,40 @@ copy; the view is recomputed from the last `tea.WindowSizeMsg` — never hardcod
 a width or column, and measure display width with `charmbracelet/x/ansi`
 (`dw`/`trunc`/`pad`), never `len()`.
 
+## Before you build a surface
+
+Run this list **before writing the view**, not after somebody reports it. Every
+item is here because it was shipped wrong once.
+
+1. **Does this screen already exist?** A new panel, modal or confirmation copies
+   an existing one or it does not ship. Two dialogs that ask the same kind of
+   question and look different is a bug, whichever one is prettier.
+2. **Chrome once.** The tab indicator lives in the footer. The title lives in the
+   top border. Nothing that appears on every screen gets a second copy on yours.
+3. **Same frame, to the row.** Header, panels of `m.h-3`, context line, footer.
+   Draw the context line even when it is empty — geometry must not depend on
+   content, or the frame jumps when the content changes.
+4. **What does this key actually cost?** Confirm what cannot be undone. Do not
+   confirm what can: staging writes nothing, and a prompt in front of a
+   reversible act only teaches people to dismiss prompts unread — which is
+   precisely the habit that makes the one real prompt useless. **One
+   confirmation per irreversible act, at the moment it becomes irreversible.**
+5. **Which button leads?** The answer the user came for, except where the act is
+   irreversible; there the safe answer leads and the screen says why
+   (`confirm.go` states the rule, `saveChoices` shows it deciding).
+6. **Say it in words, not only in colour.** Every state needs a word or a glyph
+   beside its colour: `NO_COLOR`, mono terminals and a good share of readers.
+7. **Where does the cursor end up?** After anything that changes what is on
+   screen — a fold, a save, a reload — name the row it lands on and why. "The
+   index it had" is not an answer.
+8. **Would a stranger know what to press?** The footer hint is part of the
+   design, and it has to name the keys this surface actually binds.
+9. **Every key on every terminal.** Letters and `shift`+letter always arrive.
+   `ctrl`+arrow is a Mission Control shortcut on macOS and never reaches the
+   process; some terminals strip the modifier from `shift`+arrow. Do not put a
+   feature behind a key the help promises and the OS eats.
+10. **Ask `tabOrder()`, not a digit.** In code and in tests.
+
 ## Unlock phase
 
 A model built with `NewLocked(cfg, …)` starts **locked** (`m.locked`): the whole
@@ -65,6 +99,12 @@ this session. Do not conflate it with `m.locked`, which means the unlock phase.
 `m.handles` holds the sources the session could open for writing — a Pleasant
 cache never gets one — and `m.chg` is the staged change set. `ctrl+w` toggles the
 lock, asking before unlocking and never before locking.
+
+**Staging never asks.** `e`, `n`, `N`, `d`, `D`, `m` and `r` stage and say what
+they staged in the status line; the row is decorated immediately and `x` on the
+Changes tab takes it back. The single confirmation is the write (`ctrl+s`), and
+it names the permanent deletions first, because they are the only part a backup
+inside the file cannot undo.
 
 ## Settings: two-pane
 
