@@ -463,8 +463,8 @@ one at a time, on green CI plus human approval.
 | ~~**2**~~ | ~~`feat/vault-mutations`~~ · **done** | create/edit/move/delete round-trip on a temp kdbx; `keepassxc-cli show` reads the new entry, the bin group holds the binned one, and a permanently deleted UUID appears in `DeletedObjects`. |
 | ~~**3**~~ | ~~`feat/edit-change-model`~~ · **done** | A table-driven test walks every composition pair and asserts the derived diff and decoration map; reverting any single op leaves a consistent set. **← stop-and-wait gate** |
 | ~~**4**~~ | ~~`feat/session-handles`~~ · **done** | Over one Pleasant and one kdbx source, `session.Open` yields **exactly one** handle — the kdbx one. |
-| **5** | `refactor/tui-form-and-tokens` (in review) | Every built-in theme fills every token (reflective test); the Settings source form behaves identically; the new glyphs render under `HARMOS_NERDFONT=0`. |
-| **6** | `feat/tui-write-lock` | No source is writable at launch; `ctrl+w` + `y` unlocks exactly one and flips the padlock; a Pleasant source refuses with a reason; the teatest contract stays green. |
+| ~~**5**~~ | ~~`refactor/tui-form-and-tokens`~~ · **done** | Every built-in theme fills every token (reflective test); the Settings source form behaves identically; the new glyphs render under `HARMOS_NERDFONT=0`. |
+| **6** | `feat/tui-write-lock` (in review) | No source is writable at launch; `ctrl+w` + `y` unlocks exactly one and flips the padlock; a Pleasant source refuses with a reason; the teatest contract stays green. |
 | **7** | `feat/tui-edit` | A staged edit colours the row and increments the dirty count **while the file on disk is byte-identical**. |
 | **8** | `feat/tui-changes-and-save` | edit → `ctrl+s` → `y` writes the file; `keepassxc-cli` opens it and shows the edited value; the tab empties and the tree decoration clears. |
 | **9** | `test/write-oracle` | The CI oracle job proves `keepassxc-cli` reads back the recycle bin, the history record **and** a tombstone from a harmos-written file. |

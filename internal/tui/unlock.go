@@ -56,7 +56,7 @@ type unlockDoneMsg struct{ res *session.Result }
 // resolves whatever credentials it can from HARMOS_MASTER and the keyring, and
 // asks (masked) only for what is left before opening every source.
 func NewLocked(cfg *config.Config, configPath string, timeout time.Duration) Model {
-	m := New(nil, configPath, timeout)
+	m := New(nil, nil, configPath, timeout)
 	m.locked = true
 	m.cfg = cfg
 	m.ulSkip = map[string]bool{}
@@ -312,7 +312,7 @@ func (m Model) onUnlockDone(msg unlockDoneMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m = m.intoBrowsing(res.Entries)
+	m = m.intoBrowsing(res)
 	m.excluded = other // surfaced in the search line + help while browsing
 	return m, nil
 }

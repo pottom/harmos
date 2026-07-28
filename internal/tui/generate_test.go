@@ -21,14 +21,14 @@ func TestGeneratorOptsPersist(t *testing.T) {
 	if err := config.SetGenerator(path, 28, true, true, false, false, true, false, ""); err != nil {
 		t.Fatal(err)
 	}
-	m := New(nil, path, 30*time.Second)
+	m := New(nil, nil, path, 30*time.Second)
 	if m.genOpts.Length != 28 || m.genOpts.Digit != false || m.genOpts.AvoidAmbig != true {
 		t.Errorf("saved generator options were not loaded: %+v", m.genOpts)
 	}
 }
 
 func genTab() Model {
-	m := New(nil, "", 30*time.Second)
+	m := New(nil, nil, "", 30*time.Second)
 	m = up(m, tea.WindowSizeMsg{Width: 100, Height: 22})
 	return up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}}) // Generate tab
 }

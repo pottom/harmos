@@ -12,7 +12,12 @@ import (
 // shown in the right table. A KeePass group may hold both sub-folders and
 // entries, so a node can have both children and entries.
 type node struct {
-	name     string
+	name string
+	// id is the folder's stable ID, or "" for a source root (which is not a
+	// folder in the file — it is the source itself). Carrying it is what lets a
+	// staged change be attributed to the row that shows it.
+	id       string
+	source   string
 	children []*node
 	entries  []vault.Entry
 	expanded bool
@@ -27,7 +32,12 @@ type treeLine struct {
 // buildTree groups entries into a per-source folder tree: the top level is the
 // set of sources, then the folder Path segments, and entries hang off their
 // folder. Source roots start expanded so their folders are visible at a glance.
-func buildTree(entries []vault.Entry) []*node {
+//
+// Folders come in as their own list rather than being inferred from entry paths.
+// Inference cannot see a folder with nothing in it — so an empty one was
+// invisible, and a folder the user had just created would not appear until
+// something was put in it.
+func buildTree(entries []vault.Entry, folders []vault.Folder) []*node {
 	var roots []*node
 	index := map[string]*node{} // full path key → node
 
@@ -46,13 +56,28 @@ func buildTree(entries []vault.Entry) []*node {
 		return n
 	}
 
+	// Materialise every folder first, so the empty ones exist too.
+	for _, f := range folders {
+		key := f.Source
+		cur := child(nil, key, f.Source)
+		cur.source = f.Source
+		for _, seg := range strings.Split(f.Path, "/") {
+			key += "/" + seg
+			cur = child(cur, key, seg)
+			cur.source = f.Source
+		}
+		cur.id = f.ID
+	}
+
 	for _, e := range entries {
 		key := e.Source
 		cur := child(nil, key, e.Source)
+		cur.source = e.Source
 		if e.Path != "" {
 			for _, seg := range strings.Split(e.Path, "/") {
 				key += "/" + seg
 				cur = child(cur, key, seg)
+				cur.source = e.Source
 			}
 		}
 		cur.entries = append(cur.entries, e)
@@ -121,9 +146,12 @@ func (m Model) matchCounts() map[*node]int {
 	return counts
 }
 
-func entryKey(e vault.Entry) string {
-	return e.Source + "\x00" + e.Path + "\x00" + e.Title + "\x00" + e.Username
-}
+// entryKey identifies an entry for the per-node match counts.
+//
+// It is the entry's stable ID now. It used to be Source+Path+Title+Username,
+// which is not unique — this repo's own fixtures contain a title collision — so
+// two different entries counted as one.
+func entryKey(e vault.Entry) string { return e.ID }
 
 // gotoResultFolder leaves the search and reveals the selected result's folder in
 // the tree — expanding the source and every folder on the way — then selects the

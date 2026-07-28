@@ -15,7 +15,7 @@ func TestGetCommand(t *testing.T) {
 		{Source: "4ig", Path: "F", Title: "Atlas", Username: "a", Password: secret.New("p")},
 		{Source: "4ig", Path: "F", Title: "Atlas", Username: "b", Password: secret.New("p")}, // dup path
 	}
-	m := New(ents, "", 30*time.Second)
+	m := New(ents, nil, "", 30*time.Second)
 
 	if got := m.getCommand(&ents[0]); got != "harmos get --path '4ig/F/S/ANDOC' --quiet" {
 		t.Errorf("unique entry: got %q", got)

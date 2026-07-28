@@ -12,7 +12,7 @@ import (
 // exists, the only useful thing) is creating a source. It is written to
 // configPath; on the next launch the vault opens normally.
 func RunOnboarding(configPath string, timeout time.Duration) error {
-	m := New(nil, configPath, timeout)
+	m := New(nil, nil, configPath, timeout)
 	m.tab, m.setCat, m.focus = 1, catSources, 1 // Settings → Sources, content pane
 	m.onboarding = true
 	_, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
