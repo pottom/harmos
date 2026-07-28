@@ -155,17 +155,21 @@ func boxTopState(title, info string, inW int, st panelState) string {
 		}
 		return tstyle.Render(s)
 	}
-	left := bc.Render("─ ") + titled(title) + bc.Render(" ")
-	if dw(left) > inW {
-		left = bc.Render("─ ") + titled(trunc(title, max(1, inW-4))) + bc.Render(" ")
+	// The row between the corners is exactly inW columns — no more, whatever the
+	// title and the marker are. It used to clamp the fill at zero and let the
+	// title push past, which made a narrow panel one column wider at the top than
+	// at the bottom: the collapsed tree rail overflowed the terminal by a column.
+	//
+	// Both decorations degrade rather than overflow: the title is truncated and
+	// then dropped, and the marker is dropped when what is left cannot hold it.
+	left, right := "", ""
+	leftW, rightW := 0, 0
+	if t := trunc(title, inW-3); t != "" { // "─ " + title + " "
+		left, leftW = bc.Render("─ ")+titled(t)+bc.Render(" "), 3+dw(t)
 	}
-	right := ""
-	if info != "" {
-		right = bc.Render(" ") + theme.Faded.Render(info) + bc.Render(" ─")
+	if info != "" && inW-leftW >= dw(info)+3 { // " " + info + " ─"
+		right, rightW = bc.Render(" ")+theme.Faded.Render(info)+bc.Render(" ─"), dw(info)+3
 	}
-	fill := inW - dw(left) - dw(right)
-	if fill < 0 {
-		fill = 0
-	}
+	fill := max(0, inW-leftW-rightW)
 	return bc.Render("╭") + left + bc.Render(strings.Repeat("─", fill)) + right + bc.Render("╮")
 }
