@@ -14,6 +14,7 @@ import (
 	gokeepasslib "github.com/tobischo/gokeepasslib/v3"
 
 	"github.com/pottom/harmos/internal/config"
+	"github.com/pottom/harmos/internal/edit"
 	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/vault"
 	"github.com/pottom/harmos/internal/vault/vaulttest"
@@ -395,12 +396,17 @@ func secondSource(t *testing.T, m Model, name string) (Model, string) {
 func TestFailedSaveDoesNotPoisonTheNextOne(t *testing.T) {
 	m, path := walkModel(t)
 
-	// A set that applies partway and then fails: delete a folder, then delete an
-	// entry inside it, which is no longer there to delete.
+	// A set that applies partway and then fails: a real deletion, then an
+	// operation naming something that is not there. The interface refuses to
+	// stage the second kind now (see TestNothingIsStagedIntoSomethingThatIsGoing),
+	// so it goes in by hand — the point here is what a failure leaves behind.
 	m = onRow(t, m, "db")
 	m = up(m, key2("D"))
-	m = onEntry(t, m, "db", "db-prod")
-	m = up(m, key2("D"))
+	m.chg, _ = m.chg.Add(edit.Op{
+		Kind: edit.EditEntry, Source: "own", Target: "own:AAAAAAAAAAAAAAAAAAAAAA",
+		Before: &edit.Draft{ID: "own:AAAAAAAAAAAAAAAAAAAAAA"},
+		After:  &edit.Draft{ID: "own:AAAAAAAAAAAAAAAAAAAAAA", Title: "nowhere"},
+	})
 
 	c := m.switchTab(tabChanges)
 	c, _ = c.askToSave()
@@ -543,5 +549,103 @@ func TestLockedSourceCannotBeSaved(t *testing.T) {
 	}
 	if string(before) != string(after) {
 		t.Error("a locked source was written")
+	}
+}
+
+// Nothing may be staged into, or separately out of, a folder that is already
+// staged for deletion. The design has always said so; nothing implemented it,
+// and the results were quiet: an entry moved into a deleted folder was binned
+// with it, a new entry was created inside the recycle bin, and deleting
+// something inside a deleted folder made the set unappliable.
+func TestNothingIsStagedIntoSomethingThatIsGoing(t *testing.T) {
+	m, _ := walkModel(t)
+	m = onRow(t, m, "Net")
+	m = up(m, key2("d")) // Net is going
+
+	// A new entry inside it.
+	m = onRow(t, m, "Net")
+	m = up(m, key2("n"))
+	if m.edit != editNone {
+		t.Errorf("n inside a deleted folder should be refused, got mode %d", m.edit)
+	}
+	if !strings.Contains(m.flash, "going") {
+		t.Errorf("and say why: %q", m.flash)
+	}
+
+	// A new folder inside it.
+	m = up(m, key2("N"))
+	if m.edit != editNone {
+		t.Errorf("N inside a deleted folder should be refused, got mode %d", m.edit)
+	}
+
+	// Deleting something inside it separately.
+	before := m.dirtyCount()
+	m = onEntry(t, m, "Net", "router")
+	m = up(m, key2("d"))
+	if m.dirtyCount() != before {
+		t.Errorf("the entry is already going with the folder; %d changes staged", m.dirtyCount())
+	}
+	if !strings.Contains(m.flash, "already going") {
+		t.Errorf("and it should say so: %q", m.flash)
+	}
+
+	// And it is not offered as a destination for a move.
+	m = onEntry(t, m, "db", "db-prod")
+	m = up(m, key2("m"))
+	for _, d := range m.moveDests {
+		if strings.TrimSpace(d.label) == "Net" {
+			t.Error("a folder staged for deletion is not somewhere to move things to")
+		}
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyEsc})
+}
+
+// A folder cannot be moved into itself. The guard lived in the vault, after the
+// review and the confirmation had both said yes.
+func TestAFolderIsNotItsOwnDestination(t *testing.T) {
+	m, _ := walkModel(t)
+	m = onRow(t, m, "Infra")
+	m = up(m, key2("m"))
+	if m.edit != editMove {
+		t.Fatalf("m should open the picker, got mode %d", m.edit)
+	}
+	for _, d := range m.moveDests {
+		if strings.TrimSpace(d.label) == "db" {
+			t.Error("db is inside Infra; it cannot be where Infra goes")
+		}
+		if strings.TrimSpace(d.label) == "Infra" {
+			t.Error("and Infra is not its own destination")
+		}
+	}
+}
+
+// Undoing a folder undoes what was staged inside it, and the confirmation says
+// how many go with it.
+func TestRevertingAFolderTakesItsStagedContents(t *testing.T) {
+	m, _ := walkModel(t)
+	m = onRow(t, m, "Infra")
+	m = up(m, key2("N"))
+	m = typeStr(m, "Box")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = up(m, key2("n"))
+	m = typeStr(m, "inside")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.dirtyCount() != 2 {
+		t.Fatalf("expected the folder and the entry staged, got %d", m.dirtyCount())
+	}
+
+	c := m.switchTab(tabChanges)
+	for i, idx := range selectableRows(c.changeRows(c.contentW())) {
+		if c.changeRows(c.contentW())[idx].kind == rowChange {
+			c.chgSel = i
+			break
+		}
+	}
+	c = up(c, key2("x"))
+	if c.dirtyCount() != 0 {
+		t.Errorf("undoing the folder should take the entry with it, %d left", c.dirtyCount())
+	}
+	if !strings.Contains(c.flash, "dependent") {
+		t.Errorf("and say how many went with it: %q", c.flash)
 	}
 }

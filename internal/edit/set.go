@@ -87,8 +87,40 @@ func (s Set) Effective() []Op {
 		out = append(out, reduceTarget(b.ops)...)
 	}
 
+	// A folder created and then deleted never existed, and neither did anything
+	// staged inside it. Without this the children survive as creations pointing
+	// at a parent that is not in the set, and the save fails with "no folder".
+	if gone := cancelled(s.ops, out); len(gone) > 0 {
+		var kept []Op
+		for _, op := range out {
+			if !gone[op.Target] && !gone[op.Parent] {
+				kept = append(kept, op)
+			}
+		}
+		out = kept
+	}
+
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Seq < out[j].Seq })
 	return out
+}
+
+// cancelled is the targets that were created and then un-created by the
+// reduction, closed over what was staged inside them.
+func cancelled(ops, effective []Op) map[string]bool {
+	survives := map[string]bool{}
+	for _, op := range effective {
+		survives[op.Target] = true
+	}
+	gone := map[string]bool{}
+	for _, op := range ops {
+		if (op.Kind == CreateEntry || op.Kind == CreateGroup) && !survives[op.Target] {
+			gone[op.Target] = true
+		}
+	}
+	if len(gone) > 0 {
+		grow(ops, gone)
+	}
+	return gone
 }
 
 // reduceTarget collapses one target's operations. The input is in staging order.

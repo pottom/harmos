@@ -92,6 +92,10 @@ func (m Model) openNewEntry(groupID string) Model {
 		m.flash = "this source is not open for writing"
 		return m
 	}
+	if folder, yes := m.doomedParent(groupID); yes {
+		m.flash = "that folder is going with " + folder + " — undo the deletion first"
+		return m
+	}
 	d := edit.Draft{ID: h.MintEntryID(), GroupID: groupID}
 	id := d.ID
 	m.edit = editEntry
@@ -231,6 +235,10 @@ func (m Model) openFolderEditor(parentID, existingID, name string) Model {
 		m.flash = "this source is not open for writing"
 		return m
 	}
+	if folder, yes := m.doomedParent(parentID); yes {
+		m.flash = "that folder is going with " + folder + " — undo the deletion first"
+		return m
+	}
 	m.edit = editFolder
 	m.editNew = existingID == ""
 	m.editParent = parentID
@@ -272,6 +280,14 @@ func (m Model) openFolderEditor(parentID, existingID, name string) Model {
 // which deletion it is. Otherwise upgrading would mean pressing D twice, with
 // the row briefly un-staged in between, which reads as the key having failed.
 func (m Model) stageDelete(target, name string, isFolder, permanent bool) Model {
+	if folder, yes := m.inDoomedFolder(target); yes {
+		// It is already going, with the folder above it. Staging it separately
+		// produced a set that could not be applied — and on the paths where it
+		// could, the child was pulled out of the folder it was deleted with.
+		m.flash = "already going with " + lastSegment(folder)
+		return m
+	}
+
 	kind := edit.DeleteEntry
 	if isFolder {
 		kind = edit.DeleteGroup
@@ -406,11 +422,31 @@ func (m Model) openMovePicker(target string, isFolder bool) Model {
 func (m Model) moveDestinations() []vaultFolderRef {
 	home := m.homeOf(m.editTarget)
 
+	// A folder cannot be moved inside itself, and the guard for that lived in
+	// the vault — after the review and the confirmation. The picker is where a
+	// destination stops being offered.
+	inside := m.editFolderTarget && m.editTarget != ""
+	targetPath := ""
+	if inside {
+		if f, ok := m.folderByID(m.editTarget); ok {
+			targetPath = f.Path
+		}
+	}
+
 	var out []vaultFolderRef
 	var walk func(ns []*node, depth int)
 	walk = func(ns []*node, depth int) {
 		for _, n := range ns {
-			if n.source == m.editSource && n.id != "" && n.id != m.editTarget && n.id != home {
+			ok := n.source == m.editSource && n.id != "" && n.id != m.editTarget && n.id != home
+			if ok && targetPath != "" && strings.HasPrefix(m.pathOfNode(n), targetPath+"/") {
+				ok = false // its own descendant
+			}
+			if ok {
+				if _, doomed := m.doomedParent(n.id); doomed {
+					ok = false // about to stop existing
+				}
+			}
+			if ok {
 				out = append(out, vaultFolderRef{
 					id:    n.id,
 					label: strings.Repeat("  ", depth) + n.name,

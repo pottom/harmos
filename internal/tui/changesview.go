@@ -682,6 +682,59 @@ func atOrUnderDoomedFolder(doomed map[string][]string, source, path string) bool
 	return false
 }
 
+// inDoomedFolder reports whether an ID sits in a folder that is staged for
+// deletion, and names the folder.
+//
+// The design has always said a change staged underneath an already-deleted
+// folder should be refused; nothing implemented it, and the results were quiet
+// and bad — an entry moved into a deleted folder was silently binned with it, a
+// new entry was created inside the recycle bin, and deleting something inside a
+// folder already staged for deletion produced a set that could not be applied
+// at all.
+func (m Model) inDoomedFolder(id string) (string, bool) {
+	doomed := m.doomedPrefixes()
+	if len(doomed) == 0 {
+		return "", false
+	}
+	source, path, ok := m.locate(id)
+	if !ok {
+		return "", false
+	}
+	for _, p := range doomed[source] {
+		if path == p || strings.HasPrefix(path, p+"/") {
+			if id == m.folderIDOfPath(source, p) {
+				return "", false // the folder itself, not something inside it
+			}
+			return p, true
+		}
+	}
+	return "", false
+}
+
+// locate is where something lives: its source and the folder path holding it.
+func (m Model) locate(id string) (source, path string, ok bool) {
+	for _, e := range m.viewEntries {
+		if e.ID == id {
+			return e.Source, e.Path, true
+		}
+	}
+	for _, f := range m.viewFolders {
+		if f.ID == id {
+			return f.Source, f.Path, true
+		}
+	}
+	return "", "", false
+}
+
+func (m Model) folderIDOfPath(source, path string) string {
+	for _, f := range m.viewFolders {
+		if f.Source == source && f.Path == path {
+			return f.ID
+		}
+	}
+	return ""
+}
+
 // goesWithIt counts what a folder deletion takes along, so the change can say so
 // rather than leaving the reader to work it out from the tree.
 func (m Model) goesWithIt(folderID string) (entries, folders int) {
@@ -1061,4 +1114,30 @@ func countOf(folders, entries int) string {
 		parts = append(parts, plural(entries, "entry", "entries"))
 	}
 	return strings.Join(parts, " and ")
+}
+
+// doomedParent reports whether a folder is staged for deletion or sits inside
+// one, so nothing new is put somewhere that is about to stop existing.
+func (m Model) doomedParent(folderID string) (string, bool) {
+	if folderID == "" {
+		return "", false
+	}
+	if m.chg.StateOf(folderID) == edit.Deleted {
+		if f, ok := m.folderByID(folderID); ok {
+			return f.Name, true
+		}
+		return "that folder", true
+	}
+	if folder, yes := m.inDoomedFolder(folderID); yes {
+		return lastSegment(folder), true
+	}
+	return "", false
+}
+
+// lastSegment is a path's own name.
+func lastSegment(path string) string {
+	if i := strings.LastIndex(path, "/"); i >= 0 {
+		return path[i+1:]
+	}
+	return path
 }
