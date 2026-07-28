@@ -33,39 +33,92 @@ func (m Model) updateChanges(key string) (Model, tea.Cmd) {
 		return m.updateConflict(key)
 	}
 
-	changes := m.chg.Diff()
+	rows := m.changeRows(m.contentW())
+	sel := selectableRows(rows)
+	cur := changeRow{}
+	if i := m.chgCursor(rows); i >= 0 {
+		cur = rows[i]
+	}
+
 	switch key {
 	case "up", "ctrl+p":
 		if m.chgSel > 0 {
 			m.chgSel--
 		}
 	case "down", "ctrl+n":
-		if m.chgSel < len(changes)-1 {
+		if m.chgSel < len(sel)-1 {
 			m.chgSel++
 		}
+	case "z":
+		// The same key as the vault tree, doing the same thing: fold what is
+		// under the cursor. On a folder it hides the whole group, on a change it
+		// hides that change's diff.
+		if cur.target != "" {
+			if m.chgFold == nil {
+				m.chgFold = map[string]bool{}
+			}
+			k := foldKey(cur.kind, cur.target)
+			m.chgFold[k] = !m.chgFold[k]
+		}
+	case "Z":
+		m = m.foldAllChanges()
 	case "x":
-		if m.chgSel < len(changes) {
-			c := changes[m.chgSel]
-			// Reverting a creation takes everything staged against it with it,
-			// so say how many rather than surprising anyone.
-			if n := len(m.chg.Cascade(c.Seq)); n > 0 {
+		// x undoes what the cursor is on — one change, or, on a heading, the
+		// whole group under it. Reverting a creation takes everything staged
+		// against it too, so say how many rather than surprising anyone.
+		switch cur.kind {
+		case rowChange:
+			if n := len(m.chg.Cascade(cur.seq)); n > 0 {
 				m.flash = fmt.Sprintf("reverted, and %d dependent change(s) with it", n)
 			} else {
 				m.flash = "reverted"
 			}
-			m.chg, _ = m.chg.Revert(c.Seq)
-			m.chgSel = min(m.chgSel, max(0, len(m.chg.Diff())-1))
+			m.chg, _ = m.chg.Revert(cur.seq)
+		case rowFolder:
+			n := 0
+			for _, r := range rows {
+				if r.kind == rowChange && m.groupOf(rows, r) == cur.target {
+					m.chg, _ = m.chg.Revert(r.seq)
+					n++
+				}
+			}
+			m.flash = fmt.Sprintf("reverted %d change(s) here", n)
 		}
+		m.chgSel = clampIndex(m.chgSel, len(selectableRows(m.changeRows(m.contentW()))))
 	case "enter":
 		// Jump to the entry this change is about, so "what is this?" is one key
 		// rather than a search.
-		if m.chgSel < len(changes) {
-			m = m.switchTab(tabVault).selectEntryByID(changes[m.chgSel].Target)
+		if cur.kind == rowChange {
+			m = m.switchTab(tabVault).selectEntryByID(cur.target)
 		}
 	case "ctrl+s":
 		return m.askToSave()
 	}
 	return m, nil
+}
+
+// foldAllChanges folds everything, or unfolds everything if nothing is folded —
+// the same decision the vault tree's Z makes.
+func (m Model) foldAllChanges() Model {
+	rows := m.changeRows(m.contentW())
+	anyOpen := false
+	for _, r := range rows {
+		if r.selectable() && !m.chgFold[foldKey(r.kind, r.target)] {
+			anyOpen = true
+			break
+		}
+	}
+	fold := map[string]bool{}
+	if anyOpen {
+		for _, r := range rows {
+			if r.selectable() {
+				fold[foldKey(r.kind, r.target)] = true
+			}
+		}
+	}
+	m.chgFold = fold
+	m.chgSel = clampIndex(m.chgSel, len(selectableRows(m.changeRows(m.contentW()))))
+	return m
 }
 
 // askToSave opens the confirmation, or says why there is nothing to do.
@@ -327,41 +380,6 @@ func (m Model) updateQuitGuard(key string) (Model, tea.Cmd) {
 		m.quitGuard = false
 	}
 	return m, nil
-}
-
-// changesBody is the diff, or the explanation of why there is none.
-func (m Model) changesBody(w int) []string {
-	changes := m.chg.Diff()
-	if len(changes) == 0 {
-		return m.changesPlaceholder()
-	}
-
-	var out []string
-	for i, c := range changes {
-		style, marker := changeStyle(c.State)
-		// One row shape, whether or not the cursor is on it: marker, name,
-		// what is happening, which source. The selected row used to drop the
-		// source and the deletion's strikethrough, so the row under the cursor
-		// was the one row that did not say what it was — while being the row
-		// the reader is looking at.
-		text := marker + " " + c.Title + "  " + c.Detail + "  " + c.Source
-		if i == m.chgSel {
-			out = append(out, selRowStyle(theme.SelRow.Width(w), c.State).Render(trunc(ansiStrip(text), w)))
-		} else {
-			out = append(out, style.Render(marker+" "+c.Title)+
-				theme.Dimmed.Render("  "+c.Detail)+theme.Faded.Render("  "+c.Source))
-		}
-
-		for _, l := range c.Lines {
-			out = append(out, "      "+theme.Faded.Render(l.Op.Marker())+" "+
-				theme.Dimmed.Render(pad(l.Field, 12))+" "+
-				theme.Faded.Render(trunc(l.Old, 24))+
-				theme.Dimmed.Render(" → ")+
-				theme.Strong.Render(trunc(l.New, max(8, w-50))))
-		}
-		out = append(out, "")
-	}
-	return out
 }
 
 func ansiStrip(s string) string {

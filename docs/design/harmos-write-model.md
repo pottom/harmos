@@ -372,6 +372,26 @@ machinery, so there is no wrong-undo class of bug, and reverting from the middle
 chain is well defined. Reverting a `create` cascades to every op targeting it; the
 confirmation line says so.
 
+### 5.3a Reviewing: the vault's shape, the diff's language
+
+The Changes tab answers two questions at once, and the layout serves both. *Where
+did I touch something* is a tree — the same source → folder → item shape the
+Vault tab shows, because that is the shape the reader's memory of their own vault
+has. *What exactly changed* is a diff, and a diff has an established alphabet: a
+marker column, a colour per kind, removals above additions, unchanged context
+kept thin.
+
+So the tree supplies the headings and the indentation, and under each changed
+item sits a hunk in git's idiom. Multi-line fields (Notes, a pasted block in a
+custom field) get a real line-level diff — LCS, two lines of context, longer
+untouched runs collapsed to `⋯ n unchanged lines` — because "Notes: 12 lines → 14
+lines" is true and useless. Protected values never take that path: they are
+masked to a constant, so the only honest thing a diff can say about a secret is
+that it changed, and that is what it says.
+
+Where a change lives is resolved by the TUI, not by `internal/edit`: the change
+set holds identities and operations and deliberately knows nothing about paths.
+
 ### 5.4 One source of truth, two surfaces
 
 ```go

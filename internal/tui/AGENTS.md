@@ -54,8 +54,14 @@ the footer alone** — `TestTabFrameIsUniform` pins both.
   `harmos gen`; saved options persist to the config.
 - **Settings (1)** — a two-pane layout mirroring the Vault; resets `m.focus` to 0
   (the left pane) on switch.
-- **Changes (3)** — the staged edits. Always present, even when empty, where it
-  explains how to unlock a source rather than vanishing.
+- **Changes (3)** — the staged edits, as the vault's own hierarchy with a git
+  diff under each item (`changesview.go`): source heading with a `+2 ~1 -2`
+  tally, folder breadcrumb, the change, then its hunks. `z` folds what the
+  cursor is on and `Z` folds the lot — the same keys as the vault tree. Rows are
+  built once by `changeRows` and consumed by both the view and the key handler,
+  so the cursor and the screen cannot disagree about what row 12 is. Always
+  present, even when empty, where it explains how to unlock a source rather than
+  vanishing.
 
 ## Writing
 

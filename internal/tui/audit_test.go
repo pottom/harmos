@@ -88,6 +88,16 @@ func auditSurfaces() []surface {
 		{"changes/staged", func(t *testing.T) string {
 			return up(staged(t), tabKey(tabChanges)).View()
 		}},
+		{"changes/hunks", func(t *testing.T) string {
+			m := sized(intoEditor(t, sized(editModel(t))))
+			m = typeStr(m, "-edited")
+			m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+			return up(m, tabKey(tabChanges)).View()
+		}},
+		{"changes/folded", func(t *testing.T) string {
+			m := up(staged(t), tabKey(tabChanges))
+			return up(m, key2("Z")).View()
+		}},
 		{"changes/folder-deleted", func(t *testing.T) string {
 			m := sized(editModel(t))
 			for i, tl := range m.visible() { // onto a folder row, not an entry

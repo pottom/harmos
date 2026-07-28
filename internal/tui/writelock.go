@@ -221,7 +221,20 @@ func (m Model) changesPlaceholder() []string {
 // Generate's carries "crypto/rand".
 func (m Model) changesView() string {
 	panelsH := max(3, m.h-3)
-	body := m.changesBody(m.w - 4)
+	visible := max(1, panelsH-2)
+
+	// Measure with the same width the box will hand back, scrollbar and all —
+	// rows built a column too wide are rows drawn over the border.
+	rows := m.changeRows(m.w - 2)
+	inner := m.w - 2 - boolToInt(len(rows) > visible)
+	rows = m.changeRows(inner)
+
+	cursor := m.chgCursor(rows)
+	start := windowStart(max(0, cursor), visible, len(rows))
+	body := m.renderChangeRows(rows, inner, start, visible)
+	if len(rows) == 0 {
+		body = m.changesPlaceholder()
+	}
 
 	note := ""
 	if m.dirtyCount() > 0 {
@@ -239,9 +252,9 @@ func (m Model) changesView() string {
 	}
 
 	return header + "\n" +
-		box("Changes", m.chg.Summary(), body, m.w, panelsH, true) + "\n" +
+		boxV("Changes", m.changesPanelInfo(), body, m.w, panelsH, true, len(rows), start, 0) + "\n" +
 		ctx + "\n" +
-		m.footer(theme.Faded.Render("↑↓ pick · x revert · ↵ go to it · ^s save · 1 back to the vault"))
+		m.footer(theme.Faded.Render("↑↓ move · z/Z fold · x revert · ↵ go to it · ^s write"))
 }
 
 // persistWritable records the choice in the config and returns the message to

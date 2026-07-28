@@ -222,3 +222,90 @@ func TestKeysAreIgnoredWhileSaving(t *testing.T) {
 }
 
 func vaultErrChangedUnderneath() error { return vault.ErrChangedUnderneath }
+
+// The tab files every change under the source and folder it actually lives in.
+// Everything used to land under one heading, because the model's merged view was
+// only populated by a reload.
+func TestChangesGroupedByWhereTheyLive(t *testing.T) {
+	m := stageAnEdit(t, editModel(t))
+	m = up(m, tabKey(tabChanges))
+
+	groups := m.groupChanges()
+	if len(groups) == 0 {
+		t.Fatal("a staged change should produce a group")
+	}
+	for _, g := range groups {
+		if g.source == "" {
+			t.Error("every group belongs to a source")
+		}
+		if g.path == "" {
+			t.Errorf("the change is in a folder, but it was filed at the root: %+v", g)
+		}
+	}
+
+	out := ansi.Strip(m.View())
+	if !strings.Contains(out, "›") && !strings.Contains(out, groups[0].path) {
+		t.Errorf("the folder should appear as a heading:\n%s", out)
+	}
+}
+
+// z folds what the cursor is on; Z folds the lot. Same keys as the vault tree.
+func TestChangesFolding(t *testing.T) {
+	m := up(stageAnEdit(t, editModel(t)), tabKey(tabChanges))
+
+	rows := m.changeRows(m.contentW())
+	full := len(rows)
+	hunks := 0
+	for _, r := range rows {
+		if r.kind == rowHunk {
+			hunks++
+		}
+	}
+	if hunks == 0 {
+		t.Fatal("an edit should show a hunk to fold")
+	}
+
+	m = up(m, key2("z")) // the cursor starts on the change
+	if got := len(m.changeRows(m.contentW())); got != full-hunks {
+		t.Errorf("z should hide this change's %d hunk rows: %d rows, was %d", hunks, got, full)
+	}
+	m = up(m, key2("z"))
+	if got := len(m.changeRows(m.contentW())); got != full {
+		t.Errorf("z again should bring them back: %d rows, want %d", got, full)
+	}
+
+	m = up(m, key2("Z"))
+	for _, r := range m.changeRows(m.contentW()) {
+		if r.kind == rowChange || r.kind == rowHunk {
+			t.Errorf("Z should fold every group, %q is still shown", ansiStrip(r.text))
+		}
+	}
+	m = up(m, key2("Z"))
+	if got := len(m.changeRows(m.contentW())); got != full {
+		t.Errorf("Z again should open everything: %d rows, want %d", got, full)
+	}
+}
+
+// x on a folder heading takes back everything filed under it.
+func TestRevertAWholeGroup(t *testing.T) {
+	m := up(stageAnEdit(t, editModel(t)), tabKey(tabChanges))
+	if m.dirtyCount() == 0 {
+		t.Fatal("nothing staged to revert")
+	}
+
+	// Onto the heading above the change.
+	rows := m.changeRows(m.contentW())
+	for i, idx := range selectableRows(rows) {
+		if rows[idx].kind == rowFolder {
+			m.chgSel = i
+			break
+		}
+	}
+	m = up(m, key2("x"))
+	if m.dirtyCount() != 0 {
+		t.Errorf("x on a heading should revert its group, %d left", m.dirtyCount())
+	}
+	if !strings.Contains(m.flash, "reverted") {
+		t.Errorf("it should say what it did, got %q", m.flash)
+	}
+}

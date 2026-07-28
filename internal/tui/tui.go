@@ -129,12 +129,13 @@ type Model struct {
 	moveSel          int
 
 	// The Changes tab and the save.
-	chgSel        int    // selected change
-	saveConfirm   bool   // the write confirmation is up
-	saving        bool   // a save is running off the update loop
-	saveConflict  string // a source whose file moved under us ("" = none)
-	quitGuard     bool   // quitting with staged changes
-	quitAfterSave bool   // quit once the save lands
+	chgSel        int             // selected row, counting only selectable ones
+	chgFold       map[string]bool // folded hunks and folder groups (z)
+	saveConfirm   bool            // the write confirmation is up
+	saving        bool            // a save is running off the update loop
+	saveConflict  string          // a source whose file moved under us ("" = none)
+	quitGuard     bool            // quitting with staged changes
+	quitAfterSave bool            // quit once the save lands
 
 	// The full, merged view, so one source can be reloaded without losing the
 	// others.
@@ -196,17 +197,23 @@ func New(entries []vault.Entry, folders []vault.Folder, configPath string, timeo
 	}
 	nerd = resolveNerd(loaded) // env > config > default
 	return Model{
-		genOpts:    genOptsFromConfig(loaded),
-		matcher:    search.New(entries),
-		roots:      roots,
-		nSrc:       len(roots),
-		tsel:       firstFolderWithEntries(roots),
-		input:      ti,
-		configPath: configPath,
-		srcType:    srcType,
-		themeName:  themeName,
-		timeout:    timeout,
-		staleAfter: resolveStaleAfter(loaded),
+		genOpts: genOptsFromConfig(loaded),
+		matcher: search.New(entries),
+		roots:   roots,
+		// The merged view is the model's answer to "where does this ID live",
+		// which the Changes tab asks about every row. It used to be filled only
+		// by rebuild, so before the first reload every change reported itself as
+		// living in the root.
+		mergedEntries: entries,
+		mergedFolders: folders,
+		nSrc:          len(roots),
+		tsel:          firstFolderWithEntries(roots),
+		input:         ti,
+		configPath:    configPath,
+		srcType:       srcType,
+		themeName:     themeName,
+		timeout:       timeout,
+		staleAfter:    resolveStaleAfter(loaded),
 	}
 }
 
@@ -942,6 +949,8 @@ func (m Model) switchTab(idx int) Model {
 		if len(m.genList) == 0 {
 			m.resetGen() // first visit: roll one so the pane is not empty
 		}
+	case tabChanges:
+		m.chgSel = m.firstChangeSel(m.changeRows(m.contentW()))
 	case tabSettings:
 		m.focus = 0
 		m.setKeyring = keyringStatus(m.sources())
