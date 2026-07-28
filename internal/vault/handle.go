@@ -134,9 +134,17 @@ func (h *Handle) refuseWriteBecause() string {
 	if hdr.Signature.MinorVersion >= 1 {
 		// The minor version round-trips verbatim while gokeepasslib models none
 		// of the 4.1-only elements (PreviousParentGroup, QualityCheck,
-		// Group.Tags, Group.CustomData) and drops unknown XML silently. Saving
-		// would strip the user's data while still claiming to be 4.1.
-		return "KDBX 4.1 file: harmos cannot preserve 4.1-only fields, so it will not write it"
+		// Group.Tags, Group.CustomData, and the 4.1 timestamps on custom data
+		// and custom icons) and drops unknown XML silently. Saving would strip
+		// the user's data while still claiming to be 4.1.
+		//
+		// INTERIM. Real vaults are 4.1 and really do use these elements, so
+		// refusing them is safe but useless. The library is being taught the 4.1
+		// schema (docs/design/kdbx-4.1-support.md); when that lands, this
+		// version check is replaced by the content-based check described there —
+		// refuse only when the file actually holds something we would lose, and
+		// name it. Until then, refusing is the honest answer.
+		return "KDBX 4.1 file: harmos cannot preserve 4.1-only fields yet, so it will not write it"
 	}
 	if h.db.Content == nil || h.db.Content.Root == nil {
 		return "kdbx has no root group"
