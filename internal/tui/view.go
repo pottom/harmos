@@ -668,19 +668,27 @@ func (m Model) treeLines(w, rows int) []string {
 		}
 		// A source root also carries its write lock, so the state is visible
 		// without opening anything.
-		badge := ""
+		badge, badgePlain, badgeW := "", "", 0
 		if flat[k].depth == 0 {
 			if b := m.lockBadge(n.source); b != "" {
-				badge = "  " + b
+				badge, badgeW = "  "+b, m.lockBadgeWidth(n.source)
+				badgePlain = "  " + ansi.Strip(b)
 			}
 		}
+		nameW := max(1, w-badgeW)
 
 		if k == m.tsel {
+			// The badge goes *inside* the selected row rather than after it.
+			// SelRow pads to the full width, so anything appended afterwards is
+			// pushed past the edge and clipped by the panel — which looked like
+			// the padlock vanishing whenever the cursor landed on a source. It
+			// is plain text here for the same reason the rest of the row is: the
+			// selection's colours own the line.
 			st := theme.Hi
 			if m.focus == 0 && !m.showResults() {
 				st = theme.SelRow.Width(w)
 			}
-			out = append(out, st.Render(trunc(indent+icon+" "+n.name+count, w))+badge)
+			out = append(out, st.Render(trunc(indent+icon+" "+n.name+count, nameW)+badgePlain))
 			continue
 		}
 
@@ -691,7 +699,7 @@ func (m Model) treeLines(w, rows int) []string {
 		if counts != nil && counts[n] == 0 { // searching: dim folders with no hits
 			nameStyle, iconStyle = theme.Dimmed, theme.Faded
 		}
-		name := nameStyle.Render(trunc(n.name, max(1, w-dw(indent)-2-dw(count))))
+		name := nameStyle.Render(trunc(n.name, max(1, nameW-dw(indent)-2-dw(count))))
 		out = append(out, iconStyle.Render(indent+icon)+" "+name+countStyle.Render(count)+badge)
 	}
 	return out
