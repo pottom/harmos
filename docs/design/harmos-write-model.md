@@ -29,7 +29,7 @@ The spec anticipated this milestone (`docs/harmos-spec.md` §3):
 
 | Question | Decision |
 |---|---|
-| Default writability | **Read-only by default; per-source unlock that lasts one run.** Nothing is persisted to the config. If daily use argues for it, config persistence is a *later* change. |
+| Default writability | **Read-only by default; per-source unlock, remembered in the config** (`writable = true`). Originally per-run with nothing persisted; daily use argued for persistence within a day, exactly as the decision anticipated. A config without the key behaves as it did before. |
 | Delete semantics | **Recycle Bin by default (`d`), permanent with shift (`D`).** |
 | Review surface | **Both**: in-place colouring in the tree and entry list, *and* a separate Changes tab with a git-style diff. |
 | Extra scope | All four: password generator in the editor, custom field add/remove, KeePass history writing, move/rename. |

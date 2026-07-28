@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/vault"
+	"github.com/pottom/harmos/internal/vault/vaulttest"
 )
 
 func lockModel(t *testing.T) Model {
@@ -293,5 +295,89 @@ func TestConfirmationIgnoresUnrelatedKeys(t *testing.T) {
 	}
 	if m.writeUnlocked("own") {
 		t.Error("and must certainly not have answered it")
+	}
+}
+
+// The whole point of the change: the answer sticks.
+//
+// It used to be per-run with nothing persisted — safer on paper, a nuisance in
+// practice. Anyone who edits regularly re-answered the same question every
+// launch, and a prompt answered by reflex has stopped being a safeguard.
+func TestUnlockIsRemembered(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	kdbx := filepath.Join(dir, "v.kdbx")
+	vaulttest.Write(t, kdbx)
+	if _, err := config.WriteKdbxSource(cfgPath, "own", kdbx, "", false); err != nil {
+		t.Fatal(err)
+	}
+
+	m := lockModel(t)
+	m.configPath = cfgPath
+	m.handles = map[string]*vault.Handle{"own": {}}
+	m.confirmUnlock = "own"
+
+	m = up(m, key2("y"))
+	if !m.writeUnlocked("own") {
+		t.Fatal("confirming should unlock")
+	}
+
+	// It reached the config, and the default is still read-only for anything
+	// that was not asked about.
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Sources) != 1 || !cfg.Sources[0].Writable {
+		t.Fatalf("the choice should be in the config: %+v", cfg.Sources)
+	}
+
+	// A fresh session picks it up.
+	h, err := vault.OpenHandle(kdbx, "own", vault.Credentials{Password: secret.New("pw")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored := writableFromConfig(cfg.Sources, map[string]*vault.Handle{"own": h})
+	if !restored["own"] {
+		t.Error("a new session should start with the source already unlocked")
+	}
+
+	// Locking again takes it back out of the config.
+	m = up(m, key2("ctrl+w"))
+	if m.writeUnlocked("own") {
+		t.Fatal("^w should lock it again")
+	}
+	cfg, _ = config.Load(cfgPath)
+	if cfg.Sources[0].Writable {
+		t.Error("locking should be persisted too")
+	}
+}
+
+// A config that has never heard of the feature behaves exactly as before.
+func TestAbsentWritableMeansReadOnly(t *testing.T) {
+	sources := []config.Source{{Name: "a", Type: config.Kdbx}, {Name: "b", Type: config.Kdbx}}
+	got := writableFromConfig(sources, map[string]*vault.Handle{"a": {}, "b": {}})
+	if len(got) != 0 {
+		t.Errorf("nothing should be writable without an explicit opt-in, got %v", got)
+	}
+}
+
+// A source the config says is writable but whose file harmos will not write must
+// not come up unlocked — it would show rw and then refuse at the first edit.
+func TestConfigCannotUnlockAnUnwritableFile(t *testing.T) {
+	dir := t.TempDir()
+	kdbx := filepath.Join(dir, "old.kdbx")
+	vaulttest.Write(t, kdbx, vaulttest.KDBX31())
+	h, err := vault.OpenHandle(kdbx, "old", vault.Credentials{Password: secret.New("pw")})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := writableFromConfig(
+		[]config.Source{{Name: "old", Type: config.Kdbx, Writable: true}},
+		map[string]*vault.Handle{"old": h},
+	)
+	if got["old"] {
+		t.Error("a file harmos will not write must not start unlocked")
 	}
 }
