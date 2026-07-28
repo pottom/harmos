@@ -34,11 +34,12 @@ Where the spec says "open it in KeePassXC and look" (§12), automate it instead.
 
 ## Stop-and-wait gates
 
-Three points where you finish and **wait for me**, rather than continuing:
+Four points where you finish and **wait for me**, rather than continuing:
 
 1. **After the PoC (M1)** — I decide whether the spec survives contact with the real server.
 2. **After M2b** — I'm going to use `harmos sync` with KeePassXC for a few weeks before any TUI exists. This is deliberate (spec §1). Do not start M3 to be helpful.
 3. **After M4** — the design phase produces options, not decisions. Present the three artifacts and wait for my picks (default theme, breakpoints, column-drop order). Do not begin M5's TUI code against a guessed design.
+4. **After M6's PR3** — the write engine and the change model are done and proven headless, before any editing UI exists. Writing to my own vault is the highest-consequence thing harmos does; I want to exercise the engine through its tests and the oracle before a keystroke can trigger it. Do not start the TUI slices to be helpful.
 
 These are judgement gates, not CI gates. Green tests don't clear them.
 
@@ -46,7 +47,7 @@ These are judgement gates, not CI gates. Green tests don't clear them.
 
 ## Milestones for harmos
 
-Four milestones, split by function. Each is still "something I'd ship if you stopped there."
+Milestones split by function. Each is still "something I'd ship if you stopped there."
 
 | | Milestone | Acceptance |
 |---|---|---|
@@ -55,6 +56,7 @@ Four milestones, split by function. Each is still "something I'd ship if you sto
 | **M3** | **Local kdbx side** — read external `.kdbx` files as sources. | An external file is browsable read-only and its bytes are provably unchanged after a session. |
 | **M4** | **TUI design phase** — paper only, no lipgloss code. Claude Code generates options against the *real* cache from M2/M3; I choose. | Three signed-off artifacts exist (below). **Stop and wait for my choices.** |
 | **M5** | **The shared surface** — matcher, `harmos ls`/`get`, clipboard, then the TUI, over both source types at once. | Global search spans a Pleasant cache and a local file; the source badge distinguishes them; TUI renders correctly across the breakpoint set. |
+| **M6** | **Writable local kdbx** — create/edit/delete/move entries and folders in local `.kdbx` sources, staged and confirmed before any write. Ten PRs; see `docs/design/harmos-write-model.md`. | A source unlocked for writing takes an edit, shows it staged, and on confirmation writes a file `keepassxc-cli` opens — with the recycle bin, the history record and the tombstone all readable back. A locked source, and every Pleasant source, remains byte-unchanged. **Stop and wait after PR3.** |
 
 **A note on M5, because the wording invites a trap.** M5 is *not* "merge the two logics together." The whole point of the architecture (spec §2) is that there are never two logics to merge: Pleasant and local kdbx are **two producers feeding one reader**. M2 and M3 both output the same thing — a kdbx that the one vault reader understands. So M5 doesn't fuse anything; it builds the surface (matcher, clipboard, TUI) *on top of* the reader that M2 and M3 already fed. If M5 turns out to need real merging work, that's the signal that M2 or M3 built its own private reader and violated §2 — stop and fix that, don't paper over it in M5.
 
