@@ -48,21 +48,18 @@ func (m Model) updateChanges(key string) (Model, tea.Cmd) {
 		if m.chgSel < len(sel)-1 {
 			m.chgSel++
 		}
+	// The page keys move the cursor a page, as they do in every other list in
+	// the program — a page key that scrolled past the cursor would leave the
+	// selection somewhere off screen. The wheel is the one that moves the
+	// document on its own.
 	case "pgup":
-		// The wheel and the page keys move the document, not the cursor: a
-		// folder deletion can list hundreds of things, and every one of them is
-		// something the reader is about to approve.
-		m.chgScroll = clampScroll(m.chgScroll-visible, len(rows), visible)
-		return m, nil
+		m.chgSel = clampIndex(m.chgSel-visible, len(sel))
 	case "pgdown":
-		m.chgScroll = clampScroll(m.chgScroll+visible, len(rows), visible)
-		return m, nil
+		m.chgSel = clampIndex(m.chgSel+visible, len(sel))
 	case "home":
-		m.chgScroll = 0
-		return m, nil
+		m.chgSel = 0
 	case "end":
-		m.chgScroll = clampScroll(len(rows), len(rows), visible)
-		return m, nil
+		m.chgSel = max(0, len(sel)-1)
 	// Folding uses the vault tree's keys, doing the vault tree's things, because
 	// this is the same shape and the reader already knows how to work it.
 	case "z":

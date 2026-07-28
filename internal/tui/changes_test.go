@@ -651,9 +651,11 @@ func TestImpactDoesNotDoubleCount(t *testing.T) {
 	}
 }
 
-// The line under the review says what the session comes to, in the things a
-// vault is made of. "own: 3, work: 1" says how much typing happened.
+// The border carries the tally: what the session comes to, in the things a
+// vault is made of. The operation count ("own: 2") says how much typing
+// happened, which is nobody's question.
 func TestChangesShowsTheImpactStat(t *testing.T) {
+	t.Setenv("HARMOS_NERDFONT", "0")
 	var ents []vault.Entry
 	for i := range 6 {
 		ents = append(ents, vault.Entry{ID: fmt.Sprintf("e%d", i), Source: "own", Path: "doomed",
@@ -670,14 +672,84 @@ func TestChangesShowsTheImpactStat(t *testing.T) {
 		Before: &edit.Draft{ID: "k", Title: "kept"}, After: &edit.Draft{ID: "k", Title: "kept!"}})
 	m = m.switchTab(tabChanges)
 
-	out := ansi.Strip(m.View())
-	for _, want := range []string{"1 entry changed", "1 folder and 6 entries removed"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("the stat line should say %q:\n%s", want, out)
-		}
+	i := ic()
+	tally := ansi.Strip(m.impactTally())
+	if !strings.Contains(tally, "~1") {
+		t.Errorf("one entry changed: %q", tally)
 	}
-	// The old operation summary counted keystrokes, not consequences.
-	if strings.Contains(out, "own: 2") {
-		t.Errorf("the operation count is not the reader's question:\n%s", out)
+	if !strings.Contains(tally, "-1"+i.folder) || !strings.Contains(tally, "6"+i.entry) {
+		t.Errorf("one folder and the six entries inside it go: %q", tally)
+	}
+	if out := ansi.Strip(m.View()); !strings.Contains(out, tally) {
+		t.Errorf("the tally belongs on the panel border:\n%s", out)
+	}
+}
+
+// The page keys move the cursor a page, as they do in every other list here.
+func TestChangesPageKeysMoveTheCursor(t *testing.T) {
+	var ents []vault.Entry
+	for i := range 40 {
+		ents = append(ents, vault.Entry{ID: fmt.Sprintf("e%d", i), Source: "s", Path: "Big",
+			Title: fmt.Sprintf("entry-%02d", i), Password: secret.New("p")})
+	}
+	m := up(New(ents, []vault.Folder{{ID: "g1", Source: "s", Path: "Big", Name: "Big"}},
+		"", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 20})
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "g1", Name: "Big"})
+	m = m.switchTab(tabChanges)
+
+	page := m.changesVisibleRows()
+	before := m.chgSel
+	m = up(m, tea.KeyMsg{Type: tea.KeyPgDown})
+	if m.chgSel != before+page {
+		t.Errorf("PgDn should move the cursor a page: %d → %d, page is %d", before, m.chgSel, page)
+	}
+	// And the cursor is still on screen after it.
+	rows := m.changeRows(m.contentW())
+	cur := m.chgCursor(rows)
+	if cur < m.chgScroll || cur >= m.chgScroll+page {
+		t.Errorf("the cursor left the window: row %d, window %d..%d", cur, m.chgScroll, m.chgScroll+page)
+	}
+
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnd})
+	if got := m.chgCursor(m.changeRows(m.contentW())); got != len(rows)-1 {
+		t.Errorf("end should land on the last row: %d of %d", got, len(rows))
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyPgUp})
+	if m.chgSel == 0 {
+		t.Error("one PgUp from the end should not jump to the top")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyHome})
+	if m.chgSel != 0 || m.chgScroll != 0 {
+		t.Errorf("home should go to the top: sel %d scroll %d", m.chgSel, m.chgScroll)
+	}
+}
+
+// The tally is compact enough to survive a session with everything in it.
+func TestImpactTallyStaysShort(t *testing.T) {
+	var ents []vault.Entry
+	for i := range 26 {
+		ents = append(ents, vault.Entry{ID: fmt.Sprintf("e%d", i), Source: "s", Path: "doomed",
+			Title: fmt.Sprintf("entry-%d", i), Password: secret.New("p")})
+	}
+	ents = append(ents, vault.Entry{ID: "k", Source: "s", Path: "Other", Title: "kept", Password: secret.New("p")})
+	m := up(New(ents, []vault.Folder{
+		{ID: "g1", Source: "s", Path: "doomed", Name: "doomed"},
+		{ID: "g2", Source: "s", Path: "Other", Name: "Other"},
+	}, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 24})
+
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "g1", Name: "doomed"})
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.EditEntry, Source: "s", Target: "k",
+		Before: &edit.Draft{ID: "k", Title: "kept"}, After: &edit.Draft{ID: "k", Title: "kept!"}})
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.CreateEntry, Source: "s", Target: "new", Parent: "g2",
+		After: &edit.Draft{ID: "new", GroupID: "g2", Title: "new"}})
+
+	tally := ansi.Strip(m.impactTally())
+	if dw(tally) > 24 {
+		t.Errorf("the tally has to fit a panel border, it is %d cells: %q", dw(tally), tally)
+	}
+	for _, want := range []string{"+1", "~1", "-1", "26"} {
+		if !strings.Contains(tally, want) {
+			t.Errorf("the tally should carry %q: %q", want, tally)
+		}
 	}
 }

@@ -246,14 +246,19 @@ func (m Model) changesView() string {
 	ctx := ""
 	if m.remaining > 0 {
 		ctx = m.countdown()
+	} else if n := m.permanentlyRemoved(); n > 0 {
+		// The tally on the border says how much. This line is kept for the part
+		// of it that no backup inside the file can undo.
+		ctx = " " + theme.Bad.Render(plural(n, "thing", "things")+" would be deleted permanently") +
+			theme.Faded.Render("  ·  ^s to review and write")
 	} else if m.dirtyCount() > 0 {
-		ctx = " " + theme.Faded.Render("^s writes") + "  " + trunc(m.impactSummary(), max(10, m.w-12))
+		ctx = " " + theme.Faded.Render("^s to review and write")
 	}
 
 	return header + "\n" +
 		boxV("Changes", m.changesPanelInfo(), body, m.w, panelsH, true, len(rows), start, 0) + "\n" +
 		ctx + "\n" +
-		m.footer(theme.Faded.Render("↑↓ move · PgUp/Dn scroll · z/Z fold · x revert · ↵ go to it · ^s write"))
+		m.footer(theme.Faded.Render("↑↓ move · PgUp/Dn page · z/Z fold · x revert · ↵ go to it · ^s write"))
 }
 
 // persistWritable records the choice in the config and returns the message to
