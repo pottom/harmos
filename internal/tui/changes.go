@@ -75,19 +75,46 @@ func (m Model) askToSave() (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.saveConfirm = true
+	_, m.confirmSel = saveChoices(m.permanentDeletes() > 0)
 	return m, nil
 }
 
-func (m Model) updateSaveConfirm(key string) (Model, tea.Cmd) {
-	switch key {
-	case "y", "Y", "enter":
-		m.saveConfirm = false
-		m.saving = true
-		return m, m.saveCmd()
-	case "esc", "n", "N":
-		m.saveConfirm = false
+// permanentDeletes counts the staged deletions that skip the recycle bin. It is
+// what decides how this confirmation leads — see saveChoices.
+func (m Model) permanentDeletes() int {
+	n := 0
+	for _, op := range m.chg.Effective() {
+		if op.Perm && (op.Kind == edit.DeleteEntry || op.Kind == edit.DeleteGroup) {
+			n++
+		}
 	}
-	return m, nil
+	return n
+}
+
+func (m Model) updateSaveConfirm(key string) (Model, tea.Cmd) {
+	choices, _ := saveChoices(m.permanentDeletes() > 0)
+	if sel, moved := confirmNav(key, m.confirmSel, len(choices)); moved {
+		m.confirmSel = sel
+		return m, nil
+	}
+
+	write := false
+	switch key {
+	case "enter":
+		write = m.confirmSel == 0
+	case "y", "Y":
+		write = true
+	case "esc", "n", "N":
+	default:
+		return m, nil // an unrelated key does not dismiss a confirmation
+	}
+
+	m.saveConfirm = false
+	if !write {
+		return m, nil
+	}
+	m.saving = true
+	return m, m.saveCmd()
 }
 
 // saveCmd applies and writes, off the update loop.
@@ -128,6 +155,7 @@ func (m Model) onSaveDone(msg saveDoneMsg) Model {
 			// throwing their work away to make the error simpler would be the
 			// wrong trade.
 			m.saveConflict = msg.source
+			m.confirmSel = 0 // Reload leads: it is the answer that loses nothing
 			return m
 		}
 		m.flash = "save failed: " + msg.err.Error()
@@ -182,6 +210,17 @@ func (m *Model) reload(source string) (*vault.Vault, error) {
 }
 
 func (m Model) updateConflict(key string) (Model, tea.Cmd) {
+	if sel, moved := confirmNav(key, m.confirmSel, len(conflictChoices())); moved {
+		m.confirmSel = sel
+		return m, nil
+	}
+	if key == "enter" {
+		if m.confirmSel == 0 {
+			key = "r"
+		} else {
+			key = "esc"
+		}
+	}
 	switch key {
 	case "r", "R":
 		// Re-read and keep the staged changes, so they can be reviewed against
@@ -199,11 +238,23 @@ func (m Model) updateConflict(key string) (Model, tea.Cmd) {
 
 // saveConfirmView names everything the save is about to do.
 //
-// Three things, because each answers a question somebody would otherwise have to
-// go and check: which file, how much, and where the backup will be.
+// This is the only confirmation in the editing flow: staging asks nothing,
+// because staging writes nothing and every staged change can be taken back from
+// this tab. So this one has to carry the whole weight — which file, how much,
+// where the backup goes, and above all what cannot be undone afterwards.
 func (m Model) saveConfirmView() string {
 	counts := m.chg.Counts()
 	lines := []string{"", "  " + theme.Strong.Render("Write these changes?"), ""}
+
+	// The permanent deletes come first and in their own words. Everything else
+	// here is recoverable from the backup; this is not recoverable from the file.
+	if n := m.permanentDeletes(); n > 0 {
+		lines = append(lines,
+			"  "+theme.Bad.Render(fmt.Sprintf("%d permanent deletion(s)", n))+
+				theme.Dimmed.Render(" — not into the recycle bin"),
+			"  "+theme.Faded.Render("the backup below still holds them; the vault will not"),
+			"")
+	}
 
 	for _, src := range m.chg.Sources() {
 		h := m.handles[src]
@@ -222,7 +273,9 @@ func (m Model) saveConfirmView() string {
 		}
 		lines = append(lines, "")
 	}
-	return m.modal("Save", m.chg.Summary(), lines, "y write · n cancel")
+	choices, _ := saveChoices(m.permanentDeletes() > 0)
+	lines = append(lines, confirmButtons(choices, m.confirmSel, "←/→ choose · ↵ confirm · esc cancel")...)
+	return m.modal("Save", m.chg.Summary(), lines, "")
 }
 
 // conflictView is what happens when the file moved under us.
@@ -237,7 +290,8 @@ func (m Model) conflictView() string {
 		"  " + theme.Faded.Render("Nothing was written. Your changes are still staged."),
 		"",
 	}
-	return m.modal("Conflict", m.saveConflict, lines, "r reload and keep my changes · esc leave it")
+	lines = append(lines, confirmButtons(conflictChoices(), m.confirmSel, "←/→ choose · ↵ confirm · esc leave it")...)
+	return m.modal("Conflict", m.saveConflict, lines, "")
 }
 
 // quitGuardView asks before throwing staged work away.
@@ -249,10 +303,18 @@ func (m Model) quitGuardView() string {
 		"  " + theme.Dimmed.Render(m.chg.Summary()),
 		"",
 	}
-	return m.modal("Quit", "unsaved", lines, "s save and quit · d discard and quit · esc stay")
+	lines = append(lines, confirmButtons(quitChoices(), m.confirmSel, "←/→ choose · ↵ confirm · esc stay")...)
+	return m.modal("Quit", "unsaved", lines, "")
 }
 
 func (m Model) updateQuitGuard(key string) (Model, tea.Cmd) {
+	if sel, moved := confirmNav(key, m.confirmSel, len(quitChoices())); moved {
+		m.confirmSel = sel
+		return m, nil
+	}
+	if key == "enter" {
+		key = []string{"s", "d", "esc"}[m.confirmSel]
+	}
 	switch key {
 	case "s", "S":
 		m.quitGuard = false

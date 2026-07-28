@@ -510,7 +510,8 @@ that is currently duplicated three times (`vault_test.go`, `session_test.go`,
 `recyclebin.go`, `history.go`.
 
 **Recycle bin.** If `Meta.RecycleBinEnabled == false`, `d` is *also* permanent and the
-confirm overlay says so out loud (KeePassXC-consistent). A missing bin is created as a
+flash that reports the staging says so out loud (KeePassXC-consistent), as does the
+write confirmation. A missing bin is created as a
 direct child of the root group with `IconID = 43`, setting `Meta.RecycleBinUUID` and
 `RecycleBinChanged`. Permanent delete appends to `Root.DeletedObjects` with a
 non-nil `DeletionTime`; deleting a group tombstones **every descendant**.
@@ -551,8 +552,19 @@ and the field hint says so.
 
 ### PR8 notes
 
-The save confirmation shows three things before `y`: the full destination path, the
-per-source change counts, and **the backup path it is about to create**.
+**One confirmation, at the write.** Staging asks nothing — deleting included. Staging
+writes no bytes, the row is decorated the moment the key is pressed, and `x` on the
+Changes tab takes it back; a prompt in front of a reversible act is not a safeguard but
+a keystroke people learn to dismiss unread, which is what you least want at the prompt
+that does matter. So the write confirmation carries the whole weight: the full
+destination path, the per-source change counts, **the backup path it is about to
+create**, and — first, in its own words — the count of **permanent deletions**, the one
+thing the vault cannot get back afterwards.
+
+Its buttons follow the rule in `confirm.go`: the answer the user came for leads, except
+where the act is irreversible. An ordinary write leads with **Write**; a set containing
+a permanent delete leads with **Cancel**, so an enter pressed out of habit costs
+nothing.
 
 `saveCmd` runs **outside the update loop** as a `tea.Cmd` — the Argon2 re-derivation
 takes ~0.5–1 s, the same reason `openCmd` exists.

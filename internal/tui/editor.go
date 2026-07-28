@@ -30,7 +30,6 @@ const (
 	editEntry
 	editFolder
 	editMove
-	editDelete
 )
 
 // openEntryEditor loads an entry losslessly and stages nothing yet.
@@ -132,8 +131,6 @@ func (m Model) draftFromForm() edit.Draft {
 // updateEditor owns every key while the editor is open.
 func (m Model) updateEditor(key string, msg tea.KeyMsg) (Model, tea.Cmd) {
 	switch m.edit {
-	case editDelete:
-		return m.updateDeleteConfirm(key), nil
 	case editMove:
 		return m.updateMovePicker(key), nil
 	}
@@ -225,35 +222,48 @@ func (m Model) openFolderEditor(parentID, existingID, name string) Model {
 	return m
 }
 
-// openDeleteConfirm asks before staging a deletion.
-func (m Model) openDeleteConfirm(target string, isFolder, permanent bool) Model {
-	m.edit = editDelete
-	m.editTarget = target
-	m.editFolderTarget = isFolder
-	m.editPerm = permanent
-	return m
-}
-
-func (m Model) updateDeleteConfirm(key string) Model {
-	switch key {
-	case "y", "Y", "enter":
-		kind := edit.DeleteEntry
-		if m.editFolderTarget {
-			kind = edit.DeleteGroup
-		}
-		op := edit.Op{
-			Kind: kind, Source: m.editSource, Target: m.editTarget,
-			Perm: m.editPerm || !m.binEnabled(m.editSource),
-		}
-		if !m.editFolderTarget {
-			if d, err := m.handles[m.editSource].EntryDraft(m.editTarget); err == nil {
-				op.Before = &d
-			}
-		}
-		m.chg, _ = m.chg.Add(op)
-		m.flash = "staged — nothing is written until you save"
+// stageDelete stages a deletion. It does not ask.
+//
+// There used to be a confirmation here, and it was answering a question nobody
+// had: staging writes nothing, the row turns red and struck through the moment
+// you press the key, and x on the Changes tab takes it back. A prompt in front
+// of a reversible act is not a safeguard — it is a keystroke people learn to
+// dismiss without reading, which is exactly what you do not want them doing at
+// the one prompt that matters, the write.
+//
+// So the confirmation lives at the write, once, and it names what is about to
+// happen — including a permanent delete, which is the only part of this that
+// cannot be taken back afterwards.
+func (m Model) stageDelete(target string, isFolder, permanent bool) Model {
+	kind := edit.DeleteEntry
+	if isFolder {
+		kind = edit.DeleteGroup
 	}
-	m.edit = editNone
+	perm := permanent || !m.binEnabled(m.editSource)
+
+	op := edit.Op{Kind: kind, Source: m.editSource, Target: target, Perm: perm}
+	if !isFolder {
+		if d, err := m.handles[m.editSource].EntryDraft(target); err == nil {
+			op.Before = &d
+		}
+	}
+	m.chg, _ = m.chg.Add(op)
+
+	// Say which of the two deletions this is — with the recycle bin switched
+	// off, d is a permanent delete and silence would be a lie — and say how to
+	// take it back.
+	what := "entry"
+	if isFolder {
+		what = "folder and its contents"
+	}
+	where := "to the recycle bin"
+	if perm {
+		where = "permanently"
+		if !permanent {
+			where = "permanently (this database has no recycle bin)"
+		}
+	}
+	m.flash = "staged: delete " + what + " " + where + " · x on the Changes tab undoes it"
 	return m
 }
 
@@ -261,31 +271,6 @@ func (m Model) updateDeleteConfirm(key string) Model {
 func (m Model) binEnabled(source string) bool {
 	h := m.handles[source]
 	return h != nil && h.RecycleBinEnabled()
-}
-
-// deleteConfirmView says what will actually happen — which is not always what
-// the key implies. With the recycle bin switched off, a "move to bin" delete is
-// a permanent one, and a prompt that did not say so would be lying.
-func (m Model) deleteConfirmView() string {
-	what := "entry"
-	if m.editFolderTarget {
-		what = "folder and everything in it"
-	}
-	permanent := m.editPerm || !m.binEnabled(m.editSource)
-
-	lines := []string{"", "  " + theme.Strong.Render("Delete this "+what+"?"), ""}
-	if permanent {
-		lines = append(lines,
-			"  "+theme.Bad.Render("PERMANENTLY")+theme.Dimmed.Render(" — it cannot be recovered from the file"))
-		if !m.editPerm {
-			lines = append(lines,
-				"  "+theme.Faded.Render("this database has its recycle bin switched off"))
-		}
-	} else {
-		lines = append(lines, "  "+theme.Dimmed.Render("into the recycle bin, where it can be restored"))
-	}
-	lines = append(lines, "", "  "+theme.Faded.Render("staged only — nothing is written until you save"), "")
-	return m.modal("Delete", m.editSource, lines, "y stage · n cancel")
 }
 
 // openMovePicker chooses a destination folder.
@@ -371,8 +356,6 @@ func (m Model) movePickerView() string {
 // editorView renders whichever editor surface is open.
 func (m Model) editorView() string {
 	switch m.edit {
-	case editDelete:
-		return m.deleteConfirmView()
 	case editMove:
 		return m.movePickerView()
 	}
@@ -449,10 +432,10 @@ func (m Model) editKey(key string) (Model, bool) {
 	case "d", "D":
 		perm := key == "D"
 		if entry != nil {
-			return m.openDeleteConfirm(entry.ID, false, perm), true
+			return m.stageDelete(entry.ID, false, perm), true
 		}
 		if folderID != "" {
-			return m.openDeleteConfirm(folderID, true, perm), true
+			return m.stageDelete(folderID, true, perm), true
 		}
 	case "m":
 		if entry != nil {
