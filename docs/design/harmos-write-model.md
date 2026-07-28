@@ -465,8 +465,8 @@ one at a time, on green CI plus human approval.
 | ~~**4**~~ | ~~`feat/session-handles`~~ · **done** | Over one Pleasant and one kdbx source, `session.Open` yields **exactly one** handle — the kdbx one. |
 | ~~**5**~~ | ~~`refactor/tui-form-and-tokens`~~ · **done** | Every built-in theme fills every token (reflective test); the Settings source form behaves identically; the new glyphs render under `HARMOS_NERDFONT=0`. |
 | ~~**6**~~ | ~~`feat/tui-write-lock`~~ · **done** | No source is writable at launch; `ctrl+w` + `y` unlocks exactly one and flips the padlock; a Pleasant source refuses with a reason; the teatest contract stays green. |
-| **7** | `feat/tui-edit` (in review) | A staged edit colours the row and increments the dirty count **while the file on disk is byte-identical**. |
-| **8** | `feat/tui-changes-and-save` | edit → `ctrl+s` → `y` writes the file; `keepassxc-cli` opens it and shows the edited value; the tab empties and the tree decoration clears. |
+| ~~**7**~~ | ~~`feat/tui-edit`~~ · **done** | A staged edit colours the row and increments the dirty count **while the file on disk is byte-identical**. |
+| **8** | `feat/tui-changes-and-save` (in review) | edit → `ctrl+s` → `y` writes the file; `keepassxc-cli` opens it and shows the edited value; the tab empties and the tree decoration clears. |
 | **9** | `test/write-oracle` | The CI oracle job proves `keepassxc-cli` reads back the recycle bin, the history record **and** a tombstone from a harmos-written file. |
 
 ### PR1 notes

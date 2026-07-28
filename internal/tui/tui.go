@@ -128,6 +128,19 @@ type Model struct {
 	moveDests        []vaultFolderRef
 	moveSel          int
 
+	// The Changes tab and the save.
+	chgSel        int    // selected change
+	saveConfirm   bool   // the write confirmation is up
+	saving        bool   // a save is running off the update loop
+	saveConflict  string // a source whose file moved under us ("" = none)
+	quitGuard     bool   // quitting with staged changes
+	quitAfterSave bool   // quit once the save lands
+
+	// The full, merged view, so one source can be reloaded without losing the
+	// others.
+	mergedEntries []vault.Entry
+	mergedFolders []vault.Folder
+
 	timeout    time.Duration
 	copied     string
 	copiedWhat string
@@ -281,6 +294,7 @@ func (m Model) rebuild(entries []vault.Entry, folders []vault.Folder) Model {
 		selectedEntry = e.ID
 	}
 
+	m.mergedEntries, m.mergedFolders = entries, folders
 	m.matcher = search.New(entries)
 	m.roots = buildTree(entries, folders)
 	m.nSrc = len(m.roots)
@@ -548,10 +562,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case saveDoneMsg:
+		m = m.onSaveDone(msg)
+		if m.quitAfterSave && msg.err == nil {
+			return m, tea.Sequence(clearClip, tea.Quit)
+		}
+		m.quitAfterSave = false
+		return m, nil
+
 	case tea.KeyMsg:
 		key := msg.String()
 		if key == "ctrl+c" {
+			// Quitting with staged changes throws them away, and ctrl+c is the
+			// most reflexive way to leave — so it asks too, not just q.
+			if m.dirtyCount() > 0 && !m.quitGuard && !m.saving {
+				m.quitGuard = true
+				return m, nil
+			}
 			return m, tea.Sequence(clearClip, tea.Quit)
+		}
+		// The write confirmations are global: ^s can be pressed from any tab, so
+		// the overlay it opens has to own the keyboard from any tab too.
+		if m.quitGuard {
+			return m.updateQuitGuard(key)
+		}
+		if m.saveConfirm {
+			return m.updateSaveConfirm(key)
+		}
+		if m.saveConflict != "" {
+			return m.updateConflict(key)
+		}
+		if m.saving {
+			return m, nil // keys are ignored while the file is being written
 		}
 		// The unlock phase owns every key until every source is open.
 		if m.locked {
@@ -583,7 +625,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// q quits everywhere except while typing a search (where it's a character).
 		if key == "q" && !m.searchMode {
+			if m.dirtyCount() > 0 {
+				m.quitGuard = true
+				return m, nil
+			}
 			return m, tea.Sequence(clearClip, tea.Quit)
+		}
+		// ctrl+s asks to write, from anywhere.
+		if key == "ctrl+s" && !m.searchMode {
+			return m.askToSave()
 		}
 
 		// Tab switching (1 = Vault, 2 = Generate, 3 = Settings — display order, not the
@@ -596,6 +646,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		if m.tab == tabChanges {
+			return m.updateChanges(key)
+		}
 		// The Settings tab handles its own keys.
 		if m.tab == 1 {
 			return m.updateSettings(key, msg)

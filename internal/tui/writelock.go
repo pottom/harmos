@@ -156,13 +156,12 @@ func (m Model) changesPlaceholder() []string {
 	}
 }
 
-// changesView is the Changes tab. The diff itself lands with the editor that
-// produces changes to show.
+// changesView is the Changes tab.
 func (m Model) changesView() string {
-	body := m.changesPlaceholder()
+	body := m.changesBody(m.w - 4)
 	panelsH := max(3, m.h-2)
 	header := spread(m.brandVersion()+theme.Faded.Render("  ·  changes"), m.tabIndicator(), m.w)
 	return header + "\n" +
 		box("Changes", m.chg.Summary(), body, m.w, panelsH, true) + "\n" +
-		m.footer(theme.Faded.Render("^w unlock a source · 1 back to the vault"))
+		m.footer(theme.Faded.Render("↑↓ pick · x revert · ↵ go to it · ^s save · 1 back to the vault"))
 }
