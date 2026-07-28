@@ -108,6 +108,14 @@ func auditSurfaces() []surface {
 			}
 			return up(up(m, key2("d")), tabKey(tabChanges)).View()
 		}},
+		{"changes/everything", func(t *testing.T) string { return mockChanges(t, auditW, auditH).View() }},
+		{"changes/everything-folded", func(t *testing.T) string {
+			return up(mockChanges(t, auditW, auditH), key2("Z")).View()
+		}},
+		{"confirm/save-everything", func(t *testing.T) string {
+			m, _ := mockChanges(t, auditW, auditH).askToSave()
+			return m.View()
+		}},
 		{"help", func(t *testing.T) string { return up(base(t), key2("?")).View() }},
 		{"editor/entry", func(t *testing.T) string {
 			return intoEditor(t, sized(editModel(t))).View()

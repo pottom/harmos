@@ -8,9 +8,9 @@ import (
 	"github.com/pottom/harmos/internal/theme"
 )
 
-// button renders a modal action button: an outlined "[ Label ]" normally, a
-// filled (reverse-video) colored button when focused. danger → red (Remove),
-// else green (Save/Confirm).
+// button renders a modal action button. The focused one is bracketed and filled
+// (reverse video); the others are plain. danger → red (Remove), else green
+// (Save/Confirm).
 func button(label string, danger, focused bool) string {
 	col := theme.OK
 	if danger {
@@ -18,9 +18,13 @@ func button(label string, danger, focused bool) string {
 	}
 	st := lipgloss.NewStyle().Foreground(col).Bold(true)
 	if focused {
-		return st.Reverse(true).Render(" " + label + " ")
+		// Brackets on the focused one, not the other way round: a reader who
+		// does not know the convention reads brackets as "this is the one", and
+		// the reverse video that used to be the only marker is invisible in a
+		// screenshot, a log, or a terminal that does not do it.
+		return st.Reverse(true).Render("[ " + label + " ]")
 	}
-	return st.Render("[ " + label + " ]")
+	return st.Render("  " + label + "  ")
 }
 
 // panelState is how a panel's border should read.
@@ -155,6 +159,15 @@ func boxTopState(title, info string, inW int, st panelState) string {
 		}
 		return tstyle.Render(s)
 	}
+	// The same for the marker on the right: the Changes tab's tally arrives
+	// already coloured, and wrapping it in another style would cut every colour
+	// short at the first reset.
+	infoed := func(s string) string {
+		if strings.Contains(s, "\x1b") {
+			return s
+		}
+		return theme.Faded.Render(s)
+	}
 	// The row between the corners is exactly inW columns — no more, whatever the
 	// title and the marker are. It used to clamp the fill at zero and let the
 	// title push past, which made a narrow panel one column wider at the top than
@@ -168,7 +181,7 @@ func boxTopState(title, info string, inW int, st panelState) string {
 		left, leftW = bc.Render("─ ")+titled(t)+bc.Render(" "), 3+dw(t)
 	}
 	if info != "" && inW-leftW >= dw(info)+3 { // " " + info + " ─"
-		right, rightW = bc.Render(" ")+theme.Faded.Render(info)+bc.Render(" ─"), dw(info)+3
+		right, rightW = bc.Render(" ")+infoed(info)+bc.Render(" ─"), dw(info)+3
 	}
 	fill := max(0, inW-leftW-rightW)
 	return bc.Render("╭") + left + bc.Render(strings.Repeat("─", fill)) + right + bc.Render("╮")

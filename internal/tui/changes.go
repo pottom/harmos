@@ -364,7 +364,7 @@ func (m Model) saveConfirmView() string {
 	}
 	choices, _ := saveChoices(m.permanentDeletes() > 0)
 	lines = append(lines, confirmButtons(choices, m.confirmSel, "←/→ choose · ↵ confirm · esc cancel")...)
-	return m.modal("Save", m.chg.Summary(), lines, "")
+	return m.modal("Save", m.impactTally(), lines, "")
 }
 
 // conflictView is what happens when the file moved under us.

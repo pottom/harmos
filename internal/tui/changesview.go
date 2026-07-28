@@ -233,7 +233,7 @@ func (m Model) changeRows(w int) []changeRow {
 				kind:   rowChange,
 				seq:    c.Seq,
 				target: c.Target,
-				segs:   changeHeading(c, hunkFolded, m.alsoGoing(c), w),
+				segs:   changeHeading(m.resolve(c), hunkFolded, m.alsoGoing(c), w),
 			})
 			if hunkFolded {
 				continue
@@ -313,6 +313,13 @@ func changeStyleOf(st edit.State) lipgloss.Style {
 	return style
 }
 
+// resolve fills a change's name and summary from the vault, so the row says
+// what was staged rather than what the operation happened to record.
+func (m Model) resolve(c edit.Change) edit.Change {
+	c.Title, c.Detail = m.nameOf(c), m.detailOf(c)
+	return c
+}
+
 // typeIcon says what kind of thing a change is about.
 func typeIcon(k edit.Kind) string {
 	i := ic()
@@ -329,6 +336,8 @@ func statMarker(st edit.State) string {
 		return "+"
 	case edit.Deleted:
 		return "-"
+	case edit.Moved:
+		return "→" // not "~": a move and an edit are different things
 	default:
 		return "~"
 	}
@@ -356,6 +365,46 @@ func folderHeading(g changeGroup, folded bool, w int) []rowSeg {
 		out = append(out, rowSeg{"  " + plural(len(g.items), "change", "changes"), theme.Faded})
 	}
 	return out
+}
+
+// nameOf is what to call a change on screen. An operation that carries no name
+// of its own — a move — is resolved against the vault rather than shown as
+// "(untitled)", which tells the reader nothing about what they staged.
+func (m Model) nameOf(c edit.Change) string {
+	if c.Title != "" && c.Title != "(untitled)" {
+		return c.Title
+	}
+	if n := m.nameOfTarget(c.Target, isFolderKind(c.Kind)); n != "" {
+		return n
+	}
+	return c.Title
+}
+
+// nameOfTarget looks up an entry's title or a folder's name by ID.
+func (m Model) nameOfTarget(id string, isFolder bool) string {
+	if isFolder {
+		if f, ok := m.folderByID(id); ok {
+			return f.Name
+		}
+		return ""
+	}
+	for _, e := range m.mergedEntries {
+		if e.ID == id {
+			return e.Title
+		}
+	}
+	return ""
+}
+
+// detailOf is the sentence beside a change. A move says where to: "moved" alone
+// is the half of it the reader already knew.
+func (m Model) detailOf(c edit.Change) string {
+	if c.Kind == edit.MoveEntry || c.Kind == edit.MoveGroup {
+		if f, ok := m.folderByID(c.Parent); ok {
+			return "moved to " + strings.ReplaceAll(f.Path, "/", " › ")
+		}
+	}
+	return c.Detail
 }
 
 // changeHeading is one staged item: its marker, its name, and what will happen.
@@ -476,9 +525,12 @@ func (m Model) impactTally() string {
 	var total writeImpact
 	for _, src := range m.chg.Sources() {
 		im := m.impactOf(src)
-		total.created += im.created
-		total.modified += im.modified
-		total.moved += im.moved
+		total.newFolders += im.newFolders
+		total.newEntries += im.newEntries
+		total.changedFolders += im.changedFolders
+		total.changedEntries += im.changedEntries
+		total.movedFolders += im.movedFolders
+		total.movedEntries += im.movedEntries
 		total.folders += im.folders
 		total.entries += im.entries
 		total.permanent += im.permanent
@@ -490,14 +542,14 @@ func (m Model) impactTally() string {
 		style := changeStyleOf(st).Strikethrough(false)
 		parts = append(parts, style.Render(statMarker(st)+strings.Join(pairs, " ")))
 	}
-	if total.created > 0 {
-		count(edit.New, itoa(total.created))
+	if n := total.newFolders + total.newEntries; n > 0 {
+		count(edit.New, itoa(n))
 	}
-	if total.modified > 0 {
-		count(edit.Modified, itoa(total.modified))
+	if n := total.changedFolders + total.changedEntries; n > 0 {
+		count(edit.Modified, itoa(n))
 	}
-	if total.moved > 0 {
-		count(edit.Moved, itoa(total.moved))
+	if n := total.movedFolders + total.movedEntries; n > 0 {
+		count(edit.Moved, itoa(n))
 	}
 	if total.folders > 0 || total.entries > 0 {
 		var what []string
@@ -661,11 +713,11 @@ func (m Model) alsoGoing(c edit.Change) string {
 		return " · empty"
 	}
 	var parts []string
-	if entries > 0 {
-		parts = append(parts, plural(entries, "entry", "entries"))
-	}
 	if folders > 0 {
 		parts = append(parts, plural(folders, "folder", "folders"))
+	}
+	if entries > 0 {
+		parts = append(parts, plural(entries, "entry", "entries"))
 	}
 	return " · with " + strings.Join(parts, " and ")
 }
@@ -870,9 +922,11 @@ func (m Model) selectFirstChangeIn(rows []changeRow, cur changeRow) Model {
 // those deletions was a single keystroke on a folder, and this is the only place
 // the total ever appears.
 type writeImpact struct {
-	created, modified, moved int
-	folders, entries         int // removed
-	permanent                int // of the removed, those skipping the recycle bin
+	newFolders, newEntries         int
+	changedFolders, changedEntries int
+	movedFolders, movedEntries     int
+	folders, entries               int // removed
+	permanent                      int // of the removed, those skipping the recycle bin
 }
 
 func (m Model) impactOf(source string) writeImpact {
@@ -902,11 +956,23 @@ func (m Model) impactOf(source string) writeImpact {
 		}
 		switch c.State {
 		case edit.New:
-			im.created++
+			if isFolderKind(c.Kind) {
+				im.newFolders++
+			} else {
+				im.newEntries++
+			}
 		case edit.Modified:
-			im.modified++
+			if isFolderKind(c.Kind) {
+				im.changedFolders++
+			} else {
+				im.changedEntries++
+			}
 		case edit.Moved:
-			im.moved++
+			if isFolderKind(c.Kind) {
+				im.movedFolders++
+			} else {
+				im.movedEntries++
+			}
 		case edit.Deleted:
 			if !isFolderKind(c.Kind) {
 				im.entries++
@@ -956,28 +1022,37 @@ func (im writeImpact) lines() []string {
 		style, marker := changeStyle(st)
 		out = append(out, "    "+style.Render(strings.TrimSpace(marker)+" "+text))
 	}
-	if im.created > 0 {
-		add(edit.New, plural(im.created, "new thing", "new things"))
+	if n := im.newFolders + im.newEntries; n > 0 {
+		add(edit.New, countOf(im.newFolders, im.newEntries)+" added")
 	}
-	if im.modified > 0 {
-		add(edit.Modified, plural(im.modified, "entry changed", "entries changed"))
+	if im.changedFolders+im.changedEntries > 0 {
+		add(edit.Modified, countOf(im.changedFolders, im.changedEntries)+" changed")
 	}
-	if im.moved > 0 {
-		add(edit.Moved, plural(im.moved, "thing moved", "things moved"))
+	if im.movedFolders+im.movedEntries > 0 {
+		add(edit.Moved, countOf(im.movedFolders, im.movedEntries)+" moved")
 	}
-	if im.folders > 0 || im.entries > 0 {
-		var parts []string
-		if im.folders > 0 {
-			parts = append(parts, plural(im.folders, "folder", "folders"))
-		}
-		if im.entries > 0 {
-			parts = append(parts, plural(im.entries, "entry", "entries"))
-		}
-		text := strings.Join(parts, " and ") + " removed"
-		if im.permanent > 0 {
+	if total := im.folders + im.entries; total > 0 {
+		text := countOf(im.folders, im.entries) + " removed"
+		switch {
+		case im.permanent == total:
+			text += ", permanently"
+		case im.permanent > 0:
 			text += ", " + itoa(im.permanent) + " of them permanently"
 		}
 		add(edit.Deleted, text)
 	}
 	return out
+}
+
+// countOf writes a folder count and an entry count as one phrase, folders
+// first — the order the review lists them in, so the two agree.
+func countOf(folders, entries int) string {
+	var parts []string
+	if folders > 0 {
+		parts = append(parts, plural(folders, "folder", "folders"))
+	}
+	if entries > 0 {
+		parts = append(parts, plural(entries, "entry", "entries"))
+	}
+	return strings.Join(parts, " and ")
 }

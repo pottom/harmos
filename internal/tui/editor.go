@@ -405,9 +405,12 @@ func (m Model) updateMovePicker(key string) Model {
 		}
 		m.chg, _ = m.chg.Add(edit.Op{
 			Kind: kind, Source: m.editSource, Target: m.editTarget,
+			// The name travels with the operation: a review that cannot say
+			// what moved is not a review.
+			Name:   m.nameOfTarget(m.editTarget, m.editFolderTarget),
 			Parent: m.moveDests[m.moveSel].id,
 		})
-		m.flash = "staged — nothing is written until you save"
+		m.flash = "staged: move to " + m.moveDests[m.moveSel].label + " · nothing is written until you save"
 		m.edit = editNone
 	}
 	return m
