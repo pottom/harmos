@@ -244,11 +244,34 @@ The bar is a **round trip that loses nothing**, not merely "it compiles".
    affected values back — our own assertions cannot certify a format we do not
    own.
 
+## Measured outcome
+
+Both real vaults that motivated this work — KDBX 4.1, one with 28 and one with 76
+`Group>PreviousParentGroup` references, plus custom-data and custom-icon
+timestamps — go from **refused** to **writable**, and the content gate proves it
+by round-tripping them in memory and comparing element censuses. Nothing they
+contain is lost.
+
+The upstream test suite passes unchanged apart from four `CustomIcon` literals
+that had to become keyed (see below). `golangci-lint` reports the same **50**
+findings as pristine upstream: all pre-existing `goconst` noise, none introduced
+here.
+
 ## Upstream contribution
 
-The change is offered to `tobischo/gokeepasslib` as a pull request, matching the
-project's existing style: same test layout, same naming, no gratuitous
-refactoring, no reordering of existing fields.
+`CONTRIBUTING.md` asks for an **issue first**, then a fork and a pull request
+referencing it. Follow that order — do not open a PR cold.
+
+The change matches the project's existing style: table-driven tests with
+`title` + `t.Run`, `testify/assert` for struct comparison, raw-XML fixtures for
+unmarshal cases, no gratuitous refactoring, no reordering of existing fields.
+
+**One unavoidable break to declare in the PR.** Adding fields to `CustomIcon`
+breaks unkeyed struct literals, and the project's own tests use four of them
+(`encoder_test.go`, `meta_data_test.go`). They are updated to keyed form in the
+same change. This is the normal Go consequence of extending a struct, but it is
+the reviewer's call, so it belongs in the description rather than buried in a
+diff.
 
 harmos consumes it in the meantime through a `replace` directive pointing at our
 branch. **When (if) upstream merges it, the `replace` is deleted and the

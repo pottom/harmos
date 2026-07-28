@@ -15,6 +15,15 @@
 *.kdbx.lock
 *.lock
 
+# The vendored kdbx library ships its own test fixtures — synthetic kdbx files
+# and keyfiles from a public MIT repository, with published passwords. Its tests
+# cannot run without them, and those tests are what stands between a mistake in
+# our KDBX 4.1 patch and silent data loss in a real vault. Scoped to that one
+# directory on purpose: the blanket rules above exist so a real vault can never
+# be committed by accident, and they stay in force everywhere else.
+!third_party/gokeepasslib/tests/**/*.kdbx
+!third_party/gokeepasslib/tests/**/*.key
+
 # === PoC / scratch / raw dumps (real data) ===
 scratch/
 tmp/
