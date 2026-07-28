@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -370,5 +371,177 @@ func TestCopyChordsWhileSearching(t *testing.T) {
 	}
 	if !m.searchMode {
 		t.Error("and leave the search box where it was")
+	}
+}
+
+// secondSource opens another real kdbx as a second writable source.
+func secondSource(t *testing.T, m Model, name string) (Model, string) {
+	t.Helper()
+	path := t.TempDir() + "/" + name + ".kdbx"
+	vaulttest.Write(t, path, vaulttest.RecycleBin())
+	h, err := vault.OpenHandle(path, name, vault.Credentials{Password: secret.New("pw")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := h.Snapshot()
+	m.handles[name] = h
+	m.writeOK[name] = true
+	return m.rebuild(append(m.mergedEntries, v.Entries...), append(m.mergedFolders, v.Folders...)), path
+}
+
+// A save that fails halfway leaves the handle's database disagreeing with the
+// file — Apply mutates operation by operation and does not roll back. The next
+// save must not write that difference: it is damage nobody reviewed.
+func TestFailedSaveDoesNotPoisonTheNextOne(t *testing.T) {
+	m, path := walkModel(t)
+
+	// A set that applies partway and then fails: delete a folder, then delete an
+	// entry inside it, which is no longer there to delete.
+	m = onRow(t, m, "db")
+	m = up(m, key2("D"))
+	m = onEntry(t, m, "db", "db-prod")
+	m = up(m, key2("D"))
+
+	c := m.switchTab(tabChanges)
+	c, _ = c.askToSave()
+	c, cmd := c.updateSaveConfirm("y")
+	if cmd == nil {
+		t.Fatal("expected the write to start")
+	}
+	c = c.onSaveDone(cmd().(saveDoneMsg))
+	if !strings.HasPrefix(c.flash, "save failed") {
+		t.Fatalf("this set should not apply: %q", c.flash)
+	}
+
+	// Give up on all of it, then make one unrelated, innocent change.
+	for c.dirtyCount() > 0 {
+		before := c.dirtyCount()
+		c = up(c, key2("x"))
+		if c.dirtyCount() >= before {
+			t.Fatalf("x did not revert anything (%d staged)", c.dirtyCount())
+		}
+	}
+	c = c.switchTab(tabVault)
+	c = onEntry(t, c, "Infra", "jump-host")
+	c = up(c, key2("e"))
+	c = typeStr(c, "-ok")
+	c = up(c, tea.KeyMsg{Type: tea.KeyEnter})
+
+	c = c.switchTab(tabChanges)
+	c, _ = c.askToSave()
+	c, cmd = c.updateSaveConfirm("y")
+	if cmd == nil {
+		t.Fatal("expected the second write to start")
+	}
+	c = c.onSaveDone(cmd().(saveDoneMsg))
+	if c.flash != "saved" {
+		t.Fatalf("the innocent change should save: %q", c.flash)
+	}
+
+	h, err := vault.OpenHandle(path, "own", vault.Credentials{Password: secret.New("pw")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := h.Snapshot()
+	var titles []string
+	for _, e := range v.Entries {
+		titles = append(titles, e.Path+"/"+e.Title)
+	}
+	sort.Strings(titles)
+	want := []string{"Infra/db/db-prod", "Infra/db/db-stage", "Infra/jump-host-ok", "Net/router"}
+	if strings.Join(titles, " ") != strings.Join(want, " ") {
+		t.Errorf("the failed set left damage on disk:\n%v\nwant:\n%v", titles, want)
+	}
+}
+
+// When one source of a multi-source save fails, the ones already written are
+// written: their changes come off the staged set, or a retry writes them twice.
+func TestPartialSaveDoesNotRewriteWhatLanded(t *testing.T) {
+	m, _ := walkModel(t)
+	m, other := secondSource(t, m, "two")
+
+	// A creation in "own" that will succeed, and a set in "two" that cannot.
+	m = onRow(t, m, "Net")
+	m = up(m, key2("n"))
+	m = typeStr(m, "newbie")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	m = onRow(t, m, "Infra") // the second source's folder, same name
+	for i, tl := range m.visible() {
+		if tl.node.source == "two" && tl.node.id != "" {
+			m.tsel, m.focus = i, 0
+		}
+	}
+	m = up(m, key2("D"))
+	f := m.currentFolder()
+	if f == nil || f.source != "two" {
+		t.Fatalf("expected to be on the second source's folder, got %v", f)
+	}
+	for _, e := range f.entries {
+		m = m.revealTarget(e.ID, false)
+		m = up(m, key2("D")) // an entry inside a folder already deleted: unappliable
+	}
+
+	c := m.switchTab(tabChanges)
+	c, _ = c.askToSave()
+	c, cmd := c.updateSaveConfirm("y")
+	c = c.onSaveDone(cmd().(saveDoneMsg))
+
+	// Whatever happened to "two", "own" is either written and unstaged, or not
+	// written and still staged — never written and still staged.
+	h, err := vault.OpenHandle(other, "two", vault.Credentials{Password: secret.New("pw")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = h
+	ownStaged := c.chg.ForSource("own").Len()
+	if strings.HasPrefix(c.flash, "save failed") && ownStaged > 0 {
+		t.Errorf("own was written but is still staged (%d ops) — a retry would write it again", ownStaged)
+	}
+}
+
+// The write lock is a lock. Staging then locking must leave the file alone.
+func TestLockedSourceCannotBeSaved(t *testing.T) {
+	m, path := walkModel(t)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m = onEntry(t, m, "db", "db-prod")
+	m = up(m, key2("e"))
+	m = typeStr(m, "-sneaky")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	m = up(m, tea.KeyMsg{Type: tea.KeyCtrlW}) // lock it again
+	if m.writeUnlocked("own") {
+		t.Fatal("^w should have locked the source")
+	}
+
+	c := m.switchTab(tabChanges)
+	c, cmd := c.askToSave()
+	if cmd != nil || c.saveConfirm {
+		t.Fatal("a locked source must not even reach the confirmation")
+	}
+	if !strings.Contains(c.flash, "locked") {
+		t.Errorf("and it should say why: %q", c.flash)
+	}
+
+	// Even driven past the confirmation, the writer refuses.
+	c.saveConfirm = true
+	c, cmd = c.updateSaveConfirm("y")
+	if cmd != nil {
+		c = c.onSaveDone(cmd().(saveDoneMsg))
+		if !strings.Contains(c.flash, "locked") {
+			t.Errorf("the save itself should refuse a locked source: %q", c.flash)
+		}
+	}
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Error("a locked source was written")
 	}
 }

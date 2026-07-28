@@ -69,6 +69,8 @@ func mockChanges(t *testing.T, w, h int) Model {
 	after.URL = "https://db.example.internal:5432"
 	after.Fields = []edit.DraftField{{Key: "pps.cuf.Environment", Value: "production"}, {Key: "Owner", Value: "platform"}}
 
+	// Staged by hand, so the unlock the UI would have done has to be too.
+	m.writeOK = map[string]bool{"own": true, "work": true}
 	add := func(op edit.Op) { m.chg, _ = m.chg.Add(op) }
 	add(edit.Op{Kind: edit.EditEntry, Source: "own", Target: "own:1", Before: &before, After: &after})
 	add(edit.Op{Kind: edit.CreateEntry, Source: "own", Target: "own:new1", Parent: "own:g:2",

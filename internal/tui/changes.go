@@ -19,9 +19,15 @@ import (
 // change, look at it, confirm. Each step is reversible until the last.
 
 // saveDoneMsg reports the outcome of a save that ran off the update loop.
+//
+// It carries what was written as well as what failed. A save can touch several
+// sources, and one of them failing says nothing about the ones already on disk:
+// keeping their changes staged made a retry write them a second time, entry for
+// entry, under the same UUIDs.
 type saveDoneMsg struct {
-	source string
-	err    error
+	written []string // sources whose changes are on disk now
+	source  string   // the one that failed, if any
+	err     error
 }
 
 // updateChanges handles the Changes tab.
@@ -157,9 +163,27 @@ func (m Model) askToSave() (Model, tea.Cmd) {
 		m.flash = "nothing to save"
 		return m, nil
 	}
+	// A source that has been locked again is not written, and saying so before
+	// the confirmation is better than a failure after it.
+	if locked := m.lockedWithChanges(); len(locked) > 0 {
+		m.flash = "locked for writing: " + strings.Join(locked, ", ") + " — ^w unlocks it"
+		return m, nil
+	}
 	m.saveConfirm = true
 	_, m.confirmSel = saveChoices(m.permanentDeletes() > 0)
 	return m, nil
+}
+
+// lockedWithChanges is the sources that have staged changes and are no longer
+// unlocked for writing.
+func (m Model) lockedWithChanges() []string {
+	var out []string
+	for _, src := range m.chg.Sources() {
+		if !m.writeOK[src] {
+			out = append(out, src)
+		}
+	}
+	return out
 }
 
 // permanentDeletes counts the staged deletions that skip the recycle bin. It is
@@ -208,22 +232,31 @@ func (m Model) updateSaveConfirm(key string) (Model, tea.Cmd) {
 func (m Model) saveCmd() tea.Cmd {
 	sources := m.chg.Sources()
 	handles := m.handles
+	unlocked := m.writeOK
 	set := m.chg
 
 	return func() tea.Msg {
+		var written []string
 		for _, src := range sources {
 			h := handles[src]
 			if h == nil {
-				return saveDoneMsg{source: src, err: errors.New("this source is not open for writing")}
+				return saveDoneMsg{written: written, source: src, err: errors.New("this source is not open for writing")}
+			}
+			// The last gate before the only writer. askToSave refuses a locked
+			// source too, but this is the one that runs next to the write.
+			if !unlocked[src] {
+				return saveDoneMsg{written: written, source: src,
+					err: errors.New("locked for writing — ^w unlocks it")}
 			}
 			if err := h.Apply(set.ForSource(src)); err != nil {
-				return saveDoneMsg{source: src, err: err}
+				return saveDoneMsg{written: written, source: src, err: err}
 			}
 			if err := h.Save(); err != nil {
-				return saveDoneMsg{source: src, err: err}
+				return saveDoneMsg{written: written, source: src, err: err}
 			}
+			written = append(written, src)
 		}
-		return saveDoneMsg{}
+		return saveDoneMsg{written: written}
 	}
 }
 
@@ -231,7 +264,25 @@ func (m Model) saveCmd() tea.Cmd {
 func (m Model) onSaveDone(msg saveDoneMsg) Model {
 	m.saving = false
 
+	// Whatever else happened, the sources that were written are written: re-read
+	// them and take their changes off the staged set. Leaving them on it made the
+	// next attempt write them again — three saves, three copies of the same
+	// entry, each carrying the same kdbx UUID.
+	for _, src := range msg.written {
+		if v, err := m.reload(src); err == nil {
+			m = m.rebuild(v.Entries, v.Folders)
+		}
+		m.chg = m.chg.DropSource(src)
+	}
+
 	if msg.err != nil {
+		// Apply mutates the handle's database operation by operation and does
+		// not roll back, so a set that failed halfway has left that database
+		// disagreeing with the file. Re-reading it is what keeps the next save
+		// from writing damage nobody reviewed — the sequence that found this
+		// deleted a folder and its entries with no line about it anywhere.
+		m = m.discardHandleState(msg.source)
+
 		if errors.Is(msg.err, vault.ErrChangedUnderneath) {
 			// Somebody else wrote the file while we had it open. Refuse, and
 			// keep the staged set intact — the decision is the user's, and
@@ -245,17 +296,41 @@ func (m Model) onSaveDone(msg saveDoneMsg) Model {
 		return m
 	}
 
-	// Re-read what is now on disk, so the tree shows the file rather than our
-	// idea of it, and the next save's conflict check compares against reality.
-	for _, src := range m.chg.Sources() {
-		if v, err := m.reload(src); err == nil {
-			m = m.rebuild(v.Entries, v.Folders)
-		}
-	}
 	m.chg = edit.Set{}
 	m.chgSel = 0
+	m.chgFold, m.chgScroll = nil, 0
 	m.flash = "saved"
 	return m
+}
+
+// discardHandleState throws away a half-applied in-memory database by reopening
+// the file. The staged set is untouched: it is still what the user asked for,
+// and it can be applied again to a handle that matches the file.
+func (m Model) discardHandleState(source string) Model {
+	h := m.handles[source]
+	if h == nil {
+		return m
+	}
+	fresh, err := vault.Reopen(h)
+	if err != nil {
+		return m
+	}
+	m.handles[source] = fresh
+	v := fresh.Snapshot()
+
+	entries := make([]vault.Entry, 0, len(m.mergedEntries))
+	for _, e := range m.mergedEntries {
+		if e.Source != source {
+			entries = append(entries, e)
+		}
+	}
+	folders := make([]vault.Folder, 0, len(m.mergedFolders))
+	for _, f := range m.mergedFolders {
+		if f.Source != source {
+			folders = append(folders, f)
+		}
+	}
+	return m.rebuild(append(entries, v.Entries...), append(folders, v.Folders...))
 }
 
 // reload re-reads one source through its handle and merges it into the model's

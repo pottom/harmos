@@ -397,6 +397,7 @@ func TestChangesScrollsThroughEverything(t *testing.T) {
 	}
 	m := up(New(entries, []vault.Folder{{ID: "s:g:1", Source: "s", Path: "Big", Name: "Big"}},
 		"", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.writeOK = map[string]bool{"s": true} // staged by hand; the UI would have unlocked it
 	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "s:g:1", Name: "Big"})
 	m = m.switchTab(tabChanges)
 
@@ -523,6 +524,7 @@ func TestArrowsWalkEveryRow(t *testing.T) {
 	}
 	m := up(New(entries, []vault.Folder{{ID: "s:g:1", Source: "s", Path: "Big", Name: "Big"}},
 		"", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 20})
+	m.writeOK = map[string]bool{"s": true} // staged by hand; the UI would have unlocked it
 	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "s:g:1", Name: "Big"})
 	m = m.switchTab(tabChanges)
 
@@ -563,6 +565,7 @@ func TestDoomedContentsAreATree(t *testing.T) {
 		{ID: "g2", Source: "s", Path: "top/sub", Name: "sub"},
 		{ID: "g3", Source: "s", Path: "top/sub/deep", Name: "deep"},
 	}, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 26})
+	m.writeOK = map[string]bool{"s": true} // staged by hand; the UI would have unlocked it
 	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "g1", Name: "top"})
 	m = m.switchTab(tabChanges)
 
@@ -608,6 +611,7 @@ func TestWriteConfirmationCountsThings(t *testing.T) {
 		{ID: "g1", Source: "own", Path: "doomed", Name: "doomed"},
 		{ID: "g2", Source: "own", Path: "doomed/sub", Name: "sub"},
 	}, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 30})
+	m.writeOK = map[string]bool{"own": true} // staged by hand; the UI would have unlocked it
 	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "own", Target: "g1", Name: "doomed", Perm: true})
 
 	im := m.impactOf("own")
@@ -642,7 +646,9 @@ func TestImpactDoesNotDoubleCount(t *testing.T) {
 		{ID: "g1", Source: "s", Path: "top", Name: "top"},
 		{ID: "g2", Source: "s", Path: "top/sub", Name: "sub"},
 	}, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 24})
+	m.writeOK = map[string]bool{"s": true} // staged by hand; the UI would have unlocked it
 	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "g1", Name: "top"})
+	m.writeOK = map[string]bool{"s": true} // staged by hand; the UI would have unlocked it
 	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "g2", Name: "sub"})
 
 	im := m.impactOf("s")
@@ -667,7 +673,9 @@ func TestChangesShowsTheImpactStat(t *testing.T) {
 		{ID: "g1", Source: "own", Path: "doomed", Name: "doomed"},
 		{ID: "g2", Source: "own", Path: "Other", Name: "Other"},
 	}, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.writeOK = map[string]bool{"own": true} // staged by hand; the UI would have unlocked it
 	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "own", Target: "g1", Name: "doomed"})
+	m.writeOK = map[string]bool{"own": true} // staged by hand; the UI would have unlocked it
 	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.EditEntry, Source: "own", Target: "k",
 		Before: &edit.Draft{ID: "k", Title: "kept"}, After: &edit.Draft{ID: "k", Title: "kept!"}})
 	m = m.switchTab(tabChanges)
@@ -694,6 +702,7 @@ func TestChangesPageKeysMoveTheCursor(t *testing.T) {
 	}
 	m := up(New(ents, []vault.Folder{{ID: "g1", Source: "s", Path: "Big", Name: "Big"}},
 		"", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 20})
+	m.writeOK = map[string]bool{"s": true} // staged by hand; the UI would have unlocked it
 	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "g1", Name: "Big"})
 	m = m.switchTab(tabChanges)
 
@@ -737,9 +746,12 @@ func TestImpactTallyStaysShort(t *testing.T) {
 		{ID: "g2", Source: "s", Path: "Other", Name: "Other"},
 	}, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 24})
 
+	m.writeOK = map[string]bool{"s": true} // staged by hand; the UI would have unlocked it
 	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "g1", Name: "doomed"})
+	m.writeOK = map[string]bool{"s": true} // staged by hand; the UI would have unlocked it
 	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.EditEntry, Source: "s", Target: "k",
 		Before: &edit.Draft{ID: "k", Title: "kept"}, After: &edit.Draft{ID: "k", Title: "kept!"}})
+	m.writeOK = map[string]bool{"s": true} // staged by hand; the UI would have unlocked it
 	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.CreateEntry, Source: "s", Target: "new", Parent: "g2",
 		After: &edit.Draft{ID: "new", GroupID: "g2", Title: "new"}})
 
