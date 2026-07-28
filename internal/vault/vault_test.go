@@ -16,8 +16,7 @@ import (
 // These wrap internal/vault/vaulttest so the fixture lives in one place; three
 // packages used to carry their own copy of it.
 
-func val(k, v string) gokeepasslib.ValueData  { return vaulttest.Val(k, v) }
-func pval(k, v string) gokeepasslib.ValueData { return vaulttest.PVal(k, v) }
+func val(k, v string) gokeepasslib.ValueData { return vaulttest.Val(k, v) }
 
 func makeKDBX(t *testing.T, path string, creds *gokeepasslib.DBCredentials) {
 	t.Helper()

@@ -34,13 +34,12 @@ func PVal(k, v string) gokeepasslib.ValueData {
 type Option func(*builder)
 
 type builder struct {
-	creds       *gokeepasslib.DBCredentials
-	kdbx31      bool
-	minor       uint16
-	extraRoot   bool
-	title       string
-	shape       func(db *gokeepasslib.Database) []gokeepasslib.Group
-	afterEncode func(db *gokeepasslib.Database)
+	creds     *gokeepasslib.DBCredentials
+	kdbx31    bool
+	minor     uint16
+	extraRoot bool
+	title     string
+	shape     func(db *gokeepasslib.Database) []gokeepasslib.Group
 }
 
 // WithCredentials sets the composite key. Defaults to the password "pw".
