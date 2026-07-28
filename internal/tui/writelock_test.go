@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/vault"
 )
@@ -92,27 +93,96 @@ func TestUnlockConfirmationCanBeDeclined(t *testing.T) {
 	}
 }
 
-// The padlock says which way round it is in words as well: a glyph alone is
-// meaningless unless you already know the convention, and colour is not
-// available in a mono terminal.
-func TestLockBadgeCarriesAWord(t *testing.T) {
+// Three states, all of them visible, each with a word.
+//
+// A padlock only tells you which way round it is if you already know the
+// convention, and colour is gone under NO_COLOR and in a mono terminal — so the
+// word carries the meaning. And a source that can never be written says so:
+// showing nothing reads equally as "read-only", "not loaded yet" and "somebody
+// forgot to draw it".
+func TestLockBadgeShowsAllThreeStates(t *testing.T) {
 	m := lockModel(t)
 	m.handles = map[string]*vault.Handle{"own": {}}
 
 	locked := ansi.Strip(m.lockBadge("own"))
-	if !strings.Contains(locked, "ro") {
-		t.Errorf("a locked source should read ro, got %q", locked)
+	if !strings.Contains(locked, "ro") || strings.Contains(locked, "fixed") {
+		t.Errorf("a source that can be unlocked should read ro, got %q", locked)
 	}
+
 	m.writeOK = map[string]bool{"own": true}
 	if unlocked := ansi.Strip(m.lockBadge("own")); !strings.Contains(unlocked, "rw") {
 		t.Errorf("an unlocked source should read rw, got %q", unlocked)
 	}
 
-	// A source that cannot be written at all shows nothing: a padlock would
-	// imply it could be opened.
-	m.handles = nil
-	if b := m.lockBadge("own"); b != "" {
-		t.Errorf("an unwritable source should show no padlock, got %q", b)
+	// A Pleasant cache: no handle, and no unlock to offer.
+	m.writeOK = map[string]bool{}
+	m.handles = map[string]*vault.Handle{}
+	fixed := ansi.Strip(m.lockBadge("own"))
+	if !strings.Contains(fixed, "fixed") {
+		t.Errorf("a permanently read-only source should say so, got %q", fixed)
+	}
+	if fixed == locked {
+		t.Error("permanently read-only must read differently from merely locked")
+	}
+}
+
+// Pressing the unlock key on a permanently read-only source explains why, rather
+// than doing nothing.
+func TestUnlockOnAPleasantSourceExplains(t *testing.T) {
+	m := lockModel(t)
+	m.srcType = map[string]config.Type{"own": config.Pleasant}
+	m.handles = map[string]*vault.Handle{}
+
+	m = up(m, key2("ctrl+w"))
+	if m.confirmUnlock != "" {
+		t.Error("there is nothing to confirm; it can never be unlocked")
+	}
+	if !strings.Contains(m.flash, "sync") {
+		t.Errorf("it should say why — the cache is rebuilt by sync — got %q", m.flash)
+	}
+}
+
+// The badge has to survive the cursor landing on it.
+//
+// SelRow pads the selected row to the full width, so a badge appended afterwards
+// is pushed past the edge and clipped by the panel — which looks exactly like
+// the padlock vanishing whenever you move onto a source.
+func TestLockBadgeSurvivesSelection(t *testing.T) {
+	m := lockModel(t)
+	m.handles = map[string]*vault.Handle{"own": {}}
+	m.tsel, m.focus = 0, 0 // the source root, focused
+
+	lines := m.treeLines(60, 10)
+	if len(lines) == 0 {
+		t.Fatal("no tree rows")
+	}
+	selected := ansi.Strip(lines[0])
+	if !strings.Contains(selected, "ro") {
+		t.Errorf("the selected source row lost its badge: %q", selected)
+	}
+	if dw(selected) > 60 {
+		t.Errorf("the selected row is %d cells wide, want at most 60: %q", dw(selected), selected)
+	}
+
+	// And it is still there when the pane is not focused.
+	m.focus = 1
+	if s := ansi.Strip(m.treeLines(60, 10)[0]); !strings.Contains(s, "ro") {
+		t.Errorf("the badge disappeared when the tree lost focus: %q", s)
+	}
+}
+
+// The badge must not push the row past the pane. It used to be appended after
+// the truncation, which is exactly how a column ends up one cell too wide.
+func TestLockBadgeFitsInThePane(t *testing.T) {
+	m := lockModel(t)
+	m.handles = map[string]*vault.Handle{"own": {}}
+
+	for _, w := range []int{20, 30, 60} {
+		for _, line := range m.treeLines(w, 10) {
+			if got := dw(ansi.Strip(line)); got > w {
+				t.Errorf("at width %d a row is %d cells wide: %q", w, got, ansi.Strip(line))
+			}
+		}
 	}
 }
 

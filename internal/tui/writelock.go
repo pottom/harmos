@@ -118,26 +118,48 @@ func (m Model) writeConfirmView() string {
 	return m.modal("Write lock", source, lines, "y unlock · n cancel")
 }
 
-// lockBadge is the padlock shown beside a source in the tree.
+// lockBadge is the write state shown beside a source in the tree.
 //
-// The word beside the glyph is not decoration: a padlock is only meaningful if
-// you already know which way round it is, and colour is not available in a mono
-// terminal or under NO_COLOR.
+// Three states, not two, and every one of them is shown. An absent badge was the
+// original design for a source that can never be written, on the grounds that a
+// padlock implies something that can be opened — but absence is the more
+// ambiguous signal. It reads equally as "read-only", "not loaded yet" and
+// "somebody forgot to draw it". A source that is permanently read-only should
+// say so, since that is a fact about it and not a missing feature.
+//
+// The word carries the meaning, not the glyph: a padlock only tells you which
+// way round it is if you already know the convention, and colour is gone under
+// NO_COLOR, in a mono terminal, and for a good share of readers.
 func (m Model) lockBadge(source string) string {
 	if source == "" {
 		return ""
 	}
-	// Writability first. A source harmos cannot write shows no padlock at all —
-	// one would imply it could be opened — and that has to hold even if some
-	// path managed to mark it unlocked, which the badge should never paper over.
-	if ok, _ := m.canWrite(source); !ok {
-		return ""
-	}
 	i := ic()
+
+	// Permanently read-only: a Pleasant cache is rebuilt by sync, so there is no
+	// unlock to offer. Say so rather than staying silent.
+	if _, ok := m.handles[source]; !ok {
+		return theme.Faded.Render(i.locked + " ro fixed")
+	}
+	if ok, _ := m.canWrite(source); !ok {
+		// Openable in principle, refused for this file — the format, or the
+		// file itself. ^w says which.
+		return theme.Faded.Render(i.locked + " ro fixed")
+	}
 	if m.writeOK[source] {
 		return theme.Noted.Render(i.unlocked + " rw")
 	}
 	return theme.Faded.Render(i.locked + " ro")
+}
+
+// lockBadgeWidth is the badge's display width, so a row can reserve space for it
+// instead of overflowing the pane — the badge used to be appended after the
+// truncation, which is exactly how a column ends up one cell too wide.
+func (m Model) lockBadgeWidth(source string) int {
+	if b := m.lockBadge(source); b != "" {
+		return dw(b) + 2 // the two spaces that separate it from the name
+	}
+	return 0
 }
 
 // dirtyCount is how many effective changes are staged, for the footer and the
