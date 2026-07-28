@@ -1116,23 +1116,28 @@ func TestExpandSubtree(t *testing.T) {
 	}
 }
 
-// ctrl+←/→ reach everything, and the cursor keeps to a row that still exists.
-func TestExpandAll(t *testing.T) {
+// Z folds every source, and the cursor keeps to a row that still exists.
+func TestToggleAll(t *testing.T) {
 	m := treeModel()
 	total := nodeCount(m.roots)
 
-	m = up(m, tea.KeyMsg{Type: tea.KeyCtrlRight})
+	// The roots start open, so the first Z has something to close.
+	m = up(m, key('Z'))
+	if got := len(m.visible()); got != len(m.roots) {
+		t.Errorf("Z should close down to the source roots: %d of %d visible", got, len(m.roots))
+	}
+	m = up(m, key('Z'))
 	if got := len(m.visible()); got != total {
-		t.Errorf("ctrl+→ should show every folder: %d of %d visible", got, total)
+		t.Errorf("Z again should open every folder: %d of %d visible", got, total)
 	}
 
 	// park deep inside work, in that folder's table, then close everything
 	m = selectNode(t, m, "prod")
 	m.focus = 1
-	m = up(m, tea.KeyMsg{Type: tea.KeyCtrlLeft})
+	m = up(m, key('Z'))
 
 	if got := len(m.visible()); got != len(m.roots) {
-		t.Errorf("ctrl+← should leave only the source roots: %d of %d visible", got, len(m.roots))
+		t.Errorf("Z should leave only the source roots: %d of %d visible", got, len(m.roots))
 	}
 	cur := m.currentFolder()
 	if cur == nil || cur.name != "work" {
@@ -1140,5 +1145,63 @@ func TestExpandAll(t *testing.T) {
 	}
 	if m.focus != 0 {
 		t.Error("landing on a different folder should take focus back to the tree")
+	}
+}
+
+// z folds the branch under the cursor, and does it the same way wherever the
+// cursor is: a source root is not a special case, and neither is a leaf.
+func TestToggleSubtreeAtEveryDepth(t *testing.T) {
+	m := up(New([]vault.Entry{
+		{Source: "work", Path: "a/b/c/d", Title: "deep", Password: secret.New("p")},
+	}, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	all := nodeCount(m.roots) // work, a, b, c, d
+
+	for depth, row := range []string{"work", "a", "b", "c"} {
+		// Which way the first press goes depends on where the branch stands — a
+		// source root starts open — so press twice and check both ends. Closed
+		// leaves everything above the row plus the row itself; open shows all.
+		m = up(selectNode(t, m, row), key('z'))
+		first := len(m.visible())
+		m = up(selectNode(t, m, row), key('z'))
+		second := len(m.visible())
+
+		open, closed := first, second
+		if second > first {
+			open, closed = second, first
+		}
+		if open != all {
+			t.Errorf("z on %q (depth %d) should open the branch fully: %d of %d rows", row, depth, open, all)
+		}
+		if closed != depth+1 {
+			t.Errorf("z on %q (depth %d) should close its branch: %d rows, want %d", row, depth, closed, depth+1)
+		}
+		if cur := m.currentFolder(); cur == nil || cur.name != row {
+			t.Errorf("z on %q should leave the cursor where it was, got %v", row, cur)
+		}
+		// Leave the branch open so the next, deeper row is reachable.
+		if len(m.visible()) != all {
+			m = up(selectNode(t, m, row), key('z'))
+		}
+	}
+}
+
+// After z closes a branch, → opens exactly one level — the descendants were
+// closed with it, so nothing restores the old depth behind the user's back.
+func TestOneLevelAfterFold(t *testing.T) {
+	m := treeModel()
+	m = up(selectNode(t, m, "work"), key('z')) // open → so this folds it shut, descendants included
+	m = up(selectNode(t, m, "work"), key('z')) // open it fully again
+	m = up(selectNode(t, m, "work"), key('z')) // and shut, this time from a deep expansion
+
+	m = up(m, tea.KeyMsg{Type: tea.KeyRight})
+	var names []string
+	for _, tl := range m.visible() {
+		names = append(names, tl.node.name)
+	}
+	if !slices.Contains(names, "Infra") {
+		t.Errorf("→ should open one level: %v", names)
+	}
+	if slices.Contains(names, "db") || slices.Contains(names, "prod") {
+		t.Errorf("→ should not restore the deep expansion: %v", names)
 	}
 }

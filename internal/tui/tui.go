@@ -884,14 +884,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if folder != nil && folder.expanded {
 				folder.expanded = false
 			}
+		// Bulk open/close lives on letters, because a modified arrow is not a key
+		// every terminal delivers: ctrl+arrow is a Mission Control shortcut on
+		// macOS and never reaches the process, and some terminals send shift+arrow
+		// stripped of its modifier. z/Z work everywhere. The shift arrows stay
+		// bound for the terminals that do send them, but the help advertises the
+		// letters — promising a key that silently does nothing is worse than not
+		// offering it.
+		case "z":
+			return m.toggleSubtree(), nil
+		case "Z":
+			return m.toggleAll(), nil
 		case "shift+right":
 			return m.expandSubtree(true), nil
 		case "shift+left":
 			return m.expandSubtree(false), nil
-		case "ctrl+right":
-			return m.expandAll(true), nil
-		case "ctrl+left":
-			return m.expandAll(false), nil
 		case "enter":
 			if m.focus == 0 {
 				if folder != nil {
