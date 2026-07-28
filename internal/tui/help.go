@@ -169,7 +169,7 @@ func (m Model) keyList(w int) []string {
 	out = append(out,
 		"",
 		head("GENERAL"),
-		row("1 2 3 4", "Vault · Generate · Settings · Changes"),
+		row("1 2 3 4", "Vault · Changes · Generate · Settings"),
 		row("^w", "unlock / lock this source for writing"),
 		row("/", "search every source"),
 		row("? q", "help · quit (clears clip)"),

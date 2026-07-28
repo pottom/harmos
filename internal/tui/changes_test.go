@@ -95,9 +95,9 @@ func TestSaveWritesAfterConfirmation(t *testing.T) {
 // with it.
 func TestRevertFromTheChangesTab(t *testing.T) {
 	m := stageAnEdit(t, editModel(t))
-	m = up(m, key2("4"))
+	m = up(m, tabKey(tabChanges))
 	if m.tab != tabChanges {
-		t.Fatalf("4 should open the Changes tab, got %d", m.tab)
+		t.Fatalf("the Changes key should open the Changes tab, got %d", m.tab)
 	}
 	if out := ansi.Strip(m.View()); !strings.Contains(out, "-edited") {
 		t.Errorf("the change should be listed:\n%s", out)
@@ -123,7 +123,7 @@ func TestChangesTabShowsNoSecrets(t *testing.T) {
 	m = typeStr(m, "supersecret")
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
 
-	m = up(m, key2("4"))
+	m = up(m, tabKey(tabChanges))
 	out := ansi.Strip(m.View())
 	if strings.Contains(out, "supersecret") {
 		t.Errorf("a password reached the review list:\n%s", out)
@@ -212,7 +212,7 @@ func TestKeysAreIgnoredWhileSaving(t *testing.T) {
 
 	before := m.dirtyCount()
 	m = up(m, key2("x"))
-	m = up(m, key2("4"))
+	m = up(m, tabKey(tabChanges))
 	if m.dirtyCount() != before {
 		t.Error("a keystroke during a save changed the staged set")
 	}
