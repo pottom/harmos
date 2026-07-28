@@ -353,3 +353,50 @@ func TestDeletedFolderStaysAndIsMarked(t *testing.T) {
 		}
 	}
 }
+
+// The delete key is a toggle: the same key on the same row takes it back.
+func TestDeleteKeyToggles(t *testing.T) {
+	m := up(editModel(t), tea.KeyMsg{Type: tea.KeyTab})
+
+	m = up(m, key2("d"))
+	if m.dirtyCount() != 1 {
+		t.Fatalf("d should stage a deletion, staged %d", m.dirtyCount())
+	}
+	m = up(m, key2("d"))
+	if m.dirtyCount() != 0 {
+		t.Fatalf("d again should take it back, %d still staged", m.dirtyCount())
+	}
+	if !strings.Contains(m.flash, "no longer staged") {
+		t.Errorf("it should say what it did, got %q", m.flash)
+	}
+
+	// D on a row already staged for the bin changes which deletion it is rather
+	// than un-staging: otherwise upgrading takes two presses with an un-staged
+	// row in between, which reads as the key having failed.
+	m = up(m, key2("d"))
+	m = up(m, key2("D"))
+	ops := m.chg.Effective()
+	if len(ops) != 1 {
+		t.Fatalf("expected exactly one deletion, got %d", len(ops))
+	}
+	if !ops[0].Perm {
+		t.Error("D over a bin deletion should make it permanent")
+	}
+	m = up(m, key2("D"))
+	if m.dirtyCount() != 0 {
+		t.Errorf("D again should take it back, %d still staged", m.dirtyCount())
+	}
+
+	// An edit staged earlier survives the toggle — only the deletion is undone.
+	m2 := intoEditor(t, editModel(t))
+	m2 = typeStr(m2, "-edited")
+	m2 = up(m2, tea.KeyMsg{Type: tea.KeyEnter})
+	m2 = up(m2, key2("d"))
+	m2 = up(m2, key2("d"))
+	if m2.dirtyCount() != 1 {
+		t.Errorf("the earlier edit should survive, %d changes staged", m2.dirtyCount())
+	}
+	if ops := m2.chg.Effective(); len(ops) != 1 || ops[0].Kind != edit.EditEntry {
+		t.Errorf("what survived should be the edit, got %+v", ops)
+	}
+}

@@ -235,12 +235,29 @@ func (m Model) openFolderEditor(parentID, existingID, name string) Model {
 // So the confirmation lives at the write, once, and it names what is about to
 // happen — including a permanent delete, which is the only part of this that
 // cannot be taken back afterwards.
+// The key is a toggle. Pressing it again on the same row takes the staging back,
+// because "I did not mean that" arrives one keystroke after "delete this", and
+// making the reader travel to another tab to undo something they have not done
+// yet is a strange thing to ask. It needs no second binding: the row already
+// says which state it is in, so the same key can mean both directions.
+//
+// D on a row already staged for the bin does not toggle it off — it changes
+// which deletion it is. Otherwise upgrading would mean pressing D twice, with
+// the row briefly un-staged in between, which reads as the key having failed.
 func (m Model) stageDelete(target, name string, isFolder, permanent bool) Model {
 	kind := edit.DeleteEntry
 	if isFolder {
 		kind = edit.DeleteGroup
 	}
 	perm := permanent || !m.binEnabled(m.editSource)
+
+	if prev, ok := m.stagedDeletion(target); ok {
+		m.chg, _ = m.chg.Revert(prev.Seq)
+		if prev.Perm == perm {
+			m.flash = "no longer staged for deletion" + describes(name)
+			return m
+		}
+	}
 
 	op := edit.Op{Kind: kind, Source: m.editSource, Target: target, Name: name, Perm: perm}
 	if !isFolder {
@@ -264,8 +281,39 @@ func (m Model) stageDelete(target, name string, isFolder, permanent bool) Model 
 			where = "permanently (this database has no recycle bin)"
 		}
 	}
-	m.flash = "staged: delete " + what + " " + where + " · x on the Changes tab undoes it"
+	m.flash = "staged: delete " + what + " " + where + " · " + toggleKey(permanent) + " again undoes it"
 	return m
+}
+
+// toggleKey is the key that staged this deletion, so the hint names the key the
+// reader just pressed rather than a general one.
+func toggleKey(permanent bool) string {
+	if permanent {
+		return "D"
+	}
+	return "d"
+}
+
+// describes appends a name to a message when there is one worth showing.
+func describes(name string) string {
+	if name == "" {
+		return ""
+	}
+	return ": " + name
+}
+
+// stagedDeletion is the deletion staged against a target, if any. It is what
+// makes the delete key a toggle.
+func (m Model) stagedDeletion(target string) (edit.Op, bool) {
+	for _, op := range m.chg.Effective() {
+		if op.Target != target {
+			continue
+		}
+		if op.Kind == edit.DeleteEntry || op.Kind == edit.DeleteGroup {
+			return op, true
+		}
+	}
+	return edit.Op{}, false
 }
 
 // binEnabled reports whether the source keeps deleted items in a recycle bin.

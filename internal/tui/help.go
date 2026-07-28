@@ -149,7 +149,7 @@ func (m Model) keyList(w int) []string {
 			head("EDIT  (unlocked sources)"),
 			row("e", "edit the entry or folder"),
 			row("n / N", "new entry / new folder"),
-			row("d / D", "delete → bin / permanently"),
+			row("d / D", "delete → bin / permanently (again undoes)"),
 			row("m / r", "move · rename a folder"),
 			row("^g", "roll a password, in the editor"),
 			row("^s", "review and write the staged changes"),
