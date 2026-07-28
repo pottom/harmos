@@ -38,6 +38,7 @@ type builder struct {
 	kdbx31    bool
 	minor     uint16
 	extraRoot bool
+	recycle   bool
 	title     string
 	shape     func(db *gokeepasslib.Database) []gokeepasslib.Group
 }
@@ -77,6 +78,14 @@ func ExtraRootGroup() Option {
 	return func(b *builder) { b.extraRoot = true }
 }
 
+// RecycleBin enables the database's recycle bin, as KeePassXC and MacPass do for
+// databases they create. gokeepasslib leaves it off, which makes the default
+// fixture unrepresentative of a real vault — and makes any test of the binning
+// path skip itself into uselessness.
+func RecycleBin() Option {
+	return func(b *builder) { b.recycle = true }
+}
+
 // Shape replaces the fixture's content entirely, for tests that need a specific
 // tree. It is handed the database so it can call AddBinary.
 func Shape(fn func(db *gokeepasslib.Database) []gokeepasslib.Group) Option {
@@ -109,6 +118,10 @@ func Write(t testing.TB, path string, opts ...Option) string {
 		groups = append(groups, second)
 	}
 	db.Content.Root = &gokeepasslib.RootData{Groups: groups}
+
+	if b.recycle {
+		db.Content.Meta.RecycleBinEnabled = w.NewBoolWrapper(true)
+	}
 
 	if b.minor != 0 && db.Header != nil && db.Header.Signature != nil {
 		// gokeepasslib points every new header at the *same* package-level

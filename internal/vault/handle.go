@@ -186,10 +186,22 @@ func writableOnDisk(path string) error {
 // the source of a write. A Handle mutation reads the database directly.
 func (h *Handle) Snapshot() *Vault {
 	v := &Vault{Source: h.source}
-	// The top-level group is the database root container; its own name is not
-	// part of entry paths (the source name provides the top-level identity).
-	for _, g := range h.db.Content.Root.Groups {
-		v.walk(h.db, g, "")
-	}
+	h.walkTree(
+		func(g *gokeepasslib.Group, id, parentID, path string) {
+			if parentID == "" {
+				return // the root container is not a folder anyone browses
+			}
+			v.Folders = append(v.Folders, Folder{
+				ID:       id,
+				ParentID: parentID,
+				Source:   h.source,
+				Path:     path,
+				Name:     oneline(g.Name),
+			})
+		},
+		func(e *gokeepasslib.Entry, id, gid, path string) {
+			v.Entries = append(v.Entries, entryFrom(h.db, e, h.source, id, gid, path))
+		},
+	)
 	return v
 }

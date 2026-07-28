@@ -259,6 +259,11 @@ here.
 
 ## Upstream contribution
 
+**Filed as [tobischo/gokeepasslib#150](https://github.com/tobischo/gokeepasslib/issues/150)** on
+2026-07-28. The maintainer asked which specification the work was based on and
+left open that he may implement it himself; both sources are in the thread. Do
+not open a pull request there until he says the shape is agreed.
+
 `CONTRIBUTING.md` asks for an **issue first**, then a fork and a pull request
 referencing it. Follow that order — do not open a PR cold.
 

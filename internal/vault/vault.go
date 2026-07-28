@@ -43,6 +43,12 @@ type Credentials struct {
 // pps.* prefixes, splitTags splits on ; or ,). Never write an Entry back to a
 // kdbx — a Handle mutates the decoded database directly instead.
 type Entry struct {
+	// ID is an opaque, stable handle for this entry — the thing to pass back
+	// when something must act on it. It survives edits and reloads, which
+	// Source+Path+Title does not: those are neither unique nor stable.
+	ID      string
+	GroupID string // the folder this entry lives in
+
 	Source   string // source name this entry came from
 	Path     string // folder path within the source, e.g. "Infra/db-prod"
 	Title    string
@@ -110,11 +116,25 @@ func customLabel(key string) string {
 	return key
 }
 
+// Folder is one group in the tree, including the empty ones.
+//
+// They are listed separately because the tree used to be inferred from entry
+// paths alone, which cannot see a group with nothing in it — so a folder the
+// user had just created would not appear until something was put in it.
+type Folder struct {
+	ID       string
+	ParentID string // "" for a root group
+	Source   string
+	Path     string // full path within the source, e.g. "Infra/Databases"
+	Name     string // leaf name only
+}
+
 // Vault is a read-only view of one opened kdbx. It is a lossy projection — see
 // Entry — which is why it is never the source of a write.
 type Vault struct {
 	Source  string
 	Entries []Entry
+	Folders []Folder
 }
 
 // Open reads the kdbx at path into a read-only view, tagging entries with
@@ -155,32 +175,26 @@ func IsBadCredential(err error) bool {
 	return false
 }
 
-func (v *Vault) walk(db *gokeepasslib.Database, g gokeepasslib.Group, prefix string) {
-	for i := range g.Entries {
-		e := &g.Entries[i]
-		v.Entries = append(v.Entries, Entry{
-			Source:   v.Source,
-			Path:     prefix,
-			Title:    oneline(e.GetTitle()),
-			Username: oneline(e.GetContent("UserName")),
-			URL:      oneline(e.GetContent("URL")),
-			Tags:     splitTags(e.Tags),
-			Password: secret.New(e.GetPassword()),
-			TOTP:     e.GetContent("otp"),
-			Notes:    e.GetContent("Notes"),
-			Custom:   customFields(e),
-			Created:  timeOf(e.Times.CreationTime),
-			Modified: timeOf(e.Times.LastModificationTime),
-			Expiry:   expiryOf(e.Times),
-			Files:    attachments(db, e),
-		})
-	}
-	for _, sub := range g.Groups {
-		child := oneline(sub.Name)
-		if prefix != "" {
-			child = prefix + "/" + oneline(sub.Name)
-		}
-		v.walk(db, sub, child)
+// entryFrom projects one kdbx entry into the read model. Lossy on purpose — see
+// Entry — so it is never the input to a write.
+func entryFrom(db *gokeepasslib.Database, e *gokeepasslib.Entry, source, id, groupID, path string) Entry {
+	return Entry{
+		ID:       id,
+		GroupID:  groupID,
+		Source:   source,
+		Path:     path,
+		Title:    oneline(e.GetTitle()),
+		Username: oneline(e.GetContent("UserName")),
+		URL:      oneline(e.GetContent("URL")),
+		Tags:     splitTags(e.Tags),
+		Password: secret.New(e.GetPassword()),
+		TOTP:     e.GetContent("otp"),
+		Notes:    e.GetContent("Notes"),
+		Custom:   customFields(e),
+		Created:  timeOf(e.Times.CreationTime),
+		Modified: timeOf(e.Times.LastModificationTime),
+		Expiry:   expiryOf(e.Times),
+		Files:    attachments(db, e),
 	}
 }
 
