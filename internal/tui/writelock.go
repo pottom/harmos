@@ -66,7 +66,16 @@ func (m Model) toggleWriteLock() Model {
 		m.flash = "locked " + source
 		return m
 	}
+	// Two questions, in order. First the cheap one — is there a handle at all,
+	// and did the format checks pass — which also covers a source that was never
+	// opened for writing.
 	if ok, why := m.canWrite(source); !ok {
+		m.flash = why
+		return m
+	}
+	// Then the expensive proof, once per source, at the moment its answer
+	// matters. At startup every session would have paid for it.
+	if ok, why := m.handles[source].VerifyWritable(); !ok {
 		m.flash = why
 		return m
 	}

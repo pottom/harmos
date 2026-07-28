@@ -113,6 +113,13 @@ the file actually contains something that would be lost, and it names it. That i
 both more permissive (a 4.1 file using no 4.1 element writes fine) and stricter
 (it catches elements nobody enumerated, including future format additions).
 
+**It runs when the user asks to write, not when the file is opened.** The proof
+costs an encode and a decode — two KDF derivations — and measuring a real vault
+put it at three quarters of the open time. Paying that on every startup for a
+capability most sessions never use is the wrong trade, so `Writable` is the cheap
+verdict (the UI asks it while drawing) and `VerifyWritable` is the proof, run once
+per source at the unlock and remembered.
+
 The mechanism: `Decoder.Decode` leaves the decrypted XML in the exported
 `db.Content.RawData`. Slicing from `<KeePassFile` and walking it with
 `encoding/xml` yields a census of element paths and counts — no values, so it is
