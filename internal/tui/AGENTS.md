@@ -31,8 +31,18 @@ Four top-level tabs, switched by `1` / `2` / `3` / `4` once unlocked. **The orde
 lives in one place — `tabOrder()` in `tabs.go`** — because it used to be spelled
 out in the indicator, the mouse hit-test, the number-key switch and the help
 overlay, and the internal indices do not match the display order. Displayed order
-is Vault / Generate / Settings / Changes; the internal `m.tab` values are Vault
-`0`, Settings `1`, Generate `2`, Changes `3`.
+is **Vault / Changes / Generate / Settings** — ordered by how close a tab is to
+the work, so Changes sits beside the vault it edits and Settings, visited and
+left, goes last. The internal `m.tab` values are unrelated to it: Vault `0`,
+Settings `1`, Generate `2`, Changes `3`. **Tests must ask `tabOrder()` for a
+tab's key rather than spelling the digit**, or the next reordering retargets them
+silently — and a test that still passes against the wrong tab is worse than one
+that fails.
+
+Every tab draws the same frame: a header line, panels of `m.h-3`, a context line,
+then the footer. The context line is drawn whether or not it has anything to say,
+so the geometry never depends on the content, and **the tab indicator belongs to
+the footer alone** — `TestTabFrameIsUniform` pins both.
 
 - **Vault (0)** — the browse/search surface: a folder tree on the left (collapsible
   with `ctrl+b` to a thin rail), entry list / detail on the right. The header
