@@ -149,12 +149,44 @@ func parentOf(roots []*node) map[*node]*node {
 // The cursor does not move: the selected row is above whatever appears or
 // disappears, so its index and its own entries are unchanged. Standing on a
 // source root, this is that whole source — which is the usual reach for it.
+//
+// Closing takes the descendants with it, so a following → opens exactly one
+// level. Leaving their flags set would mean the next → restored however deep
+// the tree happened to be, which reads as "→ opened everything".
 func (m Model) expandSubtree(open bool) Model {
 	if cur := m.currentFolder(); cur != nil {
 		setExpanded([]*node{cur}, open)
 	}
 	return m
 }
+
+// anyOpen reports whether any folder that could be open is open. It is what
+// makes the toggles decide the same way a reader would: if there is something to
+// close, close it.
+func anyOpen(ns []*node) bool {
+	for _, n := range ns {
+		if n.expanded && len(n.children) > 0 {
+			return true
+		}
+		if anyOpen(n.children) {
+			return true
+		}
+	}
+	return false
+}
+
+// toggleSubtree is one key for both directions on the selected branch: open it
+// all the way down, or close it all the way down.
+func (m Model) toggleSubtree() Model {
+	cur := m.currentFolder()
+	if cur == nil {
+		return m
+	}
+	return m.expandSubtree(!anyOpen([]*node{cur}))
+}
+
+// toggleAll is the same decision over every source at once.
+func (m Model) toggleAll() Model { return m.expandAll(!anyOpen(m.roots)) }
 
 // expandAll opens or closes every tree and keeps the cursor somewhere it can
 // still see.
