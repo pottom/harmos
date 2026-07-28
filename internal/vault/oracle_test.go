@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	gokeepasslib "github.com/tobischo/gokeepasslib/v3"
+
+	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/vault/vaulttest"
 )
 
@@ -91,4 +94,110 @@ func runKeepassXC(t *testing.T, bin, password string, args ...string) string {
 		t.Fatalf("keepassxc-cli %s: %v\n%s", strings.Join(args, " "), err, out)
 	}
 	return string(out)
+}
+
+// The mutations, proven against KeePassXC rather than against our own reading of
+// them. The recycle bin, the history stack and the tombstones are the parts most
+// easily got subtly wrong, and `show`/`ls` cannot see the last two — only the XML
+// export can.
+func TestKeepassXCReadsMutations(t *testing.T) {
+	bin, err := exec.LookPath("keepassxc-cli")
+	if err != nil {
+		t.Skip("keepassxc-cli not installed; skipping oracle test")
+	}
+
+	h, p := openFixture(t, vaulttest.RecycleBin())
+	folder := folderID(t, h)
+
+	// created
+	if _, err := h.CreateEntry(folder, Draft{
+		Title:    "created",
+		Username: "someone",
+		Password: secret.New("created-pw"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// edited — leaves a history record holding the pre-edit title
+	existing := h.Snapshot().Entries[0].ID
+	d, err := h.EntryDraft(existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.Title = "edited"
+	if err := h.UpdateEntry(existing, d); err != nil {
+		t.Fatal(err)
+	}
+	_, live, _ := h.findEntry(existing)
+	entryUUID := uuidText(t, live.UUID)
+
+	// binned
+	binnedID, err := h.CreateEntry(folder, Draft{Title: "binned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.DeleteEntry(binnedID, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// permanently deleted — leaves a tombstone and nothing else
+	doomedID, err := h.CreateEntry(folder, Draft{Title: "doomed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, doomed, _ := h.findEntry(doomedID)
+	doomedUUID := uuidText(t, doomed.UUID)
+	if err := h.DeleteEntry(doomedID, true); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	// KeePassXC reads the new entry and the edited one.
+	out := runKeepassXC(t, bin, "pw", "show", "-s", "-q", p, "/Infra/created")
+	if !strings.Contains(out, "created-pw") {
+		t.Errorf("keepassxc-cli cannot read the created entry:\n%s", out)
+	}
+	if out := runKeepassXC(t, bin, "pw", "ls", "-q", p, "/Infra"); !strings.Contains(out, "edited") {
+		t.Errorf("the edited title is not visible:\n%s", out)
+	}
+
+	// The binned entry is in the bin, under the name KeePass uses.
+	if out := runKeepassXC(t, bin, "pw", "ls", "-q", p, "/"+recycleBinName); !strings.Contains(out, "binned") {
+		t.Errorf("the binned entry is not in the recycle bin:\n%s", out)
+	}
+
+	// History and tombstones are only observable through the XML export.
+	xmlOut := runKeepassXC(t, bin, "pw", "export", "-f", "xml", "-q", p)
+
+	if !strings.Contains(xmlOut, "<History>") {
+		t.Error("no history element in the exported xml")
+	}
+	if !strings.Contains(xmlOut, "db-prod") {
+		t.Error("the history record should still hold the pre-edit title")
+	}
+	if strings.Count(xmlOut, entryUUID) < 2 {
+		t.Errorf("the history record should carry the entry's own uuid %s", entryUUID)
+	}
+	if !strings.Contains(xmlOut, "<DeletedObjects>") {
+		t.Error("no deleted-objects element in the exported xml")
+	}
+	if !strings.Contains(xmlOut, doomedUUID) {
+		t.Errorf("no tombstone for the permanently deleted entry %s", doomedUUID)
+	}
+	if strings.Contains(xmlOut, "doomed") {
+		t.Error("a permanently deleted entry should leave no trace but its tombstone")
+	}
+}
+
+// uuidText is the base64 form KeePass writes into the XML.
+func uuidText(t *testing.T, u gokeepasslib.UUID) string {
+	t.Helper()
+	b, err := u.MarshalText()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
