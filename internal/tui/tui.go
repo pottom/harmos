@@ -884,6 +884,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if folder != nil && folder.expanded {
 				folder.expanded = false
 			}
+		case "shift+right":
+			return m.expandSubtree(true), nil
+		case "shift+left":
+			return m.expandSubtree(false), nil
+		case "ctrl+right":
+			return m.expandAll(true), nil
+		case "ctrl+left":
+			return m.expandAll(false), nil
 		case "enter":
 			if m.focus == 0 {
 				if folder != nil {
