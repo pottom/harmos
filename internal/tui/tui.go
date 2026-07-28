@@ -131,6 +131,7 @@ type Model struct {
 	// The Changes tab and the save.
 	chgSel        int             // selected row, counting only selectable ones
 	chgFold       map[string]bool // folded hunks and folder groups (z)
+	chgScroll     int             // first visible row of the Changes tab
 	saveConfirm   bool            // the write confirmation is up
 	saving        bool            // a save is running off the update loop
 	saveConflict  string          // a source whose file moved under us ("" = none)
@@ -547,6 +548,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// few times, so it moves the cursor in lists and scrolls the detail pane.
 		switch msg.Button {
 		case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown:
+			if m.tab == tabChanges && !m.saveConfirm && m.saveConflict == "" && m.edit == editNone {
+				rows := m.changeRows(m.contentW())
+				step := 3
+				if msg.Button == tea.MouseButtonWheelUp {
+					step = -3
+				}
+				m.chgScroll = clampScroll(m.chgScroll+step, len(rows), m.changesVisibleRows())
+				return m, nil
+			}
 			k := tea.KeyMsg{Type: tea.KeyDown}
 			if msg.Button == tea.MouseButtonWheelUp {
 				k = tea.KeyMsg{Type: tea.KeyUp}

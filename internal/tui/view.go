@@ -678,10 +678,11 @@ func (m Model) treeLines(w, rows int) []string {
 		nameW := max(1, w-badgeW)
 
 		chg := changed[n]
-		nameStyle, iconStyle, marker := m.treeRowStyle(n, chg)
-		markerPlain := ansi.Strip(marker)
-		if markerPlain != "" {
-			markerPlain = " " + markerPlain
+		nameStyle, iconStyle, markerStyle, markerGlyph := m.treeRowStyle(n, chg)
+		marker, markerPlain := "", ""
+		if markerGlyph != "" {
+			marker = markerStyle.Render(markerGlyph)
+			markerPlain = " " + markerGlyph
 		}
 
 		if k == m.tsel {
@@ -752,9 +753,6 @@ func (m Model) entryLines(w, rows int) []string {
 		}
 		if k == m.esel && m.focus == 1 {
 			_, marker := changeStyle(state)
-			if !staged {
-				marker = " "
-			}
 			plain := pad(marker+" "+e.Title, titleW) + " " + pad(e.Username, userW)
 			if urlCol {
 				plain += " " + e.URL
@@ -763,14 +761,17 @@ func (m Model) entryLines(w, rows int) []string {
 			continue
 		}
 		titleStyle, marker := changeStyle(state)
+		markerStyle := titleStyle
 		if !staged {
-			marker = " "
+			// Going because its folder is going. The marker is faded rather than
+			// absent: something has to say so without colour, but it is a
+			// consequence of one decision elsewhere, not a decision here.
+			markerStyle = theme.Faded
 		}
 		// A deleted row is deleted all the way across: title, username and URL.
 		// Striking the title alone read as "this title is going", which is not
 		// what is about to happen, and left the row looking half-marked.
 		rest := theme.Dimmed
-		markerStyle := titleStyle
 		if state == edit.Deleted {
 			rest = titleStyle
 		}
@@ -1184,17 +1185,21 @@ func (m Model) tooSmall() string {
 // carries the same meaning without one.
 //
 // Colour alone is not a signal — it is gone under NO_COLOR, in a mono terminal,
-// and for a good share of readers — so every state has a marker, and a deletion
-// is struck through as well.
+// and for a good share of readers — so every state has a marker. The marker is
+// the whole non-colour signal now: deletions used to be struck through as well,
+// and a line drawn through the one text you are reading in order to decide is a
+// poor trade for a signal already carried twice.
 func changeStyle(st edit.State) (lipgloss.Style, string) {
 	i := ic()
 	switch st {
 	case edit.New:
 		return theme.Ok, i.plus
-	case edit.Modified, edit.Moved:
+	case edit.Modified:
 		return theme.Noted, i.pencil
+	case edit.Moved:
+		return theme.Noted, i.moved
 	case edit.Deleted:
-		return theme.Bad.Strikethrough(true), i.trash
+		return theme.Bad, i.trash
 	}
 	return theme.Strong, i.entry
 }
@@ -1203,10 +1208,9 @@ func changeStyle(st edit.State) (lipgloss.Style, string) {
 //
 // The selection owns the line: it renders a plain string, so a nested style does
 // not survive and the state has to travel on the row style itself — the state's
-// colour as the foreground, over the selection's background, plus the
-// strikethrough for a deletion. Without this the row under the cursor was the
-// one row that did not say what was about to happen to it, which is the row the
-// reader is looking at.
+// colour as the foreground, over the selection's background. Without this the
+// row under the cursor was the one row that did not say what was about to happen
+// to it, which is the row the reader is looking at.
 //
 // Used by all three lists — tree, entries, changes — so the cursor never changes
 // what a row means, only which row is current.
@@ -1215,11 +1219,7 @@ func selRowStyle(base lipgloss.Style, st edit.State) lipgloss.Style {
 		return base
 	}
 	s, _ := changeStyle(st)
-	base = base.Foreground(s.GetForeground())
-	if st == edit.Deleted {
-		base = base.Strikethrough(true).StrikethroughSpaces(false)
-	}
-	return base
+	return base.Foreground(s.GetForeground())
 }
 
 // iconStyleFor is the colour a tree row's icon takes.

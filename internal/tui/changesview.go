@@ -635,8 +635,8 @@ func (m Model) contentsGoing(c edit.Change, w int) [][]rowSeg {
 	}
 
 	const indent = "       "
-	del, _ := changeStyle(edit.Deleted)
-	inner := max(8, w-len(indent)-6)
+	del, mark := changeStyle(edit.Deleted)
+	inner := max(8, w-len(indent)-8)
 
 	i := ic()
 	var items []string
@@ -667,21 +667,38 @@ func (m Model) contentsGoing(c edit.Change, w int) [][]rowSeg {
 		return [][]rowSeg{{{indent + "  (empty)", theme.Faded}}}
 	}
 
-	// Long folders are listed up to a point and then counted: past a screenful
-	// the list stops informing and starts hiding the rest of the review.
-	const most = 12
+	// Everything, however long. This tab is where the reader sees what they are
+	// about to approve; a list that stops at a screenful and counts the rest is
+	// hiding exactly the part nobody checked. The pane scrolls.
 	var out [][]rowSeg
-	for i, it := range items {
-		if i == most && len(items) > most+1 {
-			out = append(out, []rowSeg{{indent + "  ⋯ and " + plural(len(items)-most, "more thing", "more things"), theme.Faded}})
-			break
-		}
+	for _, it := range items {
 		out = append(out, []rowSeg{
 			{indent + "  ", theme.Faded},
+			{mark + " ", theme.Faded},
 			{trunc(it, inner), del},
 		})
 	}
 	return out
+}
+
+// changesVisibleRows is how many rows the panel shows at once — the page a
+// PageUp/PageDown moves by, and the window the cursor has to stay inside.
+func (m Model) changesVisibleRows() int { return max(1, max(3, m.h-3)-2) }
+
+// scrollToShow pulls the window just far enough for row to be inside it. It
+// moves as little as possible: a list that re-centres itself under the cursor
+// loses the reader's place on every keystroke.
+func scrollToShow(offset, row, visible, total int) int {
+	if row < 0 {
+		return 0
+	}
+	if row < offset {
+		offset = row
+	}
+	if row >= offset+visible {
+		offset = row - visible + 1
+	}
+	return clampScroll(offset, total, visible)
 }
 
 // firstChangeSel is where the cursor starts: the first actual change, not the

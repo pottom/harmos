@@ -1,14 +1,17 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/pottom/harmos/internal/edit"
+	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/vault"
 )
 
@@ -311,11 +314,10 @@ func TestRevertAWholeGroup(t *testing.T) {
 	}
 }
 
-// The strikethrough belongs to the name of the thing being deleted, and to
-// nothing else. Striking "moved to the recycle bin" says the move is cancelled,
-// which is the opposite of what is about to happen — and the selection must not
-// smear it across the row either.
-func TestOnlyTheNameIsStruckThrough(t *testing.T) {
+// The state belongs to the name of the thing being deleted, and to nothing
+// else: the summary describes what will happen, and dressing it up as deleted
+// says it will not. The selection must not smear either across the row.
+func TestOnlyTheNameCarriesTheState(t *testing.T) {
 	c := edit.Change{State: edit.Deleted, Kind: edit.DeleteEntry, Title: "PrismaCloud",
 		Detail: "moved to the recycle bin"}
 	segs := changeHeading(c, false, "", 80)
@@ -332,11 +334,20 @@ func TestOnlyTheNameIsStruckThrough(t *testing.T) {
 	if name.text == "" || detail.text == "" {
 		t.Fatalf("expected a name and a summary segment, got %+v", segs)
 	}
-	if !name.style.GetStrikethrough() {
-		t.Error("the name of a deleted thing should be struck through")
+	del, marker := changeStyle(edit.Deleted)
+	if name.style.GetForeground() != del.GetForeground() {
+		t.Error("the name of a deleted thing should carry the delete colour")
 	}
-	if detail.style.GetStrikethrough() {
-		t.Error("the summary describes what will happen; striking it says it will not")
+	if !strings.Contains(name.text, strings.TrimSpace(marker)) {
+		t.Errorf("and its marker, which is the signal readers without colour get: %q", name.text)
+	}
+	if detail.style.GetForeground() == del.GetForeground() {
+		t.Error("the summary is not the thing being deleted")
+	}
+	// Nothing is struck through any more: a line through the text you are
+	// reading in order to decide is a poor trade for a signal carried twice.
+	if name.style.GetStrikethrough() || detail.style.GetStrikethrough() {
+		t.Error("the review should not strike anything through")
 	}
 
 	// Under the cursor the row keeps both: nothing is re-styled, a background is
@@ -345,9 +356,6 @@ func TestOnlyTheNameIsStruckThrough(t *testing.T) {
 	plain, selected := row.render(80, false), row.render(80, true)
 	if ansiStrip(plain) != ansiStrip(selected) {
 		t.Errorf("selection changed the text:\n%q\n%q", ansiStrip(plain), ansiStrip(selected))
-	}
-	if strings.Count(selected, "\x1b[9m") != strings.Count(plain, "\x1b[9m") {
-		t.Error("selection changed how much of the row is struck through")
 	}
 }
 
@@ -373,5 +381,66 @@ func TestChangeRowsNameTheKindOfThing(t *testing.T) {
 	}
 	if !strings.Contains(gText, i.folder) {
 		t.Errorf("a folder change should carry the folder icon: %q", gText)
+	}
+}
+
+// Nothing is hidden from the review, however long it runs, so the pane has to
+// scroll on its own — the cursor only stops on changes, and everything between
+// them is what the reader is about to approve.
+func TestChangesScrollsThroughEverything(t *testing.T) {
+	entries := make([]vault.Entry, 0, 60)
+	for i := range 60 {
+		entries = append(entries, vault.Entry{
+			ID: fmt.Sprintf("s:%d", i), GroupID: "s:g:1", Source: "s", Path: "Big",
+			Title: fmt.Sprintf("entry-%02d", i), Password: secret.New("p"),
+		})
+	}
+	m := up(New(entries, []vault.Folder{{ID: "s:g:1", Source: "s", Path: "Big", Name: "Big"}},
+		"", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "s:g:1", Name: "Big"})
+	m = m.switchTab(tabChanges)
+
+	rows := m.changeRows(m.contentW())
+	if len(rows) < 60 {
+		t.Fatalf("every entry going with the folder should be listed, got %d rows", len(rows))
+	}
+	for _, e := range entries {
+		found := false
+		for _, r := range rows {
+			if strings.Contains(r.text(), e.Title) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("%q is being deleted but is not in the review", e.Title)
+		}
+	}
+
+	// PageDown reaches the end; the last row is visible there.
+	visible := m.changesVisibleRows()
+	for range 20 {
+		m = up(m, tea.KeyMsg{Type: tea.KeyPgDown})
+	}
+	if m.chgScroll+visible < len(rows) {
+		t.Errorf("paging down should reach the end: offset %d of %d rows", m.chgScroll, len(rows))
+	}
+	last := ansiStrip(rows[len(rows)-1].text())
+	if !strings.Contains(ansi.Strip(m.View()), strings.TrimSpace(last)) {
+		t.Errorf("the last row should be on screen after paging to the end:\n%s", ansi.Strip(m.View()))
+	}
+
+	// And the wheel does the same, without moving the cursor.
+	before := m.chgSel
+	m = up(m, tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	if m.chgScroll == 0 {
+		t.Error("the wheel should scroll back up")
+	}
+	if m.chgSel != before {
+		t.Error("the wheel scrolls the review; it does not move the cursor")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyHome})
+	if m.chgScroll != 0 {
+		t.Errorf("home should go to the top, offset %d", m.chgScroll)
 	}
 }

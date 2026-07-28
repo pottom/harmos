@@ -410,26 +410,27 @@ func (m Model) changeStates() map[*node]nodeChange {
 // A named decision rather than an inline condition, because under `go test`
 // there is no terminal — lipgloss renders every style as plain text, so a colour
 // can only be tested by comparing the style, not the output.
-func (m Model) treeRowStyle(n *node, c nodeChange) (name, icon lipgloss.Style, marker string) {
+func (m Model) treeRowStyle(n *node, c nodeChange) (name, icon, markerStyle lipgloss.Style, marker string) {
 	if c.own == 0 && c.doomed {
-		// Going because a folder above it is going. It wears the deletion — it
-		// is true — but carries no marker: nothing was staged against this row,
-		// and a marker would suggest there is something here to undo.
-		st, _ := changeStyle(edit.Deleted)
-		return st, st, ""
+		// Going because a folder above it is going. It wears the deletion — that
+		// is true — and carries a faded marker: something has to say so without
+		// relying on colour, but the fading says this is a consequence of a
+		// decision made elsewhere, not one to be undone here.
+		st, mk := changeStyle(edit.Deleted)
+		return st, st, theme.Faded, mk
 	}
 	if c.own != 0 {
 		// The row is the thing that changed: colour, strikethrough and marker,
 		// icon included — an icon left in the writable colour reads as "this is
 		// fine" next to a struck-through name.
 		st, mk := changeStyle(c.own)
-		return st, st, mk
+		return st, st, st, mk
 	}
 	if c.inside != 0 {
 		// Something below changed. The marker says which kind, in that colour,
 		// but the name stays as it was: this folder is not going anywhere.
 		st, mk := changeStyle(c.inside)
-		return theme.Strong, m.iconStyleFor(n), st.Render(mk)
+		return theme.Strong, m.iconStyleFor(n), st, mk
 	}
-	return theme.Strong, m.iconStyleFor(n), ""
+	return theme.Strong, m.iconStyleFor(n), theme.Faded, ""
 }

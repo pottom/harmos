@@ -319,7 +319,7 @@ func TestDeletedFolderStaysAndIsMarked(t *testing.T) {
 	if chg.own != edit.Deleted {
 		t.Fatalf("the folder's own state should be Deleted, got %v", chg)
 	}
-	name, icon, marker := m.treeRowStyle(folder, chg)
+	name, icon, _, marker := m.treeRowStyle(folder, chg)
 	del, delMarker := changeStyle(edit.Deleted)
 	if name.GetForeground() != del.GetForeground() {
 		t.Error("a deleted row's name must take the delete colour")
@@ -327,8 +327,8 @@ func TestDeletedFolderStaysAndIsMarked(t *testing.T) {
 	if icon.GetForeground() != del.GetForeground() {
 		t.Error("its icon must take it too — an icon left in the writable colour reads as 'fine'")
 	}
-	if !name.GetStrikethrough() {
-		t.Error("a deleted row must be struck through, for readers without colour")
+	if name.GetStrikethrough() {
+		t.Error("nothing is struck through: the marker is the non-colour signal")
 	}
 	if marker != delMarker {
 		t.Errorf("marker = %q, want the delete glyph %q", marker, delMarker)
@@ -345,7 +345,7 @@ func TestDeletedFolderStaysAndIsMarked(t *testing.T) {
 		if pc.inside != edit.Deleted {
 			t.Errorf("the parent should show that something inside it is going, got %v", pc.inside)
 		}
-		pn, _, pm := m.treeRowStyle(parent, pc)
+		pn, _, _, pm := m.treeRowStyle(parent, pc)
 		if pn.GetStrikethrough() {
 			t.Error("a folder that merely contains a deletion must not be struck through")
 		}
@@ -500,15 +500,22 @@ func TestSubfoldersOfADeletedFolderAreMarkedButNotStaged(t *testing.T) {
 	}
 
 	del, _ := changeStyle(edit.Deleted)
-	name, icon, marker := m.treeRowStyle(inner, states[inner])
+	name, icon, markerStyle, marker := m.treeRowStyle(inner, states[inner])
 	if name.GetForeground() != del.GetForeground() || icon.GetForeground() != del.GetForeground() {
 		t.Error("a doomed sub-folder should wear the delete colour")
 	}
-	if !name.GetStrikethrough() {
-		t.Error("and be struck through")
+	if name.GetStrikethrough() {
+		t.Error("and not be struck through")
 	}
-	if marker != "" {
-		t.Errorf("but carry no marker — there is nothing here to undo, got %q", marker)
+	// It carries a marker — something must say "going" without colour — but a
+	// faded one: this is a consequence of a decision made on the folder above,
+	// not a decision to be undone here.
+	delStyle, delMarker2 := changeStyle(edit.Deleted)
+	if marker != delMarker2 {
+		t.Errorf("a doomed row needs a marker readers without colour can see, got %q", marker)
+	}
+	if markerStyle.GetForeground() == delStyle.GetForeground() {
+		t.Error("but a faded one, so it does not read as staged in its own right")
 	}
 }
 

@@ -224,6 +224,24 @@ func isModal(name string) bool {
 	return strings.HasPrefix(name, "confirm/") || strings.HasPrefix(name, "editor/")
 }
 
+// Nothing on screen may be distinguishable by colour alone: NO_COLOR, mono
+// terminals and a good share of readers see none of it. Every staged state
+// carries a glyph, which is the whole non-colour signal now that deletions are
+// no longer struck through.
+func TestAuditEveryStateHasAGlyph(t *testing.T) {
+	seen := map[string]edit.State{}
+	for _, st := range []edit.State{edit.New, edit.Modified, edit.Moved, edit.Deleted} {
+		_, marker := changeStyle(st)
+		if strings.TrimSpace(marker) == "" {
+			t.Errorf("state %v has no marker, so it reads as ordinary text without colour", st)
+		}
+		if other, ok := seen[marker]; ok && other != st {
+			t.Errorf("states %v and %v share the marker %q", other, st, marker)
+		}
+		seen[marker] = st
+	}
+}
+
 // Confirmations look alike: buttons, and the same three keys to work them.
 func TestAuditConfirmationsAreUniform(t *testing.T) {
 	for _, s := range auditSurfaces() {
@@ -255,12 +273,6 @@ func TestAuditSelectionKeepsTheState(t *testing.T) {
 		if got.GetBackground() != theme.SelRow.GetBackground() {
 			t.Errorf("state %v: the selection background was lost, so the cursor disappears", st)
 		}
-	}
-	if !selRowStyle(theme.SelRow, edit.Deleted).GetStrikethrough() {
-		t.Error("a deleted row under the cursor must stay struck through")
-	}
-	if selRowStyle(theme.SelRow, edit.Modified).GetStrikethrough() {
-		t.Error("only deletions are struck through")
 	}
 	if s := selRowStyle(theme.SelRow, 0); s.GetForeground() != theme.SelRow.GetForeground() {
 		t.Error("an unstaged row keeps the plain selection colours")

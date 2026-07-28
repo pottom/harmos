@@ -40,6 +40,8 @@ func (m Model) updateChanges(key string) (Model, tea.Cmd) {
 		cur = rows[i]
 	}
 
+	visible := m.changesVisibleRows()
+
 	switch key {
 	case "up", "ctrl+p":
 		if m.chgSel > 0 {
@@ -49,6 +51,21 @@ func (m Model) updateChanges(key string) (Model, tea.Cmd) {
 		if m.chgSel < len(sel)-1 {
 			m.chgSel++
 		}
+	case "pgup":
+		// The wheel and the page keys move the document, not the cursor: a
+		// folder deletion can list hundreds of things, and every one of them is
+		// something the reader is about to approve.
+		m.chgScroll = clampScroll(m.chgScroll-visible, len(rows), visible)
+		return m, nil
+	case "pgdown":
+		m.chgScroll = clampScroll(m.chgScroll+visible, len(rows), visible)
+		return m, nil
+	case "home":
+		m.chgScroll = 0
+		return m, nil
+	case "end":
+		m.chgScroll = clampScroll(len(rows), len(rows), visible)
+		return m, nil
 	case "z":
 		// The same key as the vault tree, doing the same thing: fold what is
 		// under the cursor. On a folder it hides the whole group, on a change it
@@ -94,6 +111,10 @@ func (m Model) updateChanges(key string) (Model, tea.Cmd) {
 	case "ctrl+s":
 		return m.askToSave()
 	}
+
+	// Whatever the key did to the cursor, keep it on screen.
+	rows = m.changeRows(m.contentW())
+	m.chgScroll = scrollToShow(m.chgScroll, m.chgCursor(rows), visible, len(rows))
 	return m, nil
 }
 

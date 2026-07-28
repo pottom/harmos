@@ -229,8 +229,7 @@ func (m Model) changesView() string {
 	inner := m.w - 2 - boolToInt(len(rows) > visible)
 	rows = m.changeRows(inner)
 
-	cursor := m.chgCursor(rows)
-	start := windowStart(max(0, cursor), visible, len(rows))
+	start := clampScroll(m.chgScroll, len(rows), visible)
 	body := m.renderChangeRows(rows, inner, start, visible)
 	if len(rows) == 0 {
 		body = m.changesPlaceholder()
@@ -254,7 +253,7 @@ func (m Model) changesView() string {
 	return header + "\n" +
 		boxV("Changes", m.changesPanelInfo(), body, m.w, panelsH, true, len(rows), start, 0) + "\n" +
 		ctx + "\n" +
-		m.footer(theme.Faded.Render("↑↓ move · z/Z fold · x revert · ↵ go to it · ^s write"))
+		m.footer(theme.Faded.Render("↑↓ move · PgUp/Dn scroll · z/Z fold · x revert · ↵ go to it · ^s write"))
 }
 
 // persistWritable records the choice in the config and returns the message to
