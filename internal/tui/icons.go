@@ -53,6 +53,15 @@ var nerdIcons = iconSet{
 	tag:        "\uf02b",
 	clock:      "\uf017",
 	note:       "\uf15c",
+	// A source's write lock. saved is also a padlock, but it means "stored in
+	// the keyring": reusing it would conflate two unrelated states, and its
+	// plain fallback is a tick, which would be wrong here.
+	locked:   "\uf023",
+	unlocked: "\uf09c",
+	// Staged-change markers.
+	plus:   "\uf067",
+	pencil: "\uf040",
+	trash:  "\uf1f8",
 }
 
 var plainIcons = iconSet{

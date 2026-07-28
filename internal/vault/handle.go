@@ -10,6 +10,7 @@ import (
 	"time"
 
 	gokeepasslib "github.com/tobischo/gokeepasslib/v3"
+	w "github.com/tobischo/gokeepasslib/v3/wrappers"
 )
 
 // Handle is an opened kdbx that can be written back. Open (the read-only path)
@@ -224,4 +225,15 @@ func (h *Handle) Snapshot() *Vault {
 // having kept one.
 func Reopen(h *Handle) (*Handle, error) {
 	return openHandle(h.path, h.source, h.creds)
+}
+
+// DisableRecycleBinForTest switches the database's recycle bin off.
+//
+// Exported for tests in other packages that need to exercise the
+// bin-is-off path, where a "move to bin" delete is really permanent. Nothing in
+// the program calls it: the setting belongs to the file's owner.
+func (h *Handle) DisableRecycleBinForTest() {
+	if h.db.Content != nil && h.db.Content.Meta != nil {
+		h.db.Content.Meta.RecycleBinEnabled = w.NewBoolWrapper(false)
+	}
 }

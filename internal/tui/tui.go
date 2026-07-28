@@ -114,6 +114,20 @@ type Model struct {
 
 	confirmUnlock string // source awaiting an unlock confirmation ("" = none)
 
+	// The editor. edit is the surface that is open; everything else is what it
+	// is working on. Nothing here writes — staging lands on m.chg.
+	edit             editMode
+	editSource       string      // which source the target lives in
+	editTarget       string      // entry or folder ID
+	editParent       string      // destination folder for a create or a move
+	editNew          bool        // creating rather than changing
+	editFolderTarget bool        // the target is a folder
+	editPerm         bool        // delete: permanently
+	editBefore       *edit.Draft // the entry as it was, for the diff
+	editForm         form
+	moveDests        []vaultFolderRef
+	moveSel          int
+
 	timeout    time.Duration
 	copied     string
 	copiedWhat string
@@ -551,6 +565,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.confirmUnlock != "" {
 			return m.updateWriteConfirm(key), nil
 		}
+		// So does the editor — and it has to come before the help toggle and the
+		// q-quits branch below. A form with free text in it cannot share a
+		// keyboard with a single-letter quit: typing "q" into a title would end
+		// the session and lose everything staged.
+		if m.edit != editNone {
+			nm, cmd := m.updateEditor(key, msg)
+			return nm, cmd
+		}
 		if key == "?" && !m.searchMode {
 			m.help = !m.help
 			m.helpScroll = 0
@@ -643,6 +665,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// ENTRY DETAILS — keys are commands.
 		if m.detail {
 			m.flash = "" // any key dismisses a transient message
+			if nm, handled := m.editKey(key); handled {
+				return nm, nil
+			}
 			switch key {
 			case "esc", "left":
 				m.detail, m.reveal = false, false
@@ -688,6 +713,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// RESULTS BROWSE — a filter is applied; arrows walk the ranked list.
 		if m.showResults() {
 			m.flash = "" // any key dismisses a transient message
+			if nm, handled := m.editKey(key); handled {
+				return nm, nil
+			}
 			switch key {
 			case "/":
 				m.searchMode = true
@@ -734,9 +762,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// TREE BROWSE — the base surface. Letters are free for future hotkeys.
+		// TREE BROWSE — the base surface.
 		m.flash = "" // any key dismisses a transient message
 		folder := m.currentFolder()
+		if nm, handled := m.editKey(key); handled {
+			return nm, nil
+		}
 		switch key {
 		case "/":
 			m.sel = 0
