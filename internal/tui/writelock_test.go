@@ -246,3 +246,52 @@ func key2(k string) tea.KeyMsg {
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
 }
+
+// The unlock confirmation offers buttons, with the action the user came for as
+// the default — so the common answer is one keypress, and the screen says so
+// rather than leaving it to be discovered.
+func TestUnlockConfirmationHasADefaultButton(t *testing.T) {
+	m := lockModel(t)
+	m.handles = map[string]*vault.Handle{"own": {}}
+	m.confirmUnlock, m.confirmSel = "own", 0
+
+	out := ansi.Strip(m.View())
+	if !strings.Contains(out, "Unlock") || !strings.Contains(out, "Cancel") {
+		t.Errorf("both buttons should be on screen:\n%s", out)
+	}
+
+	// Enter alone unlocks.
+	m2 := up(m, key2("enter"))
+	if !m2.writeUnlocked("own") {
+		t.Error("enter on the default button should unlock")
+	}
+
+	// Moving to Cancel and pressing enter does not.
+	m3 := up(m, tea.KeyMsg{Type: tea.KeyRight})
+	if m3.confirmSel != 1 {
+		t.Fatalf("right should move to the second button, got %d", m3.confirmSel)
+	}
+	m3 = up(m3, key2("enter"))
+	if m3.writeUnlocked("own") {
+		t.Error("enter on Cancel must not unlock")
+	}
+	if m3.confirmUnlock != "" {
+		t.Error("and it should close the confirmation")
+	}
+}
+
+// A stray keystroke must not answer a confirmation. Dismissing on anything at
+// all means a key aimed at the screen behind it decides the question.
+func TestConfirmationIgnoresUnrelatedKeys(t *testing.T) {
+	m := lockModel(t)
+	m.handles = map[string]*vault.Handle{"own": {}}
+	m.confirmUnlock = "own"
+
+	m = up(m, key2("j"))
+	if m.confirmUnlock != "own" {
+		t.Error("an unrelated key should leave the confirmation up")
+	}
+	if m.writeUnlocked("own") {
+		t.Error("and must certainly not have answered it")
+	}
+}
