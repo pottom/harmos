@@ -9,6 +9,7 @@ import (
 	gokeepasslib "github.com/tobischo/gokeepasslib/v3"
 	w "github.com/tobischo/gokeepasslib/v3/wrappers"
 
+	"github.com/pottom/harmos/internal/edit"
 	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/vault/vaulttest"
 )
@@ -71,12 +72,12 @@ func TestEntryIDSurvivesSaveAndReopen(t *testing.T) {
 func TestCreateEntry(t *testing.T) {
 	h, p := openFixture(t)
 
-	id, err := h.CreateEntry(folderID(t, h), Draft{
+	id, err := h.CreateEntry(folderID(t, h), edit.Draft{
 		Title:    "new-thing",
 		Username: "someone",
 		Password: secret.New("s3cret"),
 		Tags:     "a;b",
-		Fields:   []DraftField{{Key: "pps.cuf.Env", Value: "prod"}},
+		Fields:   []edit.DraftField{{Key: "pps.cuf.Env", Value: "prod"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -376,14 +377,14 @@ func TestDeleteGroupTombstonesTheWholeSubtree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.CreateEntry(child, Draft{Title: "doomed"}); err != nil {
+	if _, err := h.CreateEntry(child, edit.Draft{Title: "doomed"}); err != nil {
 		t.Fatal(err)
 	}
 	grandchild, err := h.CreateGroup(child, "Grandchild")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.CreateEntry(grandchild, Draft{Title: "also doomed"}); err != nil {
+	if _, err := h.CreateEntry(grandchild, edit.Draft{Title: "also doomed"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -513,10 +514,10 @@ func TestMutationsRefusedOnAnUnwritableSource(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := h.CreateEntry("x", Draft{Title: "no"}); err == nil {
+	if _, err := h.CreateEntry("x", edit.Draft{Title: "no"}); err == nil {
 		t.Error("CreateEntry should refuse")
 	}
-	if err := h.UpdateEntry("x", Draft{}); err == nil {
+	if err := h.UpdateEntry("x", edit.Draft{}); err == nil {
 		t.Error("UpdateEntry should refuse")
 	}
 	if err := h.DeleteEntry("x", true); err == nil {

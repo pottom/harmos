@@ -9,6 +9,7 @@ import (
 
 	gokeepasslib "github.com/tobischo/gokeepasslib/v3"
 
+	"github.com/pottom/harmos/internal/edit"
 	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/vault/vaulttest"
 )
@@ -110,7 +111,7 @@ func TestKeepassXCReadsMutations(t *testing.T) {
 	folder := folderID(t, h)
 
 	// created
-	if _, err := h.CreateEntry(folder, Draft{
+	if _, err := h.CreateEntry(folder, edit.Draft{
 		Title:    "created",
 		Username: "someone",
 		Password: secret.New("created-pw"),
@@ -132,7 +133,7 @@ func TestKeepassXCReadsMutations(t *testing.T) {
 	entryUUID := uuidText(t, live.UUID)
 
 	// binned
-	binnedID, err := h.CreateEntry(folder, Draft{Title: "binned"})
+	binnedID, err := h.CreateEntry(folder, edit.Draft{Title: "binned"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +142,7 @@ func TestKeepassXCReadsMutations(t *testing.T) {
 	}
 
 	// permanently deleted — leaves a tombstone and nothing else
-	doomedID, err := h.CreateEntry(folder, Draft{Title: "doomed"})
+	doomedID, err := h.CreateEntry(folder, edit.Draft{Title: "doomed"})
 	if err != nil {
 		t.Fatal(err)
 	}

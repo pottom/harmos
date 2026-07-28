@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	gokeepasslib "github.com/tobischo/gokeepasslib/v3"
+
+	"github.com/pottom/harmos/internal/edit"
 )
 
 // The mutation primitives. Each changes the decoded database in memory and
@@ -19,7 +21,7 @@ import (
 // The ID is real from this moment: the kdbx UUID is assigned now, not at save
 // time, so everything that follows — edits, a move, a delete, an undo — can name
 // the same entry without a second identity scheme to translate between.
-func (h *Handle) CreateEntry(parentGroupID string, d Draft) (string, error) {
+func (h *Handle) CreateEntry(parentGroupID string, d edit.Draft) (string, error) {
 	if err := h.mutable(); err != nil {
 		return "", err
 	}
@@ -40,7 +42,7 @@ func (h *Handle) CreateEntry(parentGroupID string, d Draft) (string, error) {
 
 // UpdateEntry writes a draft over an existing entry, pushing the previous state
 // onto the KeePass history stack first.
-func (h *Handle) UpdateEntry(id string, d Draft) error {
+func (h *Handle) UpdateEntry(id string, d edit.Draft) error {
 	if err := h.mutable(); err != nil {
 		return err
 	}
