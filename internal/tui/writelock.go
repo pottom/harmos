@@ -249,10 +249,10 @@ func (m Model) changesView() string {
 	} else if n := m.permanentlyRemoved(); n > 0 {
 		// The tally on the border says how much. This line is kept for the part
 		// of it that no backup inside the file can undo.
-		ctx = " " + theme.Bad.Render(plural(n, "thing", "things")+" would be deleted permanently") +
-			theme.Faded.Render("  ·  ^s to review and write")
+		ctx = trunc(" "+theme.Bad.Render(plural(n, "thing", "things")+" would be deleted permanently")+
+			theme.Faded.Render("  ·  ^s to review and write"), m.w)
 	} else if m.dirtyCount() > 0 {
-		ctx = " " + theme.Faded.Render("^s to review and write")
+		ctx = trunc(" "+theme.Faded.Render("^s to review and write"), m.w)
 	}
 
 	return header + "\n" +

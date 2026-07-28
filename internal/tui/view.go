@@ -285,6 +285,25 @@ func (m Model) modal(title, info string, lines []string, hint string) string {
 		inner = t
 	}
 	boxW := max(40, min(inner+4, m.w-4))
+
+	// Height was never clamped, so a modal taller than the terminal simply ran
+	// off it — and the one that does that first is the save confirmation, whose
+	// top rows are the question and the "deleted permanently" warning. A
+	// confirmation that can scroll its own warning off the screen is worse than
+	// no confirmation.
+	//
+	// The tail is what is kept: the buttons and the hint are how you answer, and
+	// the rows nearest them are the ones about this decision. A marker says the
+	// rest is above.
+	avail := max(3, m.h-2)
+	if hint != "" {
+		avail -= 2
+	}
+	if len(lines)+2 > avail {
+		keep := max(1, avail-3)
+		lines = append([]string{theme.Faded.Render("  ⋯ " + itoa(len(lines)-keep) + " more above — widen or heighten the window")},
+			lines[len(lines)-keep:]...)
+	}
 	panel := box(title, info, lines, boxW, len(lines)+2, true)
 	block := panel
 	if hint != "" {
@@ -297,6 +316,12 @@ func (m Model) modal(title, info string, lines []string, hint string) string {
 // with the hint truncated so the two never collide.
 func (m Model) footer(left string) string {
 	ti := m.tabIndicator()
+	// On a narrow terminal the hint hits its floor and the indicator is what
+	// overflows — spread only guarantees a gap, not a width. The indicator gives
+	// way: which tab you are on is on the header too, and the keys are not.
+	if room := m.w - dw(ti) - 2; room < 4 {
+		ti = trunc(ti, max(0, m.w-6))
+	}
 	return spread(trunc(left, max(4, m.w-dw(ti)-2)), ti, m.w)
 }
 
@@ -629,6 +654,12 @@ func (m Model) searchLine() string {
 	}
 	if n := len(m.excluded); n > 0 && !m.showResults() {
 		right += theme.Bad.Render(fmt.Sprintf("  ⚠ %d unavailable", n))
+	}
+	// The search box takes whatever the brand and the badge leave. It used to
+	// take its natural width and push the line past the terminal — 57 columns on
+	// a 41-column screen, on the surface the program opens on.
+	if room := m.w - dw(right) - 2; dw(left) > room {
+		left = trunc(left, max(4, room))
 	}
 	return spread(left, right, m.w)
 }

@@ -73,8 +73,11 @@ func (m Model) helpView() string {
 	right := boxV("Search", info, guide[ro:min(ro+vis, len(guide))],
 		rightW, panelsH, true, len(guide), ro, 0)
 
-	header := spread(brand()+theme.Dimmed.Render("  ·  help"), m.tabIndicator(), m.w)
-	footer := theme.Faded.Render(trunc("↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · esc closes", m.w))
+	// The indicator belongs to the footer, as on every other surface — this was
+	// the one place it sat in the header, which is also what pushed the header
+	// past the edge on a narrow terminal.
+	header := trunc(brand()+theme.Dimmed.Render("  ·  help"), m.w)
+	footer := m.footer(theme.Faded.Render("↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · esc closes"))
 	panels := lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
 	return header + "\n" + panels + "\n" + footer
 }
@@ -187,7 +190,7 @@ func (m Model) keyList(w int) []string {
 	out = append(out,
 		"",
 		head("GENERAL"),
-		row("1 2 3 4", "Vault · Changes · Generate · Settings"),
+		row("1 2 3 4", tabNames()),
 		row("^w", "unlock / lock this source for writing"),
 		row("/", "search every source"),
 		row("? q", "help · quit (clears clip)"),

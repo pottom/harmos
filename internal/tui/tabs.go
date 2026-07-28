@@ -1,5 +1,7 @@
 package tui
 
+import "strings"
+
 // Tab order, in one place.
 //
 // It used to be spelled out in four: the indicator, the mouse hit-test, the
@@ -37,6 +39,16 @@ func tabOrder() []tabSpec {
 		{"Generate", "3", tabGenerate},
 		{"Settings", "4", tabSettings},
 	}
+}
+
+// tabNames is the display order as one string, for the help. Spelling it out by
+// hand was the fourth copy this file exists to prevent.
+func tabNames() string {
+	var out []string
+	for _, t := range tabOrder() {
+		out = append(out, t.label)
+	}
+	return strings.Join(out, " · ")
 }
 
 // tabForKey maps a number key to its tab.

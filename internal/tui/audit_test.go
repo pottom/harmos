@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -36,7 +37,17 @@ type surface struct {
 // hiding behind a round number.
 const auditW, auditH = 97, 29
 
-func auditSurfaces() []surface {
+// auditSizes are the shapes every surface is checked at. The narrow one is the
+// declared minimum (view.go: below 40×10 the program says so instead), and the
+// short one is what caught a save confirmation rendering 23 rows on a 20-row
+// terminal — with its own irreversibility warning among the rows that scrolled
+// off the top.
+var auditSizes = [][2]int{{auditW, auditH}, {41, 11}, {60, 20}, {140, 30}}
+
+func auditSurfaces() []surface { return auditSurfacesAt(auditW, auditH) }
+
+func auditSurfacesAt(width, height int) []surface {
+	auditW, auditH := width, height
 	sized := func(m Model) Model { return up(m, tea.WindowSizeMsg{Width: auditW, Height: auditH}) }
 
 	base := func(t *testing.T) Model {
@@ -163,6 +174,26 @@ func TestAuditScreenHeight(t *testing.T) {
 					"leaves the previous screen showing through", got, auditH)
 			}
 		})
+	}
+}
+
+// And it fits every shape the program claims to support, at both ends.
+func TestAuditFitsEverySize(t *testing.T) {
+	for _, size := range auditSizes {
+		w, h := size[0], size[1]
+		for _, s := range auditSurfacesAt(w, h) {
+			t.Run(fmt.Sprintf("%dx%d/%s", w, h, s.name), func(t *testing.T) {
+				rows := plainLines(s.view(t))
+				if len(rows) > h {
+					t.Errorf("%d rows on a %d-row terminal — the top of this screen is gone", len(rows), h)
+				}
+				for i, ln := range rows {
+					if dw(ln) > w {
+						t.Errorf("row %d is %d columns on a %d-column terminal: %q", i, dw(ln), w, ln)
+					}
+				}
+			})
+		}
 	}
 }
 
