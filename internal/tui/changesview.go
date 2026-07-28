@@ -37,12 +37,57 @@ const (
 	rowHunk                  // a line of a change's diff
 )
 
-// changeRow is one row of the tab, already rendered.
+// rowSeg is one styled run of a row.
+//
+// Rows are kept as segments rather than as one rendered string because the
+// cursor must not change what a row means: a row staged for deletion has to keep
+// its strikethrough under the selection, and — just as important — the
+// strikethrough has to stay on the name of the thing being deleted and off the
+// sentence describing what will happen to it. Striking "moved to the recycle
+// bin" says the move is cancelled, which is the opposite of the truth.
+type rowSeg struct {
+	text  string
+	style lipgloss.Style
+}
+
+// changeRow is one row of the tab.
 type changeRow struct {
 	kind   rowKind
-	text   string
+	segs   []rowSeg
 	seq    int    // rowChange: the revert handle
 	target string // rowChange / rowFolder: what folding and jumping act on
+}
+
+// text is the row's plain content, for measuring and for tests.
+func (r changeRow) text() string {
+	var b strings.Builder
+	for _, s := range r.segs {
+		b.WriteString(s.text)
+	}
+	return b.String()
+}
+
+// render draws the row, optionally under the cursor. The selection is a
+// background: it sits behind whatever each segment already says.
+func (r changeRow) render(w int, selected bool) string {
+	var b strings.Builder
+	used := 0
+	for _, s := range r.segs {
+		t := trunc(s.text, max(0, w-used))
+		if t == "" {
+			continue
+		}
+		used += dw(t)
+		st := s.style
+		if selected {
+			st = st.Background(theme.SelBg)
+		}
+		b.WriteString(st.Render(t))
+	}
+	if selected && used < w {
+		b.WriteString(lipgloss.NewStyle().Background(theme.SelBg).Render(strings.Repeat(" ", w-used)))
+	}
+	return b.String()
 }
 
 // selectable reports whether the cursor stops on this row.
@@ -158,9 +203,9 @@ func (m Model) changeRows(w int) []changeRow {
 	for _, g := range m.groupChanges() {
 		if g.source != lastSource {
 			if lastSource != "" {
-				out = append(out, changeRow{kind: rowHunk, text: ""})
+				out = append(out, changeRow{kind: rowHunk})
 			}
-			out = append(out, changeRow{kind: rowSource, text: " " + m.sourceHeading(g.source, w)})
+			out = append(out, changeRow{kind: rowSource, segs: m.sourceHeading(g.source, w)})
 			lastSource = g.source
 		}
 
@@ -169,7 +214,7 @@ func (m Model) changeRows(w int) []changeRow {
 		out = append(out, changeRow{
 			kind:   rowFolder,
 			target: groupID,
-			text:   " " + folderHeading(g, folded, w),
+			segs:   folderHeading(g, folded, w),
 		})
 		if folded {
 			continue
@@ -181,15 +226,21 @@ func (m Model) changeRows(w int) []changeRow {
 				kind:   rowChange,
 				seq:    c.Seq,
 				target: c.Target,
-				text:   " " + changeHeading(c, m.alsoGoing(c), hunkFolded, w),
+				segs:   changeHeading(c, hunkFolded, m.alsoGoing(c), w),
 			})
 			if hunkFolded {
 				continue
 			}
 			for _, l := range c.Lines {
 				for _, hl := range hunkLines(l, w) {
-					out = append(out, changeRow{kind: rowHunk, text: " " + hl})
+					out = append(out, changeRow{kind: rowHunk, segs: hl})
 				}
+			}
+			// A folder deletion takes its contents with it, and the reviewer is
+			// about to approve that. One operation, but every thing it removes
+			// is named here — a count is a promise the reader cannot check.
+			for _, hl := range m.contentsGoing(c, w) {
+				out = append(out, changeRow{kind: rowHunk, segs: hl})
 			}
 		}
 	}
@@ -198,7 +249,7 @@ func (m Model) changeRows(w int) []changeRow {
 
 // sourceHeading is the top of a source's section: its icon, its name, and the
 // tally of what is staged in it.
-func (m Model) sourceHeading(source string, w int) string {
+func (m Model) sourceHeading(source string, w int) []rowSeg {
 	counts := map[edit.State]int{}
 	for _, c := range m.chg.Diff() {
 		if c.Source == source {
@@ -209,8 +260,12 @@ func (m Model) sourceHeading(source string, w int) string {
 	if si, ok := m.sourceIcon(source); ok {
 		icon = si + " "
 	}
-	left := theme.Strong.Render(icon + source)
-	return spread(left, statBar(counts), max(1, w))
+	stat := statBar(counts)
+	gap := max(1, w-dw(icon+source)-dw(plainStat(counts))-1)
+	return append([]rowSeg{
+		{" " + icon + source, theme.Strong},
+		{strings.Repeat(" ", gap), theme.Faded},
+	}, stat...)
 }
 
 // statBar is the +2 ~1 -2 tally, in the three change colours.
@@ -218,18 +273,30 @@ func (m Model) sourceHeading(source string, w int) string {
 // Reading the shape of a session before reading its detail is the first thing
 // anyone does with a diff, so it is on the source heading and on the panel's
 // border, and nowhere does it appear as a number without its marker.
-func statBar(counts map[edit.State]int) string {
-	var parts []string
+func statBar(counts map[edit.State]int) []rowSeg {
+	var out []rowSeg
 	for _, st := range []edit.State{edit.New, edit.Modified, edit.Moved, edit.Deleted} {
 		n := counts[st]
 		if n == 0 {
 			continue
 		}
-		// Literal +/~/- here rather than the row icons: this is a tally in a
-		// border, where a glyph a font may not have would read as a blank.
-		parts = append(parts, changeStyleOf(st).Render(fmt.Sprintf("%s%d", statMarker(st), n)))
+		if len(out) > 0 {
+			out = append(out, rowSeg{" ", theme.Faded})
+		}
+		// Literal +/~/- here rather than the row icons: this is a tally, and a
+		// glyph a font may not have would read as a blank.
+		out = append(out, rowSeg{fmt.Sprintf("%s%d", statMarker(st), n), changeStyleOf(st).Strikethrough(false)})
 	}
-	return strings.Join(parts, theme.Faded.Render(" "))
+	return out
+}
+
+// plainStat is the tally's width, for laying a row out before rendering it.
+func plainStat(counts map[edit.State]int) string {
+	var b strings.Builder
+	for _, s := range statBar(counts) {
+		b.WriteString(s.text)
+	}
+	return b.String()
 }
 
 // changeStyleOf is changeStyle without its glyph, for places that supply their
@@ -252,7 +319,7 @@ func statMarker(st edit.State) string {
 }
 
 // folderHeading is the breadcrumb a group of changes sits under.
-func folderHeading(g changeGroup, folded bool, w int) string {
+func folderHeading(g changeGroup, folded bool, w int) []rowSeg {
 	crumb := strings.ReplaceAll(g.path, "/", " › ")
 	if crumb == "" {
 		crumb = "/" // the source's own root group
@@ -261,41 +328,56 @@ func folderHeading(g changeGroup, folded bool, w int) string {
 	if folded {
 		marker = "▸"
 	}
-	line := "  " + theme.Faded.Render(marker) + " " + theme.Dimmed.Render(crumb)
-	if folded {
-		line += theme.Faded.Render("  " + plural(len(g.items), "change", "changes"))
+	out := []rowSeg{
+		{"   " + marker + " ", theme.Faded},
+		{trunc(crumb, max(1, w-6)), theme.Dimmed},
 	}
-	return trunc(line, max(1, w))
+	if folded {
+		out = append(out, rowSeg{"  " + plural(len(g.items), "change", "changes"), theme.Faded})
+	}
+	return out
 }
 
 // changeHeading is one staged item: its marker, its name, and what will happen.
-func changeHeading(c edit.Change, extra string, folded bool, w int) string {
+func changeHeading(c edit.Change, folded bool, extra string, w int) []rowSeg {
 	style, marker := changeStyle(c.State)
-	name := style.Render(marker + " " + c.Title)
 
 	detail := c.Detail
 	if detail == "" && len(c.Lines) > 0 {
 		detail = plural(len(c.Lines), "field", "fields")
-		if folded {
-			detail += ", folded"
-		}
 	}
-	left := "    " + name
-	right := theme.Faded.Render(detail + extra)
-	return spread(trunc(left, max(1, w-dw(right)-1)), right, max(1, w))
+	if folded {
+		// Folded away, the contents cannot be read, so say how much is under
+		// there. Open, the list itself says it, and a count as well would be two
+		// answers to one question.
+		detail += extra + " ▸"
+	}
+
+	// The name wears the state — struck through for a deletion, because the name
+	// is the thing being deleted. The summary never does: it describes what will
+	// happen, and striking it through says it will not.
+	name := marker + " " + c.Title
+	lead := "     "
+	gap := max(1, w-dw(lead)-dw(name)-dw(detail))
+	return []rowSeg{
+		{lead, theme.Faded},
+		{trunc(name, max(1, w-dw(lead)-dw(detail)-1)), style},
+		{strings.Repeat(" ", gap), theme.Faded},
+		{detail, theme.Faded.Strikethrough(false)},
+	}
 }
 
 // hunkLines renders one field's change in git's shape: the field named once,
 // then what left and what arrived.
-func hunkLines(l edit.Line, w int) []string {
-	const indent = "      "
+func hunkLines(l edit.Line, w int) [][]rowSeg {
+	const indent = "       "
 	inner := max(8, w-len(indent)-4)
 
-	head := indent + theme.Dimmed.Render(l.Field)
+	head := []rowSeg{{indent, theme.Faded}, {l.Field, theme.Dimmed}}
 	if len(l.Text) > 0 {
-		out := []string{head}
+		out := [][]rowSeg{head}
 		for _, t := range l.Text {
-			out = append(out, indent+"  "+textLine(t, inner))
+			out = append(out, append([]rowSeg{{indent + "  ", theme.Faded}}, textLine(t, inner)...))
 		}
 		return out
 	}
@@ -304,34 +386,34 @@ func hunkLines(l edit.Line, w int) []string {
 	// identically: two lines of the same bullets say nothing. One line says the
 	// only true thing there is to say about a secret in a diff.
 	if l.Old == l.New && l.New != "" {
-		return []string{head + "  " + theme.Noted.Render("changed")}
+		return [][]rowSeg{append(head, rowSeg{"  changed", theme.Noted})}
 	}
 
-	var out []string
+	var out [][]rowSeg
 	if l.Op != edit.LineAdded && l.Old != "" {
-		out = append(out, indent+"  "+theme.Bad.Render("- ")+theme.Dimmed.Render(trunc(l.Old, inner)))
+		out = append(out, []rowSeg{{indent + "  ", theme.Faded}, {"- ", theme.Bad}, {trunc(l.Old, inner), theme.Dimmed}})
 	}
 	if l.Op != edit.LineRemoved && l.New != "" {
-		out = append(out, indent+"  "+theme.Ok.Render("+ ")+theme.Strong.Render(trunc(l.New, inner)))
+		out = append(out, []rowSeg{{indent + "  ", theme.Faded}, {"+ ", theme.Ok}, {trunc(l.New, inner), theme.Strong}})
 	}
 	if len(out) == 0 { // a field emptied or filled with nothing visible
-		out = append(out, indent+"  "+theme.Faded.Render("(empty)"))
+		out = append(out, []rowSeg{{indent + "  (empty)", theme.Faded}})
 	}
-	return append([]string{head}, out...)
+	return append([][]rowSeg{head}, out...)
 }
 
 // textLine is one line of a multi-line field's diff.
-func textLine(t edit.TextLine, w int) string {
+func textLine(t edit.TextLine, w int) []rowSeg {
 	switch t.Op {
 	case edit.LineAdded:
-		return theme.Ok.Render("+ ") + theme.Ok.Render(trunc(t.Text, w))
+		return []rowSeg{{"+ ", theme.Ok}, {trunc(t.Text, w), theme.Ok}}
 	case edit.LineRemoved:
-		return theme.Bad.Render("- ") + theme.Bad.Render(trunc(t.Text, w))
+		return []rowSeg{{"- ", theme.Bad}, {trunc(t.Text, w), theme.Bad}}
 	default:
 		if strings.HasPrefix(t.Text, "⋯") {
-			return theme.Faded.Render("  " + trunc(t.Text, w))
+			return []rowSeg{{"  " + trunc(t.Text, w), theme.Faded}}
 		}
-		return theme.Faded.Render("  ") + theme.Dimmed.Render(trunc(t.Text, w))
+		return []rowSeg{{"  ", theme.Faded}, {trunc(t.Text, w), theme.Dimmed}}
 	}
 }
 
@@ -357,41 +439,24 @@ func (m Model) changesPanelInfo() string {
 	if len(counts) == 0 {
 		return m.chg.Summary() // "nothing pending" — the border says so even when empty
 	}
-	bar := statBar(counts)
-	if len(sources) > 1 {
-		bar += theme.Faded.Render(fmt.Sprintf(" · %d sources", len(sources)))
+	var b strings.Builder
+	for _, seg := range statBar(counts) {
+		b.WriteString(seg.style.Render(seg.text))
 	}
-	return bar
+	if len(sources) > 1 {
+		b.WriteString(theme.Faded.Render(fmt.Sprintf(" · %d sources", len(sources))))
+	}
+	return b.String()
 }
 
 // renderChangeRows draws the visible window, marking the selected row.
 func (m Model) renderChangeRows(rows []changeRow, w, start, count int) []string {
+	cursor := m.chgCursor(rows)
 	var out []string
 	for i := start; i < min(start+count, len(rows)); i++ {
-		r := rows[i]
-		if i == m.chgCursor(rows) {
-			st := theme.SelRow.Width(w)
-			if r.kind == rowChange {
-				st = selRowStyle(st, m.chg.StateOf(r.target))
-			}
-			out = append(out, st.Render(trunc(ansiStrip(r.text), w)))
-			continue
-		}
-		out = append(out, r.text)
+		out = append(out, rows[i].render(w, i == cursor))
 	}
 	return out
-}
-
-// firstChangeSel is where the cursor starts: the first actual change, not the
-// folder heading above it. The headings are selectable so they can be folded,
-// but nobody opens this tab to look at a heading.
-func (m Model) firstChangeSel(rows []changeRow) int {
-	for i, idx := range selectableRows(rows) {
-		if rows[idx].kind == rowChange {
-			return i
-		}
-	}
-	return 0
 }
 
 // chgCursor is the row index the cursor is on, given m.chgSel counts only
@@ -534,4 +599,80 @@ func (m Model) pathOfNode(n *node) string {
 		return f.Path
 	}
 	return ""
+}
+
+// contentsGoing lists what a folder deletion removes, so the write confirmation
+// is approving something the reader has actually seen.
+//
+// A count is a promise the reader cannot check. These rows are not selectable
+// and carry no marker: they are consequences of one staged decision, not
+// decisions of their own, and there is nothing here to revert separately.
+func (m Model) contentsGoing(c edit.Change, w int) [][]rowSeg {
+	if c.State != edit.Deleted || !isFolderKind(c.Kind) {
+		return nil
+	}
+	f, ok := m.folderByID(c.Target)
+	if !ok {
+		return nil
+	}
+
+	const indent = "       "
+	del, _ := changeStyle(edit.Deleted)
+	inner := max(8, w-len(indent)-6)
+
+	var items []string
+	for _, mf := range m.mergedFolders {
+		if mf.Source == c.Source && strings.HasPrefix(mf.Path, f.Path+"/") {
+			items = append(items, strings.TrimPrefix(mf.Path, f.Path+"/")+"/")
+		}
+	}
+	sort.Strings(items)
+
+	var entries []string
+	for _, e := range m.mergedEntries {
+		if e.Source != c.Source {
+			continue
+		}
+		if e.Path == f.Path || strings.HasPrefix(e.Path, f.Path+"/") {
+			label := e.Title
+			if rel := strings.TrimPrefix(e.Path, f.Path); rel != "" {
+				label = strings.TrimPrefix(rel, "/") + " › " + e.Title
+			}
+			entries = append(entries, label)
+		}
+	}
+	sort.Strings(entries)
+	items = append(items, entries...)
+
+	if len(items) == 0 {
+		return [][]rowSeg{{{indent + "  (empty)", theme.Faded}}}
+	}
+
+	// Long folders are listed up to a point and then counted: past a screenful
+	// the list stops informing and starts hiding the rest of the review.
+	const most = 12
+	var out [][]rowSeg
+	for i, it := range items {
+		if i == most && len(items) > most+1 {
+			out = append(out, []rowSeg{{indent + "  ⋯ and " + plural(len(items)-most, "more thing", "more things"), theme.Faded}})
+			break
+		}
+		out = append(out, []rowSeg{
+			{indent + "  ", theme.Faded},
+			{trunc(it, inner), del},
+		})
+	}
+	return out
+}
+
+// firstChangeSel is where the cursor starts: the first actual change, not the
+// folder heading above it. The headings are selectable so they can be folded,
+// but nobody opens this tab to look at a heading.
+func (m Model) firstChangeSel(rows []changeRow) int {
+	for i, idx := range selectableRows(rows) {
+		if rows[idx].kind == rowChange {
+			return i
+		}
+	}
+	return 0
 }

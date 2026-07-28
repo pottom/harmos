@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/pottom/harmos/internal/edit"
 	"github.com/pottom/harmos/internal/vault"
 )
 
@@ -277,7 +278,7 @@ func TestChangesFolding(t *testing.T) {
 	m = up(m, key2("Z"))
 	for _, r := range m.changeRows(m.contentW()) {
 		if r.kind == rowChange || r.kind == rowHunk {
-			t.Errorf("Z should fold every group, %q is still shown", ansiStrip(r.text))
+			t.Errorf("Z should fold every group, %q is still shown", r.text())
 		}
 	}
 	m = up(m, key2("Z"))
@@ -307,5 +308,45 @@ func TestRevertAWholeGroup(t *testing.T) {
 	}
 	if !strings.Contains(m.flash, "reverted") {
 		t.Errorf("it should say what it did, got %q", m.flash)
+	}
+}
+
+// The strikethrough belongs to the name of the thing being deleted, and to
+// nothing else. Striking "moved to the recycle bin" says the move is cancelled,
+// which is the opposite of what is about to happen — and the selection must not
+// smear it across the row either.
+func TestOnlyTheNameIsStruckThrough(t *testing.T) {
+	c := edit.Change{State: edit.Deleted, Kind: edit.DeleteEntry, Title: "PrismaCloud",
+		Detail: "moved to the recycle bin"}
+	segs := changeHeading(c, false, "", 80)
+
+	var name, detail rowSeg
+	for _, s := range segs {
+		switch {
+		case strings.Contains(s.text, "PrismaCloud"):
+			name = s
+		case strings.Contains(s.text, "recycle bin"):
+			detail = s
+		}
+	}
+	if name.text == "" || detail.text == "" {
+		t.Fatalf("expected a name and a summary segment, got %+v", segs)
+	}
+	if !name.style.GetStrikethrough() {
+		t.Error("the name of a deleted thing should be struck through")
+	}
+	if detail.style.GetStrikethrough() {
+		t.Error("the summary describes what will happen; striking it says it will not")
+	}
+
+	// Under the cursor the row keeps both: nothing is re-styled, a background is
+	// put behind what is already there.
+	row := changeRow{kind: rowChange, segs: segs}
+	plain, selected := row.render(80, false), row.render(80, true)
+	if ansiStrip(plain) != ansiStrip(selected) {
+		t.Errorf("selection changed the text:\n%q\n%q", ansiStrip(plain), ansiStrip(selected))
+	}
+	if strings.Count(selected, "\x1b[9m") != strings.Count(plain, "\x1b[9m") {
+		t.Error("selection changed how much of the row is struck through")
 	}
 }

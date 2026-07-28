@@ -434,18 +434,31 @@ func TestFolderDeletionCarriesItsContents(t *testing.T) {
 		}
 	}
 
-	// And the change says how much goes with it.
-	var line string
+	// And the Changes tab names every entry that goes with it: a count is a
+	// promise the reader cannot check.
+	var body string
 	for _, r := range m.changeRows(m.contentW()) {
-		if r.kind == rowChange {
-			line = ansiStrip(r.text)
-		}
+		body += r.text() + "\n"
 	}
-	if !strings.Contains(line, "with") {
-		t.Errorf("the change should say what goes with it, got %q", line)
+	for _, e := range folder.entries {
+		if !strings.Contains(body, e.Title) {
+			t.Errorf("%q goes with the folder but is not listed in the review:\n%s", e.Title, body)
+		}
 	}
 	if entries, _ := m.goesWithIt(folder.id); entries != len(folder.entries) {
 		t.Errorf("counted %d entries, the folder holds %d", entries, len(folder.entries))
+	}
+
+	// Folded, where the list cannot be read, the count takes its place.
+	m = up(m.switchTab(tabChanges), key2("z"))
+	var folded string
+	for _, r := range m.changeRows(m.contentW()) {
+		if r.kind == rowChange {
+			folded = r.text()
+		}
+	}
+	if !strings.Contains(folded, "with") {
+		t.Errorf("a folded folder deletion should say how much is under it, got %q", folded)
 	}
 }
 
