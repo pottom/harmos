@@ -350,3 +350,28 @@ func TestOnlyTheNameIsStruckThrough(t *testing.T) {
 		t.Error("selection changed how much of the row is struck through")
 	}
 }
+
+// A folder and an entry with the same name are very different things to be
+// deleting, so the row says which it is.
+func TestChangeRowsNameTheKindOfThing(t *testing.T) {
+	entry := changeHeading(edit.Change{State: edit.Deleted, Kind: edit.DeleteEntry, Title: "same"}, false, "", 60)
+	group := changeHeading(edit.Change{State: edit.Deleted, Kind: edit.DeleteGroup, Title: "same"}, false, "", 60)
+
+	var eText, gText string
+	for _, s := range entry {
+		eText += s.text
+	}
+	for _, s := range group {
+		gText += s.text
+	}
+	if eText == gText {
+		t.Errorf("an entry and a folder render identically: %q", eText)
+	}
+	i := ic()
+	if !strings.Contains(eText, i.entry) {
+		t.Errorf("an entry change should carry the entry icon: %q", eText)
+	}
+	if !strings.Contains(gText, i.folder) {
+		t.Errorf("a folder change should carry the folder icon: %q", gText)
+	}
+}

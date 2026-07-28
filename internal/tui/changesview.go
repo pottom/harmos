@@ -306,6 +306,15 @@ func changeStyleOf(st edit.State) lipgloss.Style {
 	return style
 }
 
+// typeIcon says what kind of thing a change is about.
+func typeIcon(k edit.Kind) string {
+	i := ic()
+	if isFolderKind(k) {
+		return i.folder
+	}
+	return i.entry
+}
+
 // statMarker is the diff alphabet: what git would print in the first column.
 func statMarker(st edit.State) string {
 	switch st {
@@ -324,9 +333,13 @@ func folderHeading(g changeGroup, folded bool, w int) []rowSeg {
 	if crumb == "" {
 		crumb = "/" // the source's own root group
 	}
-	marker := "▾"
+	// The tree's own open/closed folder glyphs, not a hardcoded triangle: in the
+	// plain icon set the triangle *is* the folder glyph, so a literal one here
+	// meant two different things wore the same mark on the same screen.
+	i := ic()
+	marker := i.folderOpen
 	if folded {
-		marker = "▸"
+		marker = i.folder
 	}
 	out := []rowSeg{
 		{"   " + marker + " ", theme.Faded},
@@ -353,10 +366,15 @@ func changeHeading(c edit.Change, folded bool, extra string, w int) []rowSeg {
 		detail += extra + " ▸"
 	}
 
+	// Two glyphs, answering two questions: the marker says what is happening,
+	// the type icon says what it is happening to. Without the second, a folder
+	// and an entry with the same name read identically — and they are very
+	// different things to be deleting.
+	//
 	// The name wears the state — struck through for a deletion, because the name
 	// is the thing being deleted. The summary never does: it describes what will
 	// happen, and striking it through says it will not.
-	name := marker + " " + c.Title
+	name := marker + " " + typeIcon(c.Kind) + " " + c.Title
 	lead := "     "
 	gap := max(1, w-dw(lead)-dw(name)-dw(detail))
 	return []rowSeg{
@@ -620,10 +638,11 @@ func (m Model) contentsGoing(c edit.Change, w int) [][]rowSeg {
 	del, _ := changeStyle(edit.Deleted)
 	inner := max(8, w-len(indent)-6)
 
+	i := ic()
 	var items []string
 	for _, mf := range m.mergedFolders {
 		if mf.Source == c.Source && strings.HasPrefix(mf.Path, f.Path+"/") {
-			items = append(items, strings.TrimPrefix(mf.Path, f.Path+"/")+"/")
+			items = append(items, i.folder+" "+strings.TrimPrefix(mf.Path, f.Path+"/"))
 		}
 	}
 	sort.Strings(items)
@@ -638,7 +657,7 @@ func (m Model) contentsGoing(c edit.Change, w int) [][]rowSeg {
 			if rel := strings.TrimPrefix(e.Path, f.Path); rel != "" {
 				label = strings.TrimPrefix(rel, "/") + " › " + e.Title
 			}
-			entries = append(entries, label)
+			entries = append(entries, i.entry+" "+label)
 		}
 	}
 	sort.Strings(entries)
