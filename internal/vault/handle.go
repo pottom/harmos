@@ -33,8 +33,16 @@ type Handle struct {
 	source string
 	creds  *gokeepasslib.DBCredentials // sha256 hashes, never a plaintext secret
 	fp     fingerprint
-	why    string // "" when writable, else why not
+	why    string // cheap refusal computed at open; "" if none
 	backed bool   // a backup has been taken this session
+
+	// The round-trip proof is expensive — an encode plus a decode, so two KDF
+	// derivations — and its answer is only needed when somebody actually wants
+	// to write. Running it at open made every startup pay for a capability most
+	// sessions never use: on a real vault it was three quarters of the open.
+	// So it runs once, on demand, and is remembered.
+	verified    bool
+	verifiedWhy string
 }
 
 // String is redacted. A Handle reaches a log or an error message only by
@@ -50,10 +58,48 @@ func (h *Handle) Path() string { return h.path }
 // Source is the configured source name entries are tagged with.
 func (h *Handle) Source() string { return h.source }
 
-// Writable reports whether Save may run, and when it may not, the reason to show
-// the user. The reason is never swallowed: refusing to write someone's vault
-// without saying why is worse than refusing.
-func (h *Handle) Writable() (bool, string) { return h.why == "", h.why }
+// Writable is the cheap verdict: the checks that cost nothing, plus the result
+// of the round-trip proof if it has already been run.
+//
+// It has to stay cheap because the UI asks it while drawing — once per source,
+// every frame. VerifyWritable is the one that does the real work.
+//
+// The reason is never swallowed: refusing to write someone's vault without
+// saying why is worse than refusing.
+func (h *Handle) Writable() (bool, string) {
+	if h.why != "" {
+		return false, h.why
+	}
+	if h.verified && h.verifiedWhy != "" {
+		return false, h.verifiedWhy
+	}
+	return true, ""
+}
+
+// VerifyWritable proves that a save would lose nothing, by encoding the database
+// and comparing the element census of the result against the original.
+//
+// Called when the user asks to unlock a source for writing — the moment its
+// answer matters, and a moment they are already waiting through. The result is
+// cached, so every later check is free.
+func (h *Handle) VerifyWritable() (bool, string) {
+	if h.why != "" {
+		return false, h.why
+	}
+	if h.verified {
+		return h.verifiedWhy == "", h.verifiedWhy
+	}
+
+	h.verified = true
+	lost, err := roundTripLoss(h.db, h.creds)
+	switch {
+	case err != nil:
+		h.verifiedWhy = "could not verify the file would survive a save: " + err.Error()
+	case len(lost) > 0:
+		h.verifiedWhy = "harmos would lose data it cannot represent: " + strings.Join(lost, ", ")
+	}
+	return h.verifiedWhy == "", h.verifiedWhy
+}
 
 // fingerprint identifies the file contents we opened, so a save can tell that
 // something else (KeePassXC, a sync tool) rewrote it in the meantime. Size and
@@ -139,19 +185,9 @@ func (h *Handle) refuseWriteBecause() string {
 		// and the Salsa20 inner stream). Doable, but its own blast radius.
 		return "KDBX 3.1 file: harmos can only write KDBX 4.0 — upgrade it in KeePassXC"
 	}
-	// What the file *contains* decides this, not what its version label says.
-	//
-	// The version check this replaced refused every KDBX 4.1 file, on the
-	// grounds that the library models none of the 4.1 elements. Real vaults are
-	// 4.1, so that refused everything while most of those files use nothing we
-	// would lose. Encoding the database and comparing the element census of the
-	// result against the original answers the actual question — and keeps
-	// answering it when the format gains elements nobody here has heard of.
-	if lost, err := roundTripLoss(h.db, h.creds); err != nil {
-		return "could not verify the file would survive a save: " + err.Error()
-	} else if len(lost) > 0 {
-		return "harmos would lose data it cannot represent: " + strings.Join(lost, ", ")
-	}
+	// What the file *contains* decides the rest, not what its version label
+	// says — but that check costs an encode and a decode, so it waits for
+	// VerifyWritable and the moment somebody actually wants to write.
 
 	if h.db.Content == nil || h.db.Content.Root == nil {
 		return "kdbx has no root group"

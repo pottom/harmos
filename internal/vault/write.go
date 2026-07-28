@@ -39,7 +39,9 @@ var ErrNotWritable = errors.New("this source is not writable")
 //  8. rename into place, then flush the directory entry
 //  9. unlock again, so the handle stays usable, and re-fingerprint
 func (h *Handle) Save() (err error) {
-	if ok, why := h.Writable(); !ok {
+	// The full proof, not the cheap verdict: this is the last moment before the
+	// file is replaced, and it is cached from the unlock anyway.
+	if ok, why := h.VerifyWritable(); !ok {
 		return fmt.Errorf("%w: %s", ErrNotWritable, why)
 	}
 

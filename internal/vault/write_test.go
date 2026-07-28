@@ -513,3 +513,49 @@ func TestCensusSeesTheRealDocument(t *testing.T) {
 		t.Errorf("the fixture entry has several fields, census says %d", c["Entry>String"])
 	}
 }
+
+// Opening must not run the round-trip proof.
+//
+// It costs an encode and a decode — two KDF derivations — and its answer is only
+// needed when somebody wants to write. Running it at open made every startup pay
+// for a capability most sessions never use: on a real vault it was three quarters
+// of the open time, which is noticeable.
+func TestOpeningDoesNotRunTheExpensiveProof(t *testing.T) {
+	h, _ := openFixture(t)
+
+	if h.verified {
+		t.Error("opening a vault should not have run the writability proof")
+	}
+	// The cheap verdict is still available, because the UI asks it while drawing.
+	if ok, why := h.Writable(); !ok {
+		t.Errorf("the cheap verdict should pass on this fixture: %s", why)
+	}
+	if h.verified {
+		t.Error("the cheap verdict must not trigger the proof either")
+	}
+
+	// Asking for the proof runs it once, and remembers.
+	if ok, why := h.VerifyWritable(); !ok {
+		t.Fatalf("the fixture should verify: %s", why)
+	}
+	if !h.verified {
+		t.Error("the result should be remembered")
+	}
+	h.db = nil // a second call must not touch the database again
+	if ok, _ := h.VerifyWritable(); !ok {
+		t.Error("the cached result should answer without re-running")
+	}
+}
+
+// A file the cheap checks reject never reaches the proof — there is nothing to
+// prove about a file we have already refused.
+func TestCheapRefusalSkipsTheProof(t *testing.T) {
+	h, _ := openFixture(t, vaulttest.KDBX31())
+
+	if ok, _ := h.VerifyWritable(); ok {
+		t.Error("a 3.1 file should be refused")
+	}
+	if h.verified {
+		t.Error("the proof should not have run for an already-refused file")
+	}
+}

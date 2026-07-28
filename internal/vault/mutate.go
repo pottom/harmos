@@ -305,7 +305,7 @@ func (h *Handle) DeleteGroup(id string, perm bool) error {
 // mutable refuses on a source harmos will not write, so an edit cannot be staged
 // against a file that could never receive it.
 func (h *Handle) mutable() error {
-	if ok, why := h.Writable(); !ok {
+	if ok, why := h.VerifyWritable(); !ok {
 		return fmt.Errorf("%w: %s", ErrNotWritable, why)
 	}
 	return nil
