@@ -461,8 +461,8 @@ one at a time, on green CI plus human approval.
 | ~~**1a**~~ | ~~`feat/kdbx-4.1`~~ · **done** | The patched library round-trips a 4.1 file losing nothing, an XML census proves it, and `keepassxc-cli` opens the result. Offered upstream. Specified in `kdbx-4.1-support.md`. |
 | ~~**1**~~ | ~~`feat/vault-write-engine`~~ · **done** | A kdbx opened and saved with **no changes** differs in bytes (fresh nonces), decodes field-for-field identically, and `keepassxc-cli db-info` reports the same group/entry counts. |
 | ~~**2**~~ | ~~`feat/vault-mutations`~~ · **done** | create/edit/move/delete round-trip on a temp kdbx; `keepassxc-cli show` reads the new entry, the bin group holds the binned one, and a permanently deleted UUID appears in `DeletedObjects`. |
-| **3** | `feat/edit-change-model` (in review) | A table-driven test walks every composition pair and asserts the derived diff and decoration map; reverting any single op leaves a consistent set. **← stop-and-wait gate** |
-| **4** | `feat/session-handles` | Over one Pleasant and one kdbx source, `session.Open` yields **exactly one** handle — the kdbx one. |
+| ~~**3**~~ | ~~`feat/edit-change-model`~~ · **done** | A table-driven test walks every composition pair and asserts the derived diff and decoration map; reverting any single op leaves a consistent set. **← stop-and-wait gate** |
+| **4** | `feat/session-handles` (in review) | Over one Pleasant and one kdbx source, `session.Open` yields **exactly one** handle — the kdbx one. |
 | **5** | `refactor/tui-form-and-tokens` | Every built-in theme fills every token (reflective test); the Settings source form behaves identically; the new glyphs render under `HARMOS_NERDFONT=0`. |
 | **6** | `feat/tui-write-lock` | No source is writable at launch; `ctrl+w` + `y` unlocks exactly one and flips the padlock; a Pleasant source refuses with a reason; the teatest contract stays green. |
 | **7** | `feat/tui-edit` | A staged edit colours the row and increments the dirty count **while the file on disk is byte-identical**. |
