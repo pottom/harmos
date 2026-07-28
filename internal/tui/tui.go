@@ -260,7 +260,7 @@ func checkUpdateCmd() tea.Cmd {
 // leaves the unlock phase.
 func (m Model) intoBrowsing(res *session.Result) Model {
 	m.handles = res.Handles
-	m.writeOK = map[string]bool{} // every source starts locked, every run
+	m.writeOK = writableFromConfig(m.sources(), res.Handles)
 	m = m.rebuild(res.Entries, res.Folders)
 	m.tsel = firstFolderWithEntries(m.roots)
 	m.locked = false

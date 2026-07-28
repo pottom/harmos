@@ -30,9 +30,10 @@ library default, while keeping unlock well under a second.
   best-effort basis. No stronger claim is made.
 - **Never writes to a Pleasant server**, and never creates a `.lock` file
   beside any kdbx.
-- **Local kdbx files are read-only by default.** Every source starts locked on
-  every run and nothing is persisted, so writing requires an explicit unlock, an
-  explicit save, and a confirmation. Browsing — including a session that stages
+- **Local kdbx files are read-only by default.** Writing requires an explicit
+  opt-in per source (`writable = true`, set from the interface and remembered),
+  an explicit save, and a confirmation. A config without that key cannot write at
+  all. Browsing — including a session that stages
   edits and does not save — leaves the file byte- and mtime-unchanged.
 - **A save cannot corrupt the file it replaces.** The original is copied aside
   first, the new contents go to a temp file that is decoded back to prove it is

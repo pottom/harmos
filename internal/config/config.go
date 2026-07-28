@@ -62,6 +62,10 @@ type Source struct {
 	// kdbx only:
 	Path    string `toml:"path"`
 	Keyfile string `toml:"keyfile"`
+	// Writable opts this source in to editing. Absent means read-only, so a
+	// config that has never heard of the feature keeps the old behaviour, and
+	// enabling it is always something somebody did on purpose.
+	Writable bool `toml:"writable"`
 }
 
 // Config is the whole configuration file.

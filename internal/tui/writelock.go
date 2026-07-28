@@ -3,15 +3,23 @@ package tui
 import (
 	"strings"
 
+	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/theme"
+	"github.com/pottom/harmos/internal/vault"
 )
 
 // The per-source write lock.
 //
-// Every source starts locked on every run. Nothing is persisted: a vault is
-// editable only because the user said so, in this session, on purpose. That is
-// the whole safety story for a program whose previous version could not write at
-// all — the default is the old behaviour, and leaving it is a deliberate act.
+// A source is read-only until somebody says otherwise, and that answer is
+// remembered in the config as `writable = true`. It started out as a per-run
+// unlock with nothing persisted, which is the safer default on paper and turned
+// out to be a nuisance in practice: anyone who edits regularly re-answers the
+// same question every launch, and a prompt answered by reflex has stopped being
+// a safeguard.
+//
+// The default is still read-only. A config that has never heard of the feature
+// behaves exactly as it did before, and turning it on is always something
+// somebody did on purpose — it just stays done.
 //
 // It is a separate concept from m.locked, which means the unlock phase (the
 // password prompts at startup). Two things called "locked" in one model would be
@@ -63,7 +71,7 @@ func (m Model) toggleWriteLock() Model {
 	}
 	if m.writeOK[source] {
 		delete(m.writeOK, source)
-		m.flash = "locked " + source
+		m.flash = m.persistWritable(source, false, "locked "+source)
 		return m
 	}
 	// Two questions, in order. First the cheap one — is there a handle at all,
@@ -107,7 +115,7 @@ func (m Model) updateWriteConfirm(key string) Model {
 			m.writeOK = map[string]bool{}
 		}
 		m.writeOK[m.confirmUnlock] = true
-		m.flash = "unlocked " + m.confirmUnlock + " for this run"
+		m.flash = m.persistWritable(m.confirmUnlock, true, "unlocked "+m.confirmUnlock)
 	}
 	m.confirmUnlock = ""
 	return m
@@ -127,8 +135,8 @@ func (m Model) writeConfirmView() string {
 		"",
 		"  " + theme.Dimmed.Render(trunc(path, max(10, m.w-8))),
 		"",
-		"  " + theme.Faded.Render("Nothing is written until you save, and the unlock"),
-		"  " + theme.Faded.Render("lasts for this run only — it is not remembered."),
+		"  " + theme.Faded.Render("Nothing is written until you save."),
+		"  " + theme.Faded.Render("This is remembered, so you are not asked again."),
 		"",
 	}
 	lines = append(lines, confirmButtons(unlockChoices(), m.confirmSel, "←/→ choose · ↵ confirm · esc cancel")...)
@@ -212,4 +220,37 @@ func (m Model) changesView() string {
 	return header + "\n" +
 		box("Changes", m.chg.Summary(), body, m.w, panelsH, true) + "\n" +
 		m.footer(theme.Faded.Render("↑↓ pick · x revert · ↵ go to it · ^s save · 1 back to the vault"))
+}
+
+// persistWritable records the choice in the config and returns the message to
+// show — including when it could not be saved, since a setting that silently
+// failed to stick is worse than one that was never offered.
+func (m Model) persistWritable(source string, on bool, ok string) string {
+	if m.configPath == "" {
+		return ok // no config to write to (tests, and the onboarding flow)
+	}
+	if err := config.SetSourceWritable(m.configPath, source, on); err != nil {
+		return ok + ", but it could not be saved: " + err.Error()
+	}
+	return ok
+}
+
+// writableFromConfig is the set of sources the config says may be edited.
+//
+// Read at startup, so the answer given last time still holds. A source whose
+// file harmos will not write is dropped here rather than being shown as unlocked
+// and then refusing at the first edit.
+func writableFromConfig(sources []config.Source, handles map[string]*vault.Handle) map[string]bool {
+	out := map[string]bool{}
+	for _, p := range sources {
+		if !p.Writable {
+			continue
+		}
+		if h := handles[p.Name]; h != nil {
+			if ok, _ := h.Writable(); ok {
+				out[p.Name] = true
+			}
+		}
+	}
+	return out
 }

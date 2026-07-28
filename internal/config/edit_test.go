@@ -2,7 +2,9 @@ package config
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -122,5 +124,100 @@ func TestSetTopLevelKey(t *testing.T) {
 	}
 	if cfg.Source("own") == nil {
 		t.Error("the source should survive setting a top-level key")
+	}
+}
+
+// The write opt-in survives a round trip, and turning it off removes the key
+// rather than writing a default value into the file.
+func TestSetSourceWritable(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	body := `default = "work"
+
+[[source]]
+name = "work"
+type = "kdbx"
+path = "/tmp/work.kdbx"
+
+[[source]]
+name = "other"
+type = "kdbx"
+path = "/tmp/other.kdbx"
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetSourceWritable(path, "work", true); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range cfg.Sources {
+		switch s.Name {
+		case "work":
+			if !s.Writable {
+				t.Error("work should be writable")
+			}
+		case "other":
+			if s.Writable {
+				t.Error("setting one source must not touch another")
+			}
+		}
+	}
+
+	// Everything else in the file survives.
+	got, _ := os.ReadFile(path)
+	for _, want := range []string{`default = "work"`, `path = "/tmp/work.kdbx"`, `name = "other"`} {
+		if !strings.Contains(string(got), want) {
+			t.Errorf("the rest of the config should be untouched, %q is gone:\n%s", want, got)
+		}
+	}
+
+	// Off again removes the key: absent is already the safe default, and a
+	// config carrying every setting at its default is harder to read.
+	if err := SetSourceWritable(path, "work", false); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = os.ReadFile(path)
+	if strings.Contains(string(got), "writable") {
+		t.Errorf("turning it off should remove the key:\n%s", got)
+	}
+	cfg, _ = Load(path)
+	for _, s := range cfg.Sources {
+		if s.Writable {
+			t.Errorf("%s should be read-only again", s.Name)
+		}
+	}
+}
+
+// Setting it twice must not leave two keys behind.
+func TestSetSourceWritableIsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte("[[source]]\nname = \"a\"\ntype = \"kdbx\"\npath = \"/tmp/a.kdbx\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		if err := SetSourceWritable(path, "a", true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _ := os.ReadFile(path)
+	if n := strings.Count(string(got), "writable"); n != 1 {
+		t.Errorf("writable appears %d times:\n%s", n, got)
+	}
+}
+
+func TestSetSourceWritableUnknownSource(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte("[[source]]\nname = \"a\"\ntype = \"kdbx\"\npath = \"/tmp/a.kdbx\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetSourceWritable(path, "nope", true); err == nil {
+		t.Error("setting an unknown source should fail rather than doing nothing")
 	}
 }

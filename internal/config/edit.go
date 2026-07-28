@@ -476,3 +476,74 @@ func parseKV(line string) (key, val string, ok bool) {
 func writeFileAtomic(path string, data []byte) error {
 	return atomicfile.WriteBytes(path, 0o600, data)
 }
+
+// SetSourceWritable records whether a source may be edited, leaving the rest of
+// its block verbatim.
+//
+// Turning it off removes the key rather than writing `writable = false`: absent
+// is already the safe default, and a config carrying every setting at its
+// default value is harder to read than one that only says what differs.
+func SetSourceWritable(path, name string, writable bool) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	next, ok := setSourceKey(string(content), name, "writable", writable)
+	if !ok {
+		return fmt.Errorf("no source named %q", name)
+	}
+	if err := writeFileAtomic(path, []byte(next)); err != nil {
+		return err
+	}
+	// A config that no longer parses is worse than one that never changed, and
+	// this is the only place a boolean is threaded into a hand-edited file.
+	if _, err := Load(path); err != nil {
+		return fmt.Errorf("config is invalid after setting writable on %q: %w", name, err)
+	}
+	return nil
+}
+
+// setSourceKey sets or clears a boolean key inside one [[source]] block.
+func setSourceKey(content, name, key string, on bool) (string, bool) {
+	lines := strings.Split(content, "\n")
+	isTableHeader := func(s string) bool { return strings.HasPrefix(strings.TrimSpace(s), "[") }
+
+	for i := range lines {
+		if strings.TrimSpace(lines[i]) != "[[source]]" {
+			continue
+		}
+		j, blockName, keyAt := i+1, "", -1
+		for j < len(lines) {
+			t := strings.TrimSpace(lines[j])
+			if t == "" || isTableHeader(lines[j]) {
+				break
+			}
+			if k, v, ok := parseKV(t); ok {
+				if k == "name" {
+					blockName = v
+				}
+				if k == key {
+					keyAt = j
+				}
+			}
+			j++
+		}
+		if blockName != name {
+			continue
+		}
+
+		switch {
+		case on && keyAt >= 0:
+			lines[keyAt] = fmt.Sprintf("%s = true", key)
+		case on:
+			out := append([]string{}, lines[:j]...)
+			out = append(out, fmt.Sprintf("%s = true", key))
+			out = append(out, lines[j:]...)
+			lines = out
+		case keyAt >= 0:
+			lines = append(lines[:keyAt], lines[keyAt+1:]...)
+		}
+		return strings.Join(lines, "\n"), true
+	}
+	return content, false
+}

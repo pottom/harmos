@@ -7,9 +7,9 @@ and local `.kdbx` files. It syncs a Pleasant server's
 offline package into a local, encrypted kdbx cache and reads that cache — plus
 any local kdbx files — through one shared reader, in a TUI and a scriptable CLI.
 
-- **Read-only until you say otherwise.** Browse, search, copy. Every source
-  starts locked on every run, and nothing about that is remembered — a vault is
-  editable only because you unlocked it, this session, on purpose.
+- **Read-only until you say otherwise.** Browse, search, copy. A vault is
+  editable only after you unlock it, once — a config that has never heard of the
+  feature keeps the old read-only behaviour.
 - **Never writes to the server.** No push, no bidirectional sync. A Pleasant
   cache is rebuilt by `sync`, so it is structurally unwritable: no code path
   can produce a write handle for one.
@@ -245,9 +245,9 @@ path that could write one.
 
 Editing is deliberately several steps, and reversible until the last:
 
-1. **Unlock** the source with `ctrl+w`. Every source starts locked on every run,
-   and the unlock is never persisted — a vault is editable only because you said
-   so, this session.
+1. **Unlock** the source with `ctrl+w`. Sources are read-only until you do, and
+   the choice is remembered (`writable = true` in the config), so you are asked
+   once rather than every launch. `ctrl+w` again locks it.
 2. **Change** things: `e` edits, `n` and `N` create an entry or a folder, `d`
    sends to the recycle bin (`D` deletes permanently), `m` moves, `r` renames.
    `ctrl+g` rolls a password in the editor using your Generate-tab settings.
@@ -301,6 +301,7 @@ name = "personal"
 type = "kdbx"
 path = "~/vault.kdbx"
 keyfile = "~/vault.key"       # only if your kdbx uses one
+writable = true               # opt in to editing; absent means read-only
 ```
 
 **Environment variables:**
