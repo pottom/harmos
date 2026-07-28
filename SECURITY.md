@@ -28,5 +28,13 @@ library default, while keeping unlock well under a second.
   objects and its strings are immutable, so secrets cannot be reliably wiped
   from memory. Where practical, secrets are held in `[]byte` and zeroed on a
   best-effort basis. No stronger claim is made.
-- **Read-only.** harmos never writes to a Pleasant server, and never writes to,
-  locks, or rewrites a local `.kdbx` file.
+- **Never writes to a Pleasant server**, and never creates a `.lock` file
+  beside any kdbx.
+- **Local kdbx files are read-only by default.** Every source starts locked on
+  every run and nothing is persisted, so writing requires an explicit unlock, an
+  explicit save, and a confirmation. Browsing — including a session that stages
+  edits and does not save — leaves the file byte- and mtime-unchanged.
+- **A save cannot corrupt the file it replaces.** The original is copied aside
+  first, the new contents go to a temp file that is decoded back to prove it is
+  readable, and only then does an atomic rename put it in place. If the file
+  changed on disk since it was opened, the save is refused.

@@ -1,4 +1,4 @@
-// Command harmos is a read-only terminal password client for Pleasant Password
+// Command harmos is a terminal password client for Pleasant Password
 // Server and local .kdbx files.
 package main
 

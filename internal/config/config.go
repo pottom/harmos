@@ -27,8 +27,9 @@ type Type string
 const (
 	// Pleasant is a Pleasant Password Server source: it has a cache and syncs.
 	Pleasant Type = "pleasant"
-	// Kdbx is a local .kdbx file source: the file is the source, read-only,
-	// never synced.
+	// Kdbx is a local .kdbx file source: the file is the source, never synced.
+	// Read-only unless the user unlocks it for writing during a run — that
+	// unlock is not persisted here or anywhere else.
 	Kdbx Type = "kdbx"
 )
 

@@ -92,7 +92,7 @@ func newAddSourceCmd() *cobra.Command {
 		Aliases: []string{"add-kdbx"},
 		Short:   "Register a source (local kdbx by default, or --type pps)",
 		Long: "Add a source to the config. By default it is a local KeePass .kdbx file — " +
-			"pass its path; harmos never writes to that file. With --type pps it is a " +
+			"pass its path; harmos never writes to it unless you unlock it in the TUI. With --type pps it is a " +
 			"Pleasant Password Server (--url, --user; --cache defaults to " +
 			"$XDG_DATA_HOME/harmos/<name>.kdbx); run `harmos sync` afterwards to populate " +
 			"its cache. --save-password stores the password (for Pleasant, the shared " +

@@ -2,13 +2,17 @@
 
 > ἁρμός (*harmós*) — a joint: the place where two fitted parts meet.
 
-A read-only terminal password client for **Pleasant Password Server**
-(a.k.a. KeePass Hub) and local `.kdbx` files. It syncs a Pleasant server's
+A terminal password client for **Pleasant Password Server** (a.k.a. KeePass Hub)
+and local `.kdbx` files. It syncs a Pleasant server's
 offline package into a local, encrypted kdbx cache and reads that cache — plus
 any local kdbx files — through one shared reader, in a TUI and a scriptable CLI.
 
-- **Read-only.** Browse, search, copy. No writing back to the server, no entry
-  editing, no bidirectional sync. harmos never modifies your kdbx files.
+- **Read-only until you say otherwise.** Browse, search, copy. Every source
+  starts locked on every run, and nothing about that is remembered — a vault is
+  editable only because you unlocked it, this session, on purpose.
+- **Never writes to the server.** No push, no bidirectional sync. A Pleasant
+  cache is rebuilt by `sync`, so it is structurally unwritable: no code path
+  can produce a write handle for one.
 - **Two producers, one reader.** A Pleasant server and a local kdbx file both
   feed the same kdbx-based reader; the cache is a real KDBX4 file (Argon2,
   ChaCha20) openable in KeePassXC.
@@ -126,8 +130,8 @@ screen that walks you through adding your first source.
 
 ### TUI
 
-Running `harmos` with no subcommand opens the terminal UI. Three tabs, switched
-with `1` / `2` / `3`:
+Running `harmos` with no subcommand opens the terminal UI. Four tabs, switched
+with `1` / `2` / `3` / `4`:
 
 - **Vault** — a collapsible source / folder tree, an entry table with a live
   search bar, and a detail pane (notes, custom fields, dates, attachments, TOTP).
@@ -136,6 +140,8 @@ with `1` / `2` / `3`:
 - **Settings** — sources (add / edit / sync / save-password / remove), the live
   theme picker, Nerd Font toggle, and preferences (clipboard timeout, cache
   staleness), all persisted to the config.
+- **Changes** — edits you have staged but not written, as a diff, with per-change
+  revert. Empty until you unlock a source and change something.
 
 Press `?` for the full key map. The staples:
 
@@ -149,7 +155,10 @@ Press `?` for the full key map. The staples:
 | `c` | Copy a `harmos get …` command for the selected entry |
 | `s` | Save attachments (entry detail) |
 | `ctrl+b` | Collapse / expand the source tree |
-| `1` / `2` / `3` | Switch Vault / Generate / Settings tab |
+| `1` / `2` / `3` / `4` | Switch Vault / Generate / Settings / Changes tab |
+| `ctrl+w` | Unlock this source for editing (or lock it again) |
+| `e` · `n` / `N` · `d` / `D` · `m` / `r` | Edit · new entry / folder · delete to bin / permanently · move / rename |
+| `ctrl+s` | Review the staged changes and write them |
 | `?` / `q` | Help · quit (clears the clipboard) |
 
 ### CLI
@@ -228,6 +237,41 @@ substring matching, the query language understands:
 Result rows show **what** matched and **where** (title · source · the matched
 field excerpt), so a wrong-source copy is obvious before you make it.
 
+### Editing
+
+Local `.kdbx` files can be edited. Pleasant sources cannot: their cache is
+rebuilt by `sync`, so an edit would be silently discarded — harmos has no code
+path that could write one.
+
+Editing is deliberately several steps, and reversible until the last:
+
+1. **Unlock** the source with `ctrl+w`. Every source starts locked on every run,
+   and the unlock is never persisted — a vault is editable only because you said
+   so, this session.
+2. **Change** things: `e` edits, `n` and `N` create an entry or a folder, `d`
+   sends to the recycle bin (`D` deletes permanently), `m` moves, `r` renames.
+   `ctrl+g` rolls a password in the editor using your Generate-tab settings.
+3. **Look at it.** Staged rows are coloured where they are — teal for new, amber
+   for changed, struck through for deleted — and the Changes tab shows a diff,
+   with `x` to revert one. No password ever appears there.
+4. **Write** with `ctrl+s`, which names the file, the number of changes, and the
+   backup it will take before asking.
+
+Nothing reaches your file until that last confirmation. Quitting with unsaved
+changes asks first.
+
+**What a save does.** It copies your file aside, regenerates the encryption
+nonces (reusing them would be a keystream reuse), writes to a temp file, decodes
+that back to prove it is readable, checks nothing was lost, and only then renames
+it into place. If something else changed the file in the meantime, the save is
+refused rather than overwriting it. KeePass history is written the way other
+clients expect, and deletions leave the tombstones a synchronising client needs.
+
+**KDBX 4.1** is supported through a patched copy of the kdbx library
+(`third_party/gokeepasslib`, offered upstream). A file harmos cannot round-trip
+without losing something is refused for writing, and it says which element it
+would have lost.
+
 ## Configuration
 
 Config lives at `$XDG_CONFIG_HOME/harmos/config.toml` (override with
@@ -293,8 +337,16 @@ nominatively to describe compatibility. See `NOTICE`.
 
 Not yet audited. The design:
 
-- **Read-only** with respect to your kdbx files — harmos opens them `O_RDONLY`
-  and leaves their bytes and mtime unchanged; this is an invariant, tested.
+- **Browsing never writes.** harmos opens your kdbx `O_RDONLY` and leaves its
+  bytes and mtime unchanged; a session that stages edits and does not save
+  changes nothing either. That is an invariant, tested.
+- **Writing is narrow and deliberate.** Only an explicitly unlocked local kdbx
+  can be written, only by an explicit save, and only after a confirmation that
+  names the file and the backup it will take. Every save regenerates the file's
+  nonces — reusing them would be a keystream reuse — writes to a temp file,
+  decodes that back to prove it is readable, and only then replaces the
+  original. A file changed by something else in the meantime is refused rather
+  than overwritten.
 - **Secrets off disk** — master, per-source, and server passwords go to the OS
   keyring; the config file never holds a secret. A copied password is written to
   a **concealed** clipboard (the platform's do-not-record hints) and cleared

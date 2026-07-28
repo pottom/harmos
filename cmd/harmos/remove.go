@@ -21,7 +21,7 @@ func newRemoveSourceCmd() *cobra.Command {
 		Short:   "Remove a source from the config",
 		Long: "Remove a source from the config. On a terminal you are asked whether to " +
 			"also delete the local file (the kdbx, or a Pleasant cache — off by default, " +
-			"harmos is otherwise read-only) and whether to remove its saved keyring " +
+			"harmos never writes to it unless you unlock it) and whether to remove its saved keyring " +
 			"password. Use --delete-file / --forget-password to answer non-interactively.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

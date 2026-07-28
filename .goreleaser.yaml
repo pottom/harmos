@@ -47,7 +47,7 @@ nfpms:
     vendor: Istvan Basa
     homepage: https://github.com/pottom/harmos
     maintainer: Istvan Basa <basipottom@gmail.com>
-    description: Read-only terminal password client for Pleasant Password Server and local .kdbx files.
+    description: Terminal password client for Pleasant Password Server and local .kdbx files.
     license: MIT
     formats: [deb, rpm]
     bindir: /usr/bin

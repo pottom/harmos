@@ -2,6 +2,7 @@ package tui
 
 import (
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -85,4 +86,59 @@ func readAllStripped(t *testing.T, tm *teatest.TestModel) string {
 
 func key(r rune) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
+}
+
+// The editing contract, driven through the real event loop.
+//
+// The unit tests check each state in isolation; this checks that the states join
+// up — that unlocking, editing, staging and declining to save form one path a
+// person can actually walk, and that walking it does not touch the file.
+func TestEditInteractionContract(t *testing.T) {
+	t.Setenv("HARMOS_NO_UPDATE_CHECK", "1")
+
+	m := editModel(t)
+	path := m.handles["own"].Path()
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(110, 34))
+	send := func(msg tea.Msg) {
+		tm.Send(msg)
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	send(tea.WindowSizeMsg{Width: 110, Height: 34})
+	send(tea.KeyMsg{Type: tea.KeyTab})   // tree → entry table
+	send(key('e'))                       // → the editor
+	send(key('!'))                       // type into the title
+	send(tea.KeyMsg{Type: tea.KeyEnter}) // stage it
+	send(key('4'))                       // → the Changes tab
+	send(tea.KeyMsg{Type: tea.KeyCtrlS}) // → the save confirmation
+	send(key('n'))                       // decline
+
+	if err := tm.Quit(); err != nil {
+		t.Fatal(err)
+	}
+	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+
+	out := readAllStripped(t, tm)
+	for _, want := range []string{"-- EDIT --", "Write these changes?"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the stream should have passed through %q", want)
+		}
+	}
+
+	final := tm.FinalModel(t).(Model)
+	if final.dirtyCount() != 1 {
+		t.Errorf("declining the save should keep the change staged, got %d", final.dirtyCount())
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Error("walking the whole editing path without saving still wrote to the file")
+	}
 }
