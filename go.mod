@@ -50,3 +50,9 @@ require (
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 )
+
+// The kdbx library is patched for KDBX 4.1 (docs/design/kdbx-4.1-support.md).
+// Upstream models none of the 4.1 elements and encoding/xml discards unknown
+// ones, so saving a 4.1 file silently drops data. Offered upstream; delete this
+// replace when it lands there.
+replace github.com/tobischo/gokeepasslib/v3 => ./third_party/gokeepasslib

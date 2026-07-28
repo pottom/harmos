@@ -54,6 +54,21 @@ jobs:
       - name: Oracle test
         run: go test -run TestKeepassXC ./internal/source/pleasant/ ./internal/vault/
 
+  # The vendored kdbx library is a separate module, so `go test ./...` at the
+  # root never reaches it. Its tests are the only thing standing between a
+  # mistake in the KDBX 4.1 patch and silent data loss in someone's vault.
+  vendored-kdbx:
+    name: vendored kdbx library
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - name: Test
+        run: go test ./...
+        working-directory: third_party/gokeepasslib
+
   lint:
     runs-on: ubuntu-latest
     steps:

@@ -183,7 +183,6 @@ func TestRefusesFilesItWouldDamage(t *testing.T) {
 		want string
 	}{
 		{"kdbx 3.1", []vaulttest.Option{vaulttest.KDBX31()}, "KDBX 3.1"},
-		{"kdbx 4.1", []vaulttest.Option{vaulttest.MinorVersion(1)}, "4.1"},
 		{"several root groups", []vaulttest.Option{vaulttest.ExtraRootGroup()}, "root groups"},
 	}
 	for _, c := range cases {
@@ -449,5 +448,68 @@ func TestFingerprintIsContentBased(t *testing.T) {
 	}
 	if err := h.Save(); err != nil {
 		t.Fatalf("an mtime-only change is not a conflict: %v", err)
+	}
+}
+
+// A 4.1 label is not a reason to refuse. This is the case the version-based gate
+// got wrong: real vaults are 4.1, and one that uses no element we cannot keep is
+// perfectly safe to write. The gate asks what the file contains instead.
+func TestWritesKdbx41WhenNothingWouldBeLost(t *testing.T) {
+	h, p := openFixture(t, vaulttest.MinorVersion(1))
+
+	if ok, why := h.Writable(); !ok {
+		t.Fatalf("a 4.1 file that loses nothing should be writable, refused with: %s", why)
+	}
+	if err := h.Save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	after, err := Open(p, "s", pw("pw"))
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	if len(after.Entries) != 1 || after.Entries[0].Password.Reveal() != "secret-pw" {
+		t.Errorf("contents did not survive: %+v", after.Entries)
+	}
+}
+
+// The gate's decision function, on its own. An element that survives in fewer
+// copies counts as lost just as much as one that vanishes: dropping one of three
+// attachments is not a partial success.
+func TestCensusDetectsLoss(t *testing.T) {
+	before := census{"Group>Tags": 2, "Entry>String": 5, "Group>UUID": 1}
+
+	if lost := before.lostSince(census{"Group>Tags": 2, "Entry>String": 5, "Group>UUID": 1}); len(lost) != 0 {
+		t.Errorf("an identical census should report no loss, got %v", lost)
+	}
+	lost := before.lostSince(census{"Entry>String": 5, "Group>UUID": 1})
+	if len(lost) != 1 || !strings.Contains(lost[0], "Group>Tags") {
+		t.Errorf("a vanished element should be reported, got %v", lost)
+	}
+	lost = before.lostSince(census{"Group>Tags": 2, "Entry>String": 4, "Group>UUID": 1})
+	if len(lost) != 1 || !strings.Contains(lost[0], "Entry>String") {
+		t.Errorf("a thinned element should be reported, got %v", lost)
+	}
+	if lost := before.lostSince(census{"Group>Tags": 9, "Entry>String": 5, "Group>UUID": 1}); len(lost) != 0 {
+		t.Errorf("gaining elements is not loss, got %v", lost)
+	}
+}
+
+// The census is derived from the decrypted XML, so it must see what is actually
+// in the file rather than what the structs happen to model.
+func TestCensusSeesTheRealDocument(t *testing.T) {
+	h, _ := openFixture(t)
+
+	c, err := censusOf(h.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"KeePassFile>Meta", "KeePassFile>Root", "Group>Entry", "Entry>String"} {
+		if c[want] == 0 {
+			t.Errorf("census is missing %s: %v", want, c)
+		}
+	}
+	if c["Entry>String"] < 5 {
+		t.Errorf("the fixture entry has several fields, census says %d", c["Entry>String"])
 	}
 }
