@@ -157,7 +157,7 @@ func (m Model) pathOfChange(c edit.Change) string {
 		}
 		return ""
 	}
-	for _, e := range m.mergedEntries {
+	for _, e := range m.viewEntries {
 		if e.ID == c.Target {
 			return e.Path
 		}
@@ -172,7 +172,7 @@ func (m Model) folderByID(id string) (folder, bool) {
 	if id == "" {
 		return folder{}, false
 	}
-	for _, f := range m.mergedFolders {
+	for _, f := range m.viewFolders {
 		if f.ID == id {
 			return folder{Path: f.Path, Name: f.Name}, true
 		}
@@ -367,15 +367,21 @@ func folderHeading(g changeGroup, folded bool, w int) []rowSeg {
 	return out
 }
 
-// nameOf is what to call a change on screen. An operation that carries no name
-// of its own — a move — is resolved against the vault rather than shown as
-// "(untitled)", which tells the reader nothing about what they staged.
+// nameOf is what to call a change on screen: the name the vault will show for
+// it, not the one the operation happened to record.
+//
+// The two can differ. Rename a folder, then delete it, and the rename no longer
+// happens — it is reduced away — but the delete operation still carries the name
+// that was on screen when it was staged. The tree would say "Net" and the review
+// "Network" about the same folder. The projection is the one that is going to be
+// true, so it wins; the operation's own name is the fallback for anything the
+// projection cannot see.
 func (m Model) nameOf(c edit.Change) string {
-	if c.Title != "" && c.Title != "(untitled)" {
-		return c.Title
-	}
 	if n := m.nameOfTarget(c.Target, isFolderKind(c.Kind)); n != "" {
 		return n
+	}
+	if c.Title != "" && c.Title != "(untitled)" {
+		return c.Title
 	}
 	return c.Title
 }
@@ -388,7 +394,7 @@ func (m Model) nameOfTarget(id string, isFolder bool) string {
 		}
 		return ""
 	}
-	for _, e := range m.mergedEntries {
+	for _, e := range m.viewEntries {
 		if e.ID == id {
 			return e.Title
 		}
@@ -684,18 +690,18 @@ func (m Model) goesWithIt(folderID string) (entries, folders int) {
 		return 0, 0
 	}
 	source := ""
-	for _, mf := range m.mergedFolders {
+	for _, mf := range m.viewFolders {
 		if mf.ID == folderID {
 			source = mf.Source
 			break
 		}
 	}
-	for _, e := range m.mergedEntries {
+	for _, e := range m.viewEntries {
 		if e.Source == source && (e.Path == f.Path || strings.HasPrefix(e.Path, f.Path+"/")) {
 			entries++
 		}
 	}
-	for _, mf := range m.mergedFolders {
+	for _, mf := range m.viewFolders {
 		if mf.Source == source && strings.HasPrefix(mf.Path, f.Path+"/") {
 			folders++
 		}
@@ -766,7 +772,7 @@ func (m Model) contentsGoing(c edit.Change, w int) [][]rowSeg {
 		// Sub-folders first, then the entries filed here — the order the vault
 		// tree uses, so the same vault reads the same way in both places.
 		var subs []string
-		for _, mf := range m.mergedFolders {
+		for _, mf := range m.viewFolders {
 			if mf.Source == c.Source && parentPath(mf.Path) == path && mf.Path != path {
 				subs = append(subs, mf.Path)
 			}
@@ -774,7 +780,7 @@ func (m Model) contentsGoing(c edit.Change, w int) [][]rowSeg {
 		sort.Strings(subs)
 
 		var titles []string
-		for _, e := range m.mergedEntries {
+		for _, e := range m.viewEntries {
 			if e.Source == c.Source && e.Path == path {
 				titles = append(titles, e.Title)
 			}

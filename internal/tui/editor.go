@@ -34,22 +34,50 @@ const (
 )
 
 // openEntryEditor loads an entry losslessly and stages nothing yet.
+//
+// An entry that has only been staged is not in the file, so the file cannot be
+// asked for it: e on something created a moment ago used to fail with "no
+// entry", which is a strange thing to be told about a row you are looking at.
+// The staged draft is the entry, until a save makes it one.
 func (m Model) openEntryEditor(id string) Model {
 	h := m.handles[m.editSource]
 	if h == nil {
 		m.flash = "this source is not open for writing"
 		return m
 	}
-	d, err := h.EntryDraft(id)
-	if err != nil {
-		m.flash = err.Error()
-		return m
+
+	d, staged := m.stagedDraft(id)
+	if !staged {
+		fromFile, err := h.EntryDraft(id)
+		if err != nil {
+			m.flash = err.Error()
+			return m
+		}
+		d = fromFile
 	}
+
 	m.edit = editEntry
 	m.editTarget = id
-	m.editBefore = &d
+	m.editNew = m.chg.StateOf(id) == edit.New
+	m.editParent = d.GroupID
+	m.editBefore = nil
+	if !m.editNew {
+		before := d
+		m.editBefore = &before
+	}
 	m.editForm = entryForm(d, m.formWidth())
 	return m
+}
+
+// stagedDraft is the latest staged version of an entry, if it has one. Editing
+// twice has to start from what the first edit said, not from what the file says.
+func (m Model) stagedDraft(id string) (edit.Draft, bool) {
+	for _, op := range m.chg.Effective() {
+		if op.Target == id && op.After != nil {
+			return *op.After, true
+		}
+	}
+	return edit.Draft{}, false
 }
 
 // openNewEntry mints an identity for an entry that does not exist yet.
@@ -64,12 +92,8 @@ func (m Model) openNewEntry(groupID string) Model {
 		m.flash = "this source is not open for writing"
 		return m
 	}
-	id, err := h.MintEntryID(groupID)
-	if err != nil {
-		m.flash = err.Error()
-		return m
-	}
-	d := edit.Draft{ID: id, GroupID: groupID}
+	d := edit.Draft{ID: h.MintEntryID(), GroupID: groupID}
+	id := d.ID
 	m.edit = editEntry
 	m.editTarget = id
 	m.editNew = true
@@ -186,9 +210,17 @@ func (m Model) stageEdit() Model {
 	}
 
 	m.chg, _ = m.chg.Add(op)
+	created, wasFolder := m.editNew, m.edit == editFolder
+	target := m.editTarget
 	m.edit, m.editNew = editNone, false
 	m.editBefore = nil
 	m.flash = "staged — nothing is written until you save"
+
+	m = m.restage()
+	if created {
+		// Show what was just made, wherever it landed.
+		m = m.revealTarget(target, wasFolder)
+	}
 	return m
 }
 
@@ -204,12 +236,7 @@ func (m Model) openFolderEditor(parentID, existingID, name string) Model {
 	m.editParent = parentID
 	m.editTarget = existingID
 	if m.editNew {
-		id, err := h.MintGroupID(parentID)
-		if err != nil {
-			m.flash = err.Error()
-			return m
-		}
-		m.editTarget = id
+		m.editTarget = h.MintGroupID()
 	}
 	m.editForm = newForm("Stage", m.formWidth(),
 		textField("name", "Name", "folder name", name).
@@ -255,7 +282,7 @@ func (m Model) stageDelete(target, name string, isFolder, permanent bool) Model 
 		m.chg, _ = m.chg.Revert(prev.Seq)
 		if prev.Perm == perm {
 			m.flash = "no longer staged for deletion" + describes(name)
-			return m
+			return m.restage()
 		}
 	}
 
@@ -285,6 +312,7 @@ func (m Model) stageDelete(target, name string, isFolder, permanent bool) Model 
 	// an arrow, which is how every file manager has done it for thirty years.
 	// Only after staging: un-staging is a correction, and moving away from a
 	// correction is the wrong direction.
+	m = m.restage()
 	moved := false
 	m, moved = m.advanceCursor()
 
@@ -365,14 +393,21 @@ func (m Model) openMovePicker(target string, isFolder bool) Model {
 	return m
 }
 
-// moveDestinations lists the folders in the same source.
+// moveDestinations lists the folders in the same source that the target could
+// actually go to: not itself, and not where it already is.
 func (m Model) moveDestinations() []vaultFolderRef {
+	home := m.homeOf(m.editTarget)
+
 	var out []vaultFolderRef
 	var walk func(ns []*node, depth int)
 	walk = func(ns []*node, depth int) {
 		for _, n := range ns {
-			if n.source == m.editSource && n.id != "" && n.id != m.editTarget {
-				out = append(out, vaultFolderRef{id: n.id, label: strings.Repeat("  ", depth) + n.name})
+			if n.source == m.editSource && n.id != "" && n.id != m.editTarget && n.id != home {
+				out = append(out, vaultFolderRef{
+					id:    n.id,
+					label: strings.Repeat("  ", depth) + n.name,
+					path:  strings.ReplaceAll(m.pathOfNode(n), "/", " › "),
+				})
 			}
 			walk(n.children, depth+1)
 		}
@@ -381,9 +416,26 @@ func (m Model) moveDestinations() []vaultFolderRef {
 	return out
 }
 
+// homeOf is the folder something is in now — offering it as a destination is
+// offering to do nothing.
+func (m Model) homeOf(id string) string {
+	for _, e := range m.viewEntries {
+		if e.ID == id {
+			return e.GroupID
+		}
+	}
+	for _, f := range m.viewFolders {
+		if f.ID == id {
+			return f.ParentID
+		}
+	}
+	return ""
+}
+
 type vaultFolderRef struct {
 	id    string
-	label string
+	label string // indented, for the picker
+	path  string // plain, for the messages
 }
 
 func (m Model) updateMovePicker(key string) Model {
@@ -410,8 +462,9 @@ func (m Model) updateMovePicker(key string) Model {
 			Name:   m.nameOfTarget(m.editTarget, m.editFolderTarget),
 			Parent: m.moveDests[m.moveSel].id,
 		})
-		m.flash = "staged: move to " + m.moveDests[m.moveSel].label + " · nothing is written until you save"
+		m.flash = "staged: move to " + m.moveDests[m.moveSel].path + " · nothing is written until you save"
 		m.edit = editNone
+		m = m.restage()
 	}
 	return m
 }
@@ -499,11 +552,9 @@ func (m Model) editKey(key string) (Model, bool) {
 			return m.openFolderEditor("", folderID, folderName), true
 		}
 	case "n":
-		if folderID != "" {
-			return m.openNewEntry(folderID), true
-		}
-		m.flash = "pick a folder to create the entry in"
-		return m, true
+		// An empty folder ID is the source's own root group, which is a real
+		// folder in the file even though the tree shows the source there.
+		return m.openNewEntry(folderID), true
 	case "N":
 		return m.openFolderEditor(folderID, "", ""), true
 	case "r":

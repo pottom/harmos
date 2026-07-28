@@ -434,3 +434,50 @@ func (m Model) treeRowStyle(n *node, c nodeChange) (name, icon, markerStyle lipg
 	}
 	return theme.Strong, m.iconStyleFor(n), theme.Faded, ""
 }
+
+// reveal puts the cursor on a target and opens every folder on the way to it.
+//
+// Creating something and leaving the cursor where it was is how a new folder
+// ends up invisible: it is a child of a folder that happens to be closed, so
+// nothing on screen changes and the next key acts on the old selection. What was
+// just made is what the reader is looking for.
+func (m Model) revealTarget(id string, isFolder bool) Model {
+	if id == "" {
+		return m
+	}
+
+	// Open the ancestors first, so the row exists in the flattened tree.
+	var open func(ns []*node) bool
+	open = func(ns []*node) bool {
+		for _, n := range ns {
+			if n.id == id {
+				return true
+			}
+			for _, e := range n.entries {
+				if e.ID == id {
+					return true
+				}
+			}
+			if open(n.children) {
+				n.expanded = true
+				return true
+			}
+		}
+		return false
+	}
+	open(m.roots)
+
+	for i, tl := range m.visible() {
+		if isFolder && tl.node.id == id {
+			m.tsel, m.esel, m.focus = i, 0, 0
+			return m
+		}
+		for j, e := range tl.node.entries {
+			if e.ID == id {
+				m.tsel, m.esel, m.focus = i, j, 1
+				return m
+			}
+		}
+	}
+	return m
+}

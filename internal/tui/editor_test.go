@@ -307,7 +307,7 @@ func TestDeletedFolderStaysAndIsMarked(t *testing.T) {
 			break
 		}
 	}
-	rowsBefore := len(m.visible())
+	rowsBefore, folderID := len(m.visible()), folder.id
 	m = up(m, key2("d"))
 
 	if len(m.visible()) != rowsBefore {
@@ -315,6 +315,17 @@ func TestDeletedFolderStaysAndIsMarked(t *testing.T) {
 			len(m.visible()), rowsBefore)
 	}
 
+	// The tree is rebuilt on every staging — it shows the vault as it will be —
+	// so the row has to be found again rather than held across the change.
+	folder = nil
+	for _, tl := range m.visible() {
+		if tl.node.id == folderID {
+			folder = tl.node
+		}
+	}
+	if folder == nil {
+		t.Fatal("the folder left the tree")
+	}
 	chg := m.changeStates()[folder]
 	if chg.own != edit.Deleted {
 		t.Fatalf("the folder's own state should be Deleted, got %v", chg)

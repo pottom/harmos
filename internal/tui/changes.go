@@ -109,6 +109,7 @@ func (m Model) updateChanges(key string) (Model, tea.Cmd) {
 			}
 			m.flash = fmt.Sprintf("reverted %d change(s) here", n)
 		}
+		m = m.restage()
 		m.chgSel = clampIndex(m.chgSel, len(selectableRows(m.changeRows(m.contentW()))))
 	case "enter":
 		// Jump to the entry this change is about, so "what is this?" is one key

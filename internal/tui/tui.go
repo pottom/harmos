@@ -143,6 +143,12 @@ type Model struct {
 	mergedEntries []vault.Entry
 	mergedFolders []vault.Folder
 
+	// The same, projected through the staged set: the vault as it will be. Every
+	// view-side lookup uses these — a change staged inside a folder that does
+	// not exist on disk yet still has to resolve to a path.
+	viewEntries []vault.Entry
+	viewFolders []vault.Folder
+
 	timeout    time.Duration
 	copied     string
 	copiedWhat string
@@ -207,6 +213,8 @@ func New(entries []vault.Entry, folders []vault.Folder, configPath string, timeo
 		// living in the root.
 		mergedEntries: entries,
 		mergedFolders: folders,
+		viewEntries:   entries,
+		viewFolders:   folders,
 		nSrc:          len(roots),
 		tsel:          firstFolderWithEntries(roots),
 		input:         ti,
@@ -302,9 +310,13 @@ func (m Model) rebuild(entries []vault.Entry, folders []vault.Folder) Model {
 		selectedEntry = e.ID
 	}
 
+	// The tree is built from the vault as it will be — see project — while the
+	// merged fields keep what the file actually says, which is what a reload and
+	// a save compare against.
 	m.mergedEntries, m.mergedFolders = entries, folders
-	m.matcher = search.New(entries)
-	m.roots = buildTree(entries, folders)
+	m.viewEntries, m.viewFolders = project(entries, folders, m.chg)
+	m.matcher = search.New(m.viewEntries)
+	m.roots = buildTree(m.viewEntries, m.viewFolders)
 	m.nSrc = len(m.roots)
 
 	if len(expanded) > 0 {
@@ -326,6 +338,11 @@ func (m Model) rebuild(entries []vault.Entry, folders []vault.Folder) Model {
 	m.refilter()
 	return m
 }
+
+// restage rebuilds the tree after the staged set changed, so something just
+// created is somewhere you can put things and something just renamed answers to
+// its new name.
+func (m Model) restage() Model { return m.rebuild(m.mergedEntries, m.mergedFolders) }
 
 // selectEntryByID puts the cursor back on an entry after a rebuild, if it is
 // still there.
