@@ -19,17 +19,12 @@ import (
 	"github.com/pottom/harmos/internal/version"
 )
 
-// updateStyle is the yellow "a newer release exists" marker — a deliberate amber
-// that reads as "attention" on both light and dark grounds (the palette has no
-// yellow token, and a red would read as an error rather than an update).
-var updateStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#b58900", Dark: "#e5c07b"})
-
 // brandVersion is the wordmark plus the build version, shown at the top of every
 // tab. When the background check found a newer release, a yellow marker follows.
 func (m Model) brandVersion() string {
 	s := brand() + theme.Faded.Render("  "+version.Version)
 	if m.latest != "" {
-		s += " " + updateStyle.Render("⬆ "+m.latest)
+		s += " " + theme.Noted.Render("⬆ "+m.latest)
 	}
 	return s
 }

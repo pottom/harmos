@@ -23,11 +23,36 @@ func button(label string, danger, focused bool) string {
 	return st.Render("[ " + label + " ]")
 }
 
-func borderStyle(active bool) lipgloss.Style {
-	if active {
+// panelState is how a panel's border should read.
+//
+// Editing is its own state rather than a flavour of active, because a panel
+// being edited is a mode the user is in — like vim's insert mode — and losing
+// track of which mode you are in is how you type a password into a search box.
+// The amber border says so at a glance, and the footer says so in words.
+type panelState int
+
+const (
+	panelInactive panelState = iota
+	panelActive
+	panelEditing
+)
+
+func borderStyle(st panelState) lipgloss.Style {
+	switch st {
+	case panelEditing:
+		return lipgloss.NewStyle().Foreground(theme.Note)
+	case panelActive:
 		return lipgloss.NewStyle().Foreground(theme.Accent)
 	}
 	return lipgloss.NewStyle().Foreground(theme.Faint)
+}
+
+// panelStateOf is the common case: a panel that is either focused or not.
+func panelStateOf(active bool) panelState {
+	if active {
+		return panelActive
+	}
+	return panelInactive
 }
 
 // box renders content inside a rounded, titled border of exactly w×h cells. The
@@ -44,7 +69,7 @@ func boxV(title, info string, content []string, w, h int, active bool, total, of
 	if w < 4 || h < 2 {
 		return strings.Repeat(" ", max(0, w))
 	}
-	bc := borderStyle(active)
+	bc := borderStyle(panelStateOf(active))
 	inW := w - 2
 	inner := h - 2
 
@@ -106,7 +131,7 @@ func scrollRange(rows, total, offset int) (start, size int) {
 // boxTop builds the top border line "╭─ Title ──…── info ─╮" fitting inW between
 // the corners.
 func boxTop(title, info string, inW int, active bool) string {
-	bc := borderStyle(active)
+	bc := borderStyle(panelStateOf(active))
 	tstyle := theme.Dimmed
 	if active {
 		tstyle = theme.Strong

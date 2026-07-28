@@ -69,11 +69,10 @@ type Model struct {
 	rmFile     bool                   // remove overlay: also delete the local file
 	rmPw       bool                   // remove overlay: also forget the keyring password
 
-	form        []formField // add/edit form fields
-	formFocus   int         // focused form row (len(form) = the Save button)
-	formEditing bool        // editing an existing source vs adding
-	formOrig    string      // the source name being edited (for rename)
-	formPps     bool        // form type: Pleasant vs kdbx
+	form        form   // the add/edit form (see formkit.go)
+	formEditing bool   // editing an existing source vs adding
+	formOrig    string // the source name being edited (for rename)
+	formPps     bool   // form type: Pleasant vs kdbx
 
 	promptInput textinput.Model // save-password prompt
 	promptQueue []promptStep    // remaining password prompts

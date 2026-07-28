@@ -1,6 +1,11 @@
 package theme
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 func TestApplyAndBuiltins(t *testing.T) {
 	Apply(Nord)
@@ -27,5 +32,54 @@ func TestAdaptiveFallback(t *testing.T) {
 	c := adaptive(token{Dark: "#123456"})
 	if c.Light != "#123456" || c.Dark != "#123456" {
 		t.Errorf("single-value token should repeat: %+v", c)
+	}
+}
+
+// Every built-in must fill every token.
+//
+// Without this, adding a token to the struct and forgetting one theme yields an
+// empty colour string — which lipgloss renders as "no colour" rather than as an
+// error, so the theme quietly loses a distinction and nobody notices until a
+// screenshot looks wrong. Reflection is used deliberately: a hand-written list
+// of tokens would need remembering too, which is the thing that just failed.
+func TestEveryBuiltinFillsEveryToken(t *testing.T) {
+	tokenType := reflect.TypeOf(token{})
+
+	for _, name := range Names() {
+		th, ok := Builtin(name)
+		if !ok {
+			t.Fatalf("Names() lists %q but Builtin does not know it", name)
+		}
+		v := reflect.ValueOf(th)
+		for i := range v.NumField() {
+			f := v.Type().Field(i)
+			if f.Type != tokenType {
+				continue // Name, and anything else that is not a colour
+			}
+			tok := v.Field(i).Interface().(token)
+			if tok.Light == "" && tok.Dark == "" {
+				t.Errorf("theme %q has no colour for %s", name, f.Name)
+			}
+		}
+	}
+}
+
+// A token that resolves to an empty colour would render as the terminal default,
+// silently undoing whatever distinction it was added to make.
+func TestApplyLeavesNoEmptyToken(t *testing.T) {
+	defer Apply(Charm)
+
+	for _, name := range Names() {
+		th, _ := Builtin(name)
+		Apply(th)
+		for label, c := range map[string]lipgloss.AdaptiveColor{
+			"Accent": Accent, "AccentHi": AccentHi, "Steel": Steel,
+			"Dim": Dim, "Faint": Faint, "OK": OK, "Warn": Warn,
+			"Note": Note, "SelBg": SelBg,
+		} {
+			if c.Light == "" || c.Dark == "" {
+				t.Errorf("theme %q leaves %s empty after Apply: %+v", name, label, c)
+			}
+		}
 	}
 }
