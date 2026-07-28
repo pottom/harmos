@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1036,4 +1037,108 @@ func tabClickX(m Model, label string) int {
 		off += dw(t.label) + dw(" · ")
 	}
 	return 0
+}
+
+// treeModel is a two-source tree deep enough for the recursive open/close keys
+// to have something to reach: work holds Infra/db/prod and Infra/net.
+func treeModel() Model {
+	return up(New([]vault.Entry{
+		{Source: "work", Path: "Infra/db/prod", Title: "db-prod", Password: secret.New("p1")},
+		{Source: "work", Path: "Infra/net", Title: "router", Password: secret.New("p2")},
+		{Source: "personal", Path: "Home", Title: "nas", Password: secret.New("p3")},
+	}, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+}
+
+// nodeCount is every node in the tree, visible or not.
+func nodeCount(ns []*node) int {
+	n := 0
+	for _, c := range ns {
+		n += 1 + nodeCount(c.children)
+	}
+	return n
+}
+
+// selectNode parks the cursor on the named row of the visible tree.
+func selectNode(t *testing.T, m Model, name string) Model {
+	t.Helper()
+	for i, tl := range m.visible() {
+		if tl.node.name == name {
+			m.tsel, m.esel, m.focus = i, 0, 0
+			return m
+		}
+	}
+	t.Fatalf("%q is not a visible row", name)
+	return m
+}
+
+// shift+←/→ reach one branch: the selected folder and everything under it.
+func TestExpandSubtree(t *testing.T) {
+	m := treeModel()
+	// Close the other source first, so "did this reach outside the branch?" is a
+	// question the visible rows can answer — source roots start open.
+	m = selectNode(t, m, "personal")
+	m = up(m, tea.KeyMsg{Type: tea.KeyShiftLeft})
+	m = selectNode(t, m, "Infra")
+
+	m = up(m, tea.KeyMsg{Type: tea.KeyShiftRight})
+	var names []string
+	for _, tl := range m.visible() {
+		names = append(names, tl.node.name)
+	}
+	for _, want := range []string{"Infra", "db", "prod", "net"} {
+		if !slices.Contains(names, want) {
+			t.Errorf("shift+→ on Infra should reveal %q; visible: %v", want, names)
+		}
+	}
+	if slices.Contains(names, "Home") {
+		t.Errorf("shift+→ should not reach into another source; visible: %v", names)
+	}
+	if cur := m.currentFolder(); cur == nil || cur.name != "Infra" {
+		t.Errorf("the cursor should stay put, got %v", cur)
+	}
+
+	m = up(m, tea.KeyMsg{Type: tea.KeyShiftLeft})
+	for _, tl := range m.visible() {
+		if tl.node.name == "db" || tl.node.name == "prod" {
+			t.Errorf("shift+← should close the whole branch, %q still visible", tl.node.name)
+		}
+	}
+	if cur := m.currentFolder(); cur == nil || cur.name != "Infra" {
+		t.Errorf("closing a branch should leave the cursor on its root, got %v", cur)
+	}
+	// The descendants were closed too, so reopening starts tidy rather than
+	// restoring however deep it happened to be before.
+	m = up(m, tea.KeyMsg{Type: tea.KeyRight})
+	for _, tl := range m.visible() {
+		if tl.node.name == "prod" {
+			t.Error("reopening one level should not bring back the deep expansion")
+		}
+	}
+}
+
+// ctrl+←/→ reach everything, and the cursor keeps to a row that still exists.
+func TestExpandAll(t *testing.T) {
+	m := treeModel()
+	total := nodeCount(m.roots)
+
+	m = up(m, tea.KeyMsg{Type: tea.KeyCtrlRight})
+	if got := len(m.visible()); got != total {
+		t.Errorf("ctrl+→ should show every folder: %d of %d visible", got, total)
+	}
+
+	// park deep inside work, in that folder's table, then close everything
+	m = selectNode(t, m, "prod")
+	m.focus = 1
+	m = up(m, tea.KeyMsg{Type: tea.KeyCtrlLeft})
+
+	if got := len(m.visible()); got != len(m.roots) {
+		t.Errorf("ctrl+← should leave only the source roots: %d of %d visible", got, len(m.roots))
+	}
+	cur := m.currentFolder()
+	if cur == nil || cur.name != "work" {
+		t.Fatalf("the cursor should climb to the closed row's own source, got %v", cur)
+	}
+	if m.focus != 0 {
+		t.Error("landing on a different folder should take focus back to the tree")
+	}
 }

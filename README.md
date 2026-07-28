@@ -154,7 +154,9 @@ Press `?` for the full key map. The staples:
 | `ctrl+t` | Copy the current TOTP code |
 | `c` | Copy a `harmos get …` command for the selected entry |
 | `s` | Save attachments (entry detail) |
-| `ctrl+b` | Collapse / expand the source tree |
+| `shift+←` / `shift+→` | Close / open the selected folder and everything under it |
+| `ctrl+←` / `ctrl+→` | Close / open every folder, in every source |
+| `ctrl+b` | Hide / show the folder tree pane |
 | `1` / `2` / `3` / `4` | Switch Vault / Generate / Settings / Changes tab |
 | `ctrl+w` | Unlock this source for editing (or lock it again) |
 | `e` · `n` / `N` · `d` / `D` · `m` / `r` | Edit · new entry / folder · delete to bin / permanently · move / rename |

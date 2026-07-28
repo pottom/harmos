@@ -115,6 +115,78 @@ func visibleTree(roots []*node) []treeLine {
 	return out
 }
 
+// setExpanded opens or closes every node in the tree, source roots included.
+//
+// Roots are not exempt: collapsing one has always been possible with ← on the
+// root row, so a "collapse all" that left them open would be collapsing all but
+// the rows the user can already see.
+func setExpanded(ns []*node, open bool) {
+	for _, n := range ns {
+		n.expanded = open
+		setExpanded(n.children, open)
+	}
+}
+
+// parentOf maps every node to its parent; roots are absent, so a lookup on one
+// yields nil and ends an upward walk.
+func parentOf(roots []*node) map[*node]*node {
+	out := map[*node]*node{}
+	var walk func(n *node)
+	walk = func(n *node) {
+		for _, c := range n.children {
+			out[c] = n
+			walk(c)
+		}
+	}
+	for _, r := range roots {
+		walk(r)
+	}
+	return out
+}
+
+// expandSubtree opens or closes the selected folder and everything under it.
+//
+// The cursor does not move: the selected row is above whatever appears or
+// disappears, so its index and its own entries are unchanged. Standing on a
+// source root, this is that whole source — which is the usual reach for it.
+func (m Model) expandSubtree(open bool) Model {
+	if cur := m.currentFolder(); cur != nil {
+		setExpanded([]*node{cur}, open)
+	}
+	return m
+}
+
+// expandAll opens or closes every tree and keeps the cursor somewhere it can
+// still see.
+//
+// Collapsing hides the row the cursor was on, so it climbs to the nearest
+// ancestor that survived — the folder the user was in, seen from further out,
+// rather than whatever row happens to fall at that index. Expanding keeps the
+// same row and only its index moves.
+func (m Model) expandAll(open bool) Model {
+	cur := m.currentFolder()
+	parents := parentOf(m.roots)
+	setExpanded(m.roots, open)
+
+	flat := visibleTree(m.roots)
+	for n := cur; n != nil; n = parents[n] {
+		for i, tl := range flat {
+			if tl.node != n {
+				continue
+			}
+			m.tsel = i
+			if n != cur {
+				// A different folder means a different table; staying on row
+				// esel of it would be an arbitrary selection.
+				m.focus, m.esel = 0, 0
+			}
+			return m
+		}
+	}
+	m.tsel, m.esel, m.focus = 0, 0, 0
+	return m
+}
+
 // matchCounts returns, per tree node, how many search hits it contains (its own
 // entries plus every descendant's), or nil when there's no active query. Used to
 // highlight folders with results and show a count in the tree.
