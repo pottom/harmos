@@ -62,14 +62,23 @@ func box(title, info string, content []string, w, h int, active bool) string {
 	return boxV(title, info, content, w, h, active, len(content), 0, 0)
 }
 
+// boxState is box with the border state named outright, for the editor's amber.
+func boxState(title, info string, content []string, w, h int, st panelState) string {
+	return boxVState(title, info, content, w, h, st, len(content), 0, 0)
+}
+
 // boxV is box with a vertical scrollbar in the right inner column when the list
 // overflows. total is the full item count, offset the first visible item, and
 // headerRows the number of pinned top rows (a table header) the bar skips.
 func boxV(title, info string, content []string, w, h int, active bool, total, offset, headerRows int) string {
+	return boxVState(title, info, content, w, h, panelStateOf(active), total, offset, headerRows)
+}
+
+func boxVState(title, info string, content []string, w, h int, st panelState, total, offset, headerRows int) string {
 	if w < 4 || h < 2 {
 		return strings.Repeat(" ", max(0, w))
 	}
-	bc := borderStyle(panelStateOf(active))
+	bc := borderStyle(st)
 	inW := w - 2
 	inner := h - 2
 
@@ -82,7 +91,7 @@ func boxV(title, info string, content []string, w, h int, active bool, total, of
 		tStart, tSize = scrollRange(listRows, total, offset)
 	}
 
-	lines := []string{boxTop(title, info, inW, active)}
+	lines := []string{boxTopState(title, info, inW, st)}
 	for i := 0; i < inner; i++ {
 		c := ""
 		if i < len(content) {
@@ -128,12 +137,12 @@ func scrollRange(rows, total, offset int) (start, size int) {
 	return start, size
 }
 
-// boxTop builds the top border line "╭─ Title ──…── info ─╮" fitting inW between
-// the corners.
-func boxTop(title, info string, inW int, active bool) string {
-	bc := borderStyle(panelStateOf(active))
+// boxTopState builds the top border line "╭─ Title ──…── info ─╮" fitting inW
+// between the corners.
+func boxTopState(title, info string, inW int, st panelState) string {
+	bc := borderStyle(st)
 	tstyle := theme.Dimmed
-	if active {
+	if st != panelInactive {
 		tstyle = theme.Strong
 	}
 	// A title that already carries styling (e.g. a search-highlighted breadcrumb)

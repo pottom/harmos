@@ -29,7 +29,16 @@ const (
 	fMasked                  // a single-line secret: echoed as bullets
 	fMulti                   // a multi-line value, e.g. notes
 	fToggle                  // a choice between fixed options
+	fRows                    // a list the user can add to and remove from
 )
+
+// fieldRow is one entry in an fRows field: a key, a value, and whether the value
+// is protected. Custom fields are the reason it exists.
+type fieldRow struct {
+	key       textinput.Model
+	value     textinput.Model
+	protected bool
+}
 
 type field struct {
 	key   string
@@ -41,6 +50,10 @@ type field struct {
 
 	options []string // fToggle
 	choice  int
+
+	rows   []fieldRow // fRows
+	rowSel int        // which row, and which of its two inputs (see rowCol)
+	rowCol int        // 0 = key, 1 = value
 
 	// validate rejects a value when the field is left or the form submitted.
 	// Per field rather than in one submit function, so a form for a different
@@ -78,6 +91,13 @@ func newForm(button string, width int, fields ...field) form {
 func (f form) clone() form {
 	fields := make([]field, len(f.fields))
 	copy(fields, f.fields)
+	for i := range fields {
+		if fields[i].rows != nil {
+			rows := make([]fieldRow, len(fields[i].rows))
+			copy(rows, fields[i].rows)
+			fields[i].rows = rows
+		}
+	}
 	f.fields = fields
 	return f
 }
@@ -282,6 +302,27 @@ func (f form) Update(key string, msg tea.KeyMsg) (out form, cmd tea.Cmd, submitt
 	}
 
 	fl := &f.fields[f.focus]
+	if fl.kind == fRows {
+		// The list owns navigation inside itself; when it declines a key — at
+		// its top or bottom edge — the form takes it and moves on.
+		out, cmd, handled := f.updateRows(fl, key, msg)
+		if handled {
+			return out, cmd, false
+		}
+		f = out
+		switch key {
+		case "up":
+			f.focus = (f.focus - 1 + stops) % stops
+			return f.refocus(), nil, false
+		case "down", "tab":
+			f.focus = (f.focus + 1) % stops
+			return f.refocus(), nil, false
+		case "shift+tab":
+			f.focus = (f.focus - 1 + stops) % stops
+			return f.refocus(), nil, false
+		}
+		return f, nil, false
+	}
 	if fl.kind == fToggle {
 		switch key {
 		case "left", "right", " ":
@@ -340,6 +381,8 @@ func (f form) View() []string {
 			for line := range strings.SplitSeq(fl.area.View(), "\n") {
 				lines = append(lines, "    "+line)
 			}
+		case fRows:
+			lines = append(lines, f.viewRows(fl, selected)...)
 		default:
 			lines = append(lines, cursor+label+"  "+fl.input.View())
 		}
@@ -361,6 +404,8 @@ func (f form) Hint() string {
 			keys = "^r reveal · ↑↓/tab move · ↵ save · esc cancel"
 		case fMulti:
 			keys = "tab leaves the field · ↵ new line · esc cancel"
+		case fRows:
+			keys = "^n add · ^d remove · ^p protect · tab key/value · esc cancel"
 		}
 	}
 	return theme.Faded.Render(keys)
@@ -368,3 +413,179 @@ func (f form) Hint() string {
 
 // withStatus sets the message shown instead of the key hints.
 func (f form) withStatus(s string) form { f.status = s; return f }
+
+// rowsField is a list the user can grow and shrink — an entry's custom fields.
+//
+// The key is the raw kdbx key, not the trimmed label the detail pane shows: the
+// pps.* prefix is part of the data, and silently rewriting it would change what
+// other tools see.
+func rowsField(key, label string, rows []fieldRow) field {
+	return field{key: key, label: label, kind: fRows, rows: rows}
+}
+
+// newRow builds one custom-field row.
+func newRow(k, v string, protected bool) fieldRow {
+	mk := func(s string, mask bool) textinput.Model {
+		ti := textinput.New()
+		ti.Prompt = ""
+		ti.SetValue(s)
+		if mask {
+			ti.EchoMode = textinput.EchoPassword
+			ti.EchoCharacter = '•'
+		}
+		return ti
+	}
+	return fieldRow{key: mk(k, false), value: mk(v, protected), protected: protected}
+}
+
+// Rows returns an fRows field's contents.
+func (f form) Rows(key string) []fieldRow {
+	for _, fl := range f.fields {
+		if fl.key == key {
+			return fl.rows
+		}
+	}
+	return nil
+}
+
+// RowValues returns an fRows field as plain data.
+func (f form) RowValues(key string) (keys, values []string, protected []bool) {
+	for _, r := range f.Rows(key) {
+		k := strings.TrimSpace(r.key.Value())
+		if k == "" {
+			continue // an empty key is a row the user started and abandoned
+		}
+		keys = append(keys, k)
+		values = append(values, r.value.Value())
+		protected = append(protected, r.protected)
+	}
+	return keys, values, protected
+}
+
+// updateRows handles the keys that belong to a row list.
+func (f form) updateRows(fl *field, key string, msg tea.KeyMsg) (form, tea.Cmd, bool) {
+	switch key {
+	case "ctrl+n":
+		fl.rows = append(fl.rows, newRow("", "", false))
+		fl.rowSel, fl.rowCol = len(fl.rows)-1, 0
+		return f.refocusRows(fl), nil, true
+	case "ctrl+d":
+		if len(fl.rows) > 0 && fl.rowSel < len(fl.rows) {
+			fl.rows = append(fl.rows[:fl.rowSel], fl.rows[fl.rowSel+1:]...)
+			fl.rowSel = max(0, fl.rowSel-1)
+		}
+		return f.refocusRows(fl), nil, true
+	case "ctrl+p":
+		// Toggle the protected flag, which decides whether the value is
+		// encrypted in the file and masked everywhere it is shown.
+		if fl.rowSel < len(fl.rows) {
+			r := &fl.rows[fl.rowSel]
+			r.protected = !r.protected
+			if r.protected {
+				r.value.EchoMode = textinput.EchoPassword
+				r.value.EchoCharacter = '•'
+			} else {
+				r.value.EchoMode = textinput.EchoNormal
+			}
+		}
+		return f, nil, true
+	case "up":
+		if fl.rowSel > 0 {
+			fl.rowSel--
+			return f.refocusRows(fl), nil, true
+		}
+		return f, nil, false // leave the list upwards
+	case "down":
+		if fl.rowSel < len(fl.rows)-1 {
+			fl.rowSel++
+			return f.refocusRows(fl), nil, true
+		}
+		return f, nil, false // leave the list downwards
+	case "tab":
+		if fl.rowCol == 0 && len(fl.rows) > 0 {
+			fl.rowCol = 1
+			return f.refocusRows(fl), nil, true
+		}
+		return f, nil, false
+	case "shift+tab":
+		if fl.rowCol == 1 {
+			fl.rowCol = 0
+			return f.refocusRows(fl), nil, true
+		}
+		return f, nil, false
+	}
+
+	if fl.rowSel < len(fl.rows) {
+		var cmd tea.Cmd
+		r := &fl.rows[fl.rowSel]
+		if fl.rowCol == 0 {
+			r.key, cmd = r.key.Update(msg)
+		} else {
+			r.value, cmd = r.value.Update(msg)
+		}
+		return f, cmd, true
+	}
+	return f, nil, true
+}
+
+func (f form) refocusRows(fl *field) form {
+	for i := range fl.rows {
+		fl.rows[i].key.Blur()
+		fl.rows[i].value.Blur()
+	}
+	if fl.rowSel < len(fl.rows) {
+		if fl.rowCol == 0 {
+			fl.rows[fl.rowSel].key.Focus()
+		} else {
+			fl.rows[fl.rowSel].value.Focus()
+		}
+	}
+	return f
+}
+
+// viewRows renders a row list.
+func (f form) viewRows(fl field, selected bool) []string {
+	label := theme.Dimmed.Render(pad(fl.label, labelWidth))
+	if selected {
+		label = theme.Hi.Render(pad(fl.label, labelWidth))
+	}
+	cursor := "  "
+	if selected {
+		cursor = theme.Acc.Render("▸ ")
+	}
+
+	out := []string{cursor + label + theme.Faded.Render("  ^n add · ^d remove · ^p protect")}
+	if len(fl.rows) == 0 {
+		out = append(out, "      "+theme.Faded.Render("(none)"))
+		return out
+	}
+	for i, r := range fl.rows {
+		mark := "  "
+		if selected && i == fl.rowSel {
+			mark = theme.Acc.Render("· ")
+		}
+		lock := "  "
+		if r.protected {
+			lock = theme.Noted.Render(ic().locked + " ")
+		}
+		out = append(out, "    "+mark+lock+r.key.View()+theme.Faded.Render(" = ")+r.value.View())
+	}
+	return out
+}
+
+// setValue replaces a field's contents, for the generator writing a password in.
+func (f form) setValue(key, value string) form {
+	f = f.clone()
+	for i := range f.fields {
+		if f.fields[i].key != key {
+			continue
+		}
+		switch f.fields[i].kind {
+		case fMulti:
+			f.fields[i].area.SetValue(value)
+		case fText, fMasked:
+			f.fields[i].input.SetValue(value)
+		}
+	}
+	return f
+}

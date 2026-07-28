@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/pottom/harmos/internal/edit"
 	"github.com/pottom/harmos/internal/vault"
 )
 
@@ -236,4 +237,38 @@ func (m Model) folderCrumb(flat []treeLine, sel int) string {
 		return si + " " + trail
 	}
 	return trail
+}
+
+// changeStates maps each node to how its contents have been staged, so a
+// collapsed folder still shows that something inside it is pending.
+//
+// Same shape as matchCounts, and consumed the same way: the decoration and the
+// diff are both derived from one change set, so a row's colour and the Changes
+// tab cannot disagree.
+func (m Model) changeStates() map[*node]edit.State {
+	if m.chg.Empty() {
+		return nil
+	}
+	byFolder := m.chg.Parents()
+	out := map[*node]edit.State{}
+
+	var walk func(ns []*node) edit.State
+	walk = func(ns []*node) edit.State {
+		var strongest edit.State
+		for _, n := range ns {
+			st := byFolder[n.id]
+			if child := walk(n.children); child > st {
+				st = child
+			}
+			if st > 0 {
+				out[n] = st
+			}
+			if st > strongest {
+				strongest = st
+			}
+		}
+		return strongest
+	}
+	walk(m.roots)
+	return out
 }

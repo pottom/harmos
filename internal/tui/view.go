@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/pottom/harmos/internal/config"
+	"github.com/pottom/harmos/internal/edit"
 	"github.com/pottom/harmos/internal/otp"
 	"github.com/pottom/harmos/internal/search"
 	"github.com/pottom/harmos/internal/theme"
@@ -136,6 +137,9 @@ func (m Model) View() string {
 	}
 	if m.confirmUnlock != "" {
 		return m.writeConfirmView()
+	}
+	if m.edit != editNone {
+		return m.editorView()
 	}
 	switch m.tab {
 	case tabSettings:
@@ -627,6 +631,8 @@ func (m Model) treeLines(w, rows int) []string {
 	start := windowStart(m.tsel, rows, len(flat))
 	end := min(start+rows, len(flat))
 
+	changed := m.changeStates()
+
 	var out []string
 	for k := start; k < end; k++ {
 		n := flat[k].node
@@ -670,6 +676,9 @@ func (m Model) treeLines(w, rows int) []string {
 		}
 
 		nameStyle, iconStyle := theme.Strong, theme.Acc
+		if st := changed[n]; st != 0 {
+			nameStyle, _ = changeStyle(st)
+		}
 		if counts != nil && counts[n] == 0 { // searching: dim folders with no hits
 			nameStyle, iconStyle = theme.Dimmed, theme.Faded
 		}
@@ -681,7 +690,6 @@ func (m Model) treeLines(w, rows int) []string {
 
 func (m Model) entryLines(w, rows int) []string {
 	f := m.currentFolder()
-	i := ic()
 	// No password column: every entry has one, so a column of dots carries no
 	// information. Title + Username by default; when the pane is wide enough (e.g.
 	// the tree is collapsed, or a big terminal) an extra URL column earns its keep.
@@ -703,21 +711,31 @@ func (m Model) entryLines(w, rows int) []string {
 		out = append(out, theme.Faded.Render("  (no entries here — open a sub-folder)"))
 		return out
 	}
+	states := m.chg.State()
 	avail := max(1, rows-1)
 	start := windowStart(m.esel, avail, len(f.entries))
 	end := min(start+avail, len(f.entries))
 	for k := start; k < end; k++ {
 		e := f.entries[k]
 		if k == m.esel && m.focus == 1 {
-			plain := pad(i.entry+" "+e.Title, titleW) + " " + pad(e.Username, userW)
+			_, marker := changeStyle(states[e.ID])
+			plain := pad(marker+" "+e.Title, titleW) + " " + pad(e.Username, userW)
 			if urlCol {
 				plain += " " + e.URL
 			}
-			out = append(out, theme.SelRow.Width(w).Render(trunc(plain, w)))
+			// The selected row renders a plain string, so a nested style does not
+			// survive — the strikethrough has to go on the row style itself.
+			// StrikethroughSpaces(false) keeps the line off the width padding.
+			st := theme.SelRow.Width(w)
+			if states[e.ID] == edit.Deleted {
+				st = st.Strikethrough(true).StrikethroughSpaces(false)
+			}
+			out = append(out, st.Render(trunc(plain, w)))
 			continue
 		}
-		line := theme.Faded.Render(i.entry+" ") +
-			theme.Strong.Render(pad(trunc(e.Title, titleW-2), titleW-2)) + " " +
+		titleStyle, marker := changeStyle(states[e.ID])
+		line := theme.Faded.Render(marker+" ") +
+			titleStyle.Render(pad(trunc(e.Title, titleW-2), titleW-2)) + " " +
 			theme.Dimmed.Render(pad(trunc(e.Username, userW), userW))
 		if urlCol {
 			line += " " + theme.Dimmed.Render(trunc(e.URL, urlW))
@@ -1120,4 +1138,23 @@ func (m Model) tooSmall() string {
 		theme.Faded.Render("Widen the window."),
 	)
 	return lipgloss.Place(max(1, m.w), max(1, m.h), lipgloss.Center, lipgloss.Center, msg)
+}
+
+// changeStyle is how a staged state reads on a row: a colour, and a glyph that
+// carries the same meaning without one.
+//
+// Colour alone is not a signal — it is gone under NO_COLOR, in a mono terminal,
+// and for a good share of readers — so every state has a marker, and a deletion
+// is struck through as well.
+func changeStyle(st edit.State) (lipgloss.Style, string) {
+	i := ic()
+	switch st {
+	case edit.New:
+		return theme.Ok, i.plus
+	case edit.Modified, edit.Moved:
+		return theme.Noted, i.pencil
+	case edit.Deleted:
+		return theme.Bad.Strikethrough(true), i.trash
+	}
+	return theme.Strong, i.entry
 }

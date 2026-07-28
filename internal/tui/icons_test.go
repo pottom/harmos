@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -72,5 +73,23 @@ func TestIconsToggle(t *testing.T) {
 	}
 	if saved.NerdFont == nil || *saved.NerdFont != nerd {
 		t.Errorf("the toggle should persist to config, got %v", saved.NerdFont)
+	}
+}
+
+// Every icon must exist in both sets. A field added to one and forgotten in the
+// other renders as nothing — which is how the staged-change markers shipped
+// empty in the Nerd set while the plain fallback looked fine.
+func TestEveryIconExistsInBothSets(t *testing.T) {
+	n := reflect.ValueOf(nerdIcons)
+	p := reflect.ValueOf(plainIcons)
+
+	for i := range n.NumField() {
+		name := n.Type().Field(i).Name
+		if n.Field(i).String() == "" {
+			t.Errorf("nerd icon %s is empty", name)
+		}
+		if p.Field(i).String() == "" {
+			t.Errorf("plain icon %s is empty", name)
+		}
 	}
 }
