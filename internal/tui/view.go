@@ -138,6 +138,15 @@ func (m Model) View() string {
 	if m.confirmUnlock != "" {
 		return m.writeConfirmView()
 	}
+	if m.quitGuard {
+		return m.quitGuardView()
+	}
+	if m.saveConflict != "" {
+		return m.conflictView()
+	}
+	if m.saveConfirm {
+		return m.saveConfirmView()
+	}
 	if m.edit != editNone {
 		return m.editorView()
 	}

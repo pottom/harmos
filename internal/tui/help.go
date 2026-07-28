@@ -150,6 +150,7 @@ func (m Model) keyList(w int) []string {
 			row("d / D", "delete → bin / permanently"),
 			row("m / r", "move · rename a folder"),
 			row("^g", "roll a password, in the editor"),
+			row("^s", "review and write the staged changes"),
 			"",
 			head("ANY SELECTED ENTRY"),
 			row("^y ^u", "copy password · username"),
