@@ -466,8 +466,8 @@ one at a time, on green CI plus human approval.
 | ~~**5**~~ | ~~`refactor/tui-form-and-tokens`~~ · **done** | Every built-in theme fills every token (reflective test); the Settings source form behaves identically; the new glyphs render under `HARMOS_NERDFONT=0`. |
 | ~~**6**~~ | ~~`feat/tui-write-lock`~~ · **done** | No source is writable at launch; `ctrl+w` + `y` unlocks exactly one and flips the padlock; a Pleasant source refuses with a reason; the teatest contract stays green. |
 | ~~**7**~~ | ~~`feat/tui-edit`~~ · **done** | A staged edit colours the row and increments the dirty count **while the file on disk is byte-identical**. |
-| **8** | `feat/tui-changes-and-save` (in review) | edit → `ctrl+s` → `y` writes the file; `keepassxc-cli` opens it and shows the edited value; the tab empties and the tree decoration clears. |
-| **9** | `test/write-oracle` | The CI oracle job proves `keepassxc-cli` reads back the recycle bin, the history record **and** a tombstone from a harmos-written file. |
+| ~~**8**~~ | ~~`feat/tui-changes-and-save`~~ · **done** | edit → `ctrl+s` → `y` writes the file; `keepassxc-cli` opens it and shows the edited value; the tab empties and the tree decoration clears. |
+| **9** | `feat/m6-close` (in review) | The CI oracle job proves `keepassxc-cli` reads back the recycle bin, the history record **and** a tombstone from a harmos-written file. |
 
 ### PR1 notes
 
@@ -612,7 +612,13 @@ are covered.
 | 13 | Duplicate UUIDs in the wild | `#n` disambiguation, covered by the fixture |
 | 14 | Doc drift | PR0 does the spec and workflow; each later PR fixes the assertions it invalidates (list below) |
 
-### Read-only assertions to amend
+### Read-only assertions — all amended as of PR9
+
+Every one of these now describes what harmos actually does. The invariant that
+survived is the one worth keeping: **browsing never writes**, including a session
+that stages edits and declines to save.
+
+Original list:
 
 `AGENTS.md` · `internal/tui/AGENTS.md` · `SECURITY.md` · `README.md` ·
 `docs/harmos-spec.md` §1/§2/§3/config sample · `docs/harmos-workflow.md` M3 row ·

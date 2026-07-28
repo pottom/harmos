@@ -10,7 +10,7 @@ func newRootCmd() *cobra.Command {
 	var configPath string
 	root := &cobra.Command{
 		Use:          "harmos",
-		Short:        "Read-only terminal password client for Pleasant Password Server and local .kdbx files",
+		Short:        "Terminal password client for Pleasant Password Server and local .kdbx files",
 		Version:      version.Version,
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
