@@ -101,7 +101,7 @@ func Write(t testing.TB, path string, opts ...Option) string {
 		o(b)
 	}
 
-	version := gokeepasslib.WithDatabaseKDBXVersion4()
+	version := gokeepasslib.WithDatabaseKDBXVersion40()
 	if b.kdbx31 {
 		version = gokeepasslib.WithDatabaseKDBXVersion3()
 	}

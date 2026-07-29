@@ -34,7 +34,7 @@ The spec anticipated this milestone (`docs/harmos-spec.md` §3):
 | Review surface | **Both**: in-place colouring in the tree and entry list, *and* a separate Changes tab with a git-style diff. |
 | Extra scope | All four: password generator in the editor, custom field add/remove, KeePass history writing, move/rename. |
 | Edit-mode affordance | vim-like: the active panel border turns amber and the UI says it is in edit mode. |
-| KDBX 4.1 | **Teach the library**, do not refuse (decided 2026-07-28, after finding the target vault is 4.1 and uses 4.1 elements). Offer the change upstream; consume it via `replace` until it lands. Do the library work to publishable quality — see `kdbx-4.1-support.md`. |
+| KDBX 4.1 | **Teach the library**, do not refuse (decided 2026-07-28, after finding the target vault is 4.1 and uses 4.1 elements). Offer the change upstream; consume it via `replace` until it lands (it landed: v3.7.0). Do the library work to publishable quality — see `kdbx-4.1-support.md`. |
 
 ### Non-goals
 
@@ -104,8 +104,8 @@ Refusing was the original plan. It is safe but useless: it would leave the whole
 milestone unable to touch the vaults it was built for. The library change turned
 out to be small and well-bounded — seven elements plus one pre-existing gap — and
 is specified in full in `kdbx-4.1-support.md`, which doubles as the upstream
-pull-request description. harmos consumes it through a `replace` directive until
-upstream merges it; then the `replace` is deleted.
+pull-request description. Upstream implemented it themselves after the report and
+released it in v3.7.0, so the `replace` and the vendored copy are gone.
 
 **A version label is not evidence of content.** Whatever the library supports,
 the writer's gate is **content-based**, not version-based: it refuses only when

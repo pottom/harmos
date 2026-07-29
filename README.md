@@ -269,7 +269,7 @@ refused rather than overwriting it. KeePass history is written the way other
 clients expect, and deletions leave the tombstones a synchronising client needs.
 
 **KDBX 4.1** is supported through a patched copy of the kdbx library
-(`third_party/gokeepasslib`, offered upstream). A file harmos cannot round-trip
+(now upstream in gokeepasslib v3.7.0). A file harmos cannot round-trip
 without losing something is refused for writing, and it says which element it
 would have lost.
 
