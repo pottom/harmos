@@ -221,3 +221,30 @@ func TestSetSourceWritableUnknownSource(t *testing.T) {
 		t.Error("setting an unknown source should fail rather than doing nothing")
 	}
 }
+
+// A source name is not only a label: identities are "<name>:<uuid>" and
+// "<name>:g:<uuid>" with a "#n" suffix for duplicates, so a name carrying those
+// characters makes every ID in that source ambiguous. The failure used to be
+// delayed and total — staging worked, and every save failed forever with
+// "malformed id".
+func TestSourceNamesThatWouldBreakIdentity(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	bad := []string{"a:b", "a#1", "prod:2026", "x#", "", "   ", " lead", "trail ", "a/b", "a\\b", "a\tb", "a\nb"}
+	for _, name := range bad {
+		if err := ValidSourceName(name); err == nil {
+			t.Errorf("%q should be refused as a source name", name)
+		}
+		if _, err := WriteKdbxSource(path, name, filepath.Join(dir, "v.kdbx"), "", false); err == nil {
+			t.Errorf("%q was written to the config", name)
+		}
+	}
+
+	good := []string{"own", "work", "acme-prod", "my vault", "Vault_2", "ékezetes"}
+	for _, name := range good {
+		if err := ValidSourceName(name); err != nil {
+			t.Errorf("%q should be allowed: %v", name, err)
+		}
+	}
+}

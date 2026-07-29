@@ -900,3 +900,71 @@ func TestTheTreeMatchesTheFileAfterASave(t *testing.T) {
 		t.Errorf("the new entry appears %d times in the tree", seen)
 	}
 }
+
+// A vault file is input like any other. Control characters in what it holds
+// must not reach the terminal: a tab measures one cell to the width maths and
+// eight to the terminal, and "\x1b[2J" clears the screen it is drawn on.
+func TestFileContentCannotDriveTheTerminal(t *testing.T) {
+	const nasty = "tab\there\nsecond\x1b[31;5mANSI\x1b[2J\x00nul"
+
+	path := t.TempDir() + "/nasty.kdbx"
+	vaulttest.Write(t, path, vaulttest.Shape(func(db *gokeepasslib.Database) []gokeepasslib.Group {
+		e := gokeepasslib.NewEntry()
+		e.Values = append(e.Values,
+			vaulttest.Val("Title", "carrier"),
+			vaulttest.PVal("Password", "pw"),
+			vaulttest.Val("Notes", nasty),
+			vaulttest.PVal("otp", "otpauth://totp/x?secret=AAAA"+"\x1b[2J"))
+		e.Tags = "clean;na\x1bsty"
+		e.Times = gokeepasslib.NewTimeData()
+		g := gokeepasslib.NewGroup()
+		g.Name = "Infra"
+		g.Entries = []gokeepasslib.Entry{e}
+		root := gokeepasslib.NewGroup()
+		root.Name = "Root"
+		root.Groups = []gokeepasslib.Group{g}
+		return []gokeepasslib.Group{root}
+	}))
+
+	h, err := vault.OpenHandle(path, "own", vault.Credentials{Password: secret.New("pw")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := h.Snapshot()
+
+	var got *vault.Entry
+	for i := range v.Entries {
+		if v.Entries[i].Title == "carrier" {
+			got = &v.Entries[i]
+		}
+	}
+	if got == nil {
+		t.Fatal("fixture entry missing")
+	}
+	if strings.ContainsRune(got.Notes, '\x1b') || strings.ContainsRune(got.Notes, '\t') || strings.ContainsRune(got.Notes, 0) {
+		t.Errorf("Notes still carries control characters: %q", got.Notes)
+	}
+	if !strings.Contains(got.Notes, "\n") {
+		t.Error("but its line breaks are the point and must survive")
+	}
+	if strings.ContainsRune(got.TOTP, '\x1b') {
+		t.Errorf("TOTP still carries an escape: %q", got.TOTP)
+	}
+	for _, tag := range got.Tags {
+		if strings.ContainsRune(tag, '\x1b') {
+			t.Errorf("a tag still carries an escape: %q", tag)
+		}
+	}
+
+	// And no escape sequence from the file reaches the terminal. The text of it
+	// survives — "[2J" is just characters once the ESC is gone — which is the
+	// point: the reader sees what the file says without the terminal obeying it.
+	m := up(New(v.Entries, v.Folders, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = onEntry(t, m, "Infra", "carrier")
+	m = up(m, tea.KeyMsg{Type: tea.KeyRight}) // the detail pane, where Notes are shown
+	for _, seq := range []string{"\x1b[2J", "\x1b[31;5m"} {
+		if strings.Contains(m.View(), seq) {
+			t.Errorf("an escape sequence from the file reached the terminal: %q", seq)
+		}
+	}
+}

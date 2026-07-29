@@ -108,7 +108,7 @@ func (h *Handle) verify(path string, before map[gokeepasslib.UUID][]string) erro
 
 	db := gokeepasslib.NewDatabase()
 	db.Credentials = h.creds
-	if err := gokeepasslib.NewDecoder(f).Decode(db); err != nil {
+	if err := decode(f, db); err != nil {
 		return fmt.Errorf("verify: written file does not decode: %w", err)
 	}
 	if err := db.UnlockProtectedEntries(); err != nil {
