@@ -17,25 +17,18 @@ func (m Model) handleClick(x, y int) (tea.Model, tea.Cmd) {
 	dbl := time.Since(m.clickAt) < doubleClick && m.clickX == x && m.clickY == y
 	m.clickX, m.clickY, m.clickAt = x, y, time.Now()
 
-	// The tab indicator sits on the last line, on any tab.
+	// The tab indicator sits on the last line, on any tab. Clicking one has to
+	// do exactly what pressing its digit does — this used to re-implement the
+	// switch with two hardcoded cases, so a click landed on the Changes tab
+	// without its cursor being placed and ignored tabOrder() into the bargain.
 	if t, ok := m.tabHit(x, y); ok {
-		m.tab, m.detail, m.focus = t, false, 0
-		switch t {
-		case 1:
-			m.setKeyring = keyringStatus(m.sources())
-		case 2:
-			m.focus = 1 // land on the password pane, not the options
-			if len(m.genList) == 0 {
-				m.resetGen()
-			}
-		}
-		return m, nil
+		return m.switchTab(t), nil
 	}
-	if m.tab == 2 {
+	if m.tab == tabGenerate {
 		return m.handleGenClick(x, y, dbl)
 	}
-	if m.tab == 1 {
-		return m, nil // Settings: keyboard-driven for now
+	if m.tab == tabSettings || m.tab == tabChanges {
+		return m, nil // keyboard-driven for now
 	}
 
 	panelsH := max(3, m.h-3)

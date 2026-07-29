@@ -25,12 +25,23 @@ func (s Set) Revert(seq int) (Set, []Op) {
 		return s, nil // nothing by that number; leave the set alone
 	}
 
+	// Everything staged against something that will no longer exist goes with
+	// it — and that reaches through parents, not only targets. Undo a folder you
+	// created and the entry you put in it has nowhere to be created: it used to
+	// survive, re-parented in the review to the source root, and the save failed
+	// with "no folder". Creations inside creations chain, so this is a closure.
+	gone := map[string]bool{}
+	if isCreate {
+		gone[target] = true
+		grow(s.ops, gone)
+	}
+
 	var kept, dropped []Op
 	for _, op := range s.ops {
 		switch {
 		case op.Seq == seq:
 			continue // the one being reverted
-		case isCreate && op.Target == target:
+		case gone[op.Target] || gone[op.Parent]:
 			dropped = append(dropped, op)
 		default:
 			kept = append(kept, op)
@@ -39,6 +50,24 @@ func (s Set) Revert(seq int) (Set, []Op) {
 
 	out := Set{ops: kept, seq: s.seq}
 	return out, dropped
+}
+
+// grow closes a set of doomed targets over the operations that create things
+// inside them: if a folder is going, so is everything staged into it, and
+// anything staged into those.
+func grow(ops []Op, gone map[string]bool) {
+	for changed := true; changed; {
+		changed = false
+		for _, op := range ops {
+			if !gone[op.Parent] || gone[op.Target] {
+				continue
+			}
+			if op.Kind == CreateEntry || op.Kind == CreateGroup {
+				gone[op.Target] = true
+				changed = true
+			}
+		}
+	}
 }
 
 // Cascade reports what reverting seq would also drop, without doing it — so a

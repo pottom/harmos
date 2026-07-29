@@ -392,50 +392,18 @@ func (h *Handle) findGroupByUUID(u gokeepasslib.UUID) (parent, group *gokeepassl
 // The editor needs the ID before the entry: everything staged afterwards — an
 // edit, a move, a delete, an undo — names that target, so handing out the real
 // kdbx UUID up front means there is no second identity space to reconcile when
-// the change set is applied.
+// the change set is applied. Apply forces the created item to take this UUID.
 //
-// It creates and immediately removes the entry, leaving no trace: no tombstone,
-// nothing in the recycle bin, and of course nothing on disk, since only Save
-// writes.
-func (h *Handle) MintEntryID(parentGroupID string) (string, error) {
-	id, err := h.CreateEntry(parentGroupID, edit.Draft{})
-	if err != nil {
-		return "", err
-	}
-	if err := h.removeWithoutTrace(id, false); err != nil {
-		return "", err
-	}
-	return id, nil
+// It touches nothing. It used to create the item and immediately remove it
+// again, which needed a parent group that already existed — so nothing could be
+// created inside a folder that was itself only staged, and the editor refused
+// with "no folder with that uuid" on a folder the user had just made. An
+// identity is a fresh UUID; the file has no say in it.
+func (h *Handle) MintEntryID() string {
+	return entryID(h.source, gokeepasslib.NewUUID(), 0)
 }
 
 // MintGroupID is MintEntryID for a folder.
-func (h *Handle) MintGroupID(parentGroupID string) (string, error) {
-	id, err := h.CreateGroup(parentGroupID, "staged")
-	if err != nil {
-		return "", err
-	}
-	if err := h.removeWithoutTrace(id, true); err != nil {
-		return "", err
-	}
-	return id, nil
-}
-
-// removeWithoutTrace deletes something that was created moments ago in this same
-// call. A tombstone would announce the deletion of something no other client has
-// ever seen, so the one this leaves behind is taken back off.
-func (h *Handle) removeWithoutTrace(id string, isGroup bool) error {
-	before := len(h.db.Content.Root.DeletedObjects)
-	var err error
-	if isGroup {
-		err = h.DeleteGroup(id, true)
-	} else {
-		err = h.DeleteEntry(id, true)
-	}
-	if err != nil {
-		return err
-	}
-	if n := len(h.db.Content.Root.DeletedObjects); n > before {
-		h.db.Content.Root.DeletedObjects = h.db.Content.Root.DeletedObjects[:before]
-	}
-	return nil
+func (h *Handle) MintGroupID() string {
+	return groupID(h.source, gokeepasslib.NewUUID(), 0)
 }

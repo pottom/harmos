@@ -87,8 +87,71 @@ func (s Set) Effective() []Op {
 		out = append(out, reduceTarget(b.ops)...)
 	}
 
+	// A folder created and then deleted never existed, and neither did anything
+	// staged inside it. Without this the children survive as creations pointing
+	// at a parent that is not in the set, and the save fails with "no folder".
+	if gone := cancelled(s.ops, out); len(gone) > 0 {
+		var kept []Op
+		for _, op := range out {
+			if !gone[op.Target] && !gone[op.Parent] {
+				kept = append(kept, op)
+			}
+		}
+		out = kept
+	}
+
+	// A deletion inside a folder that is also being deleted is not a second
+	// deletion — it is the same one. Applying both moved the child out of the
+	// folder it went with: on disk the bin held the child at its root and the
+	// folder beside it. Whichever order they were staged in.
+	out = subsumeInsideDeletedFolders(out)
+
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Seq < out[j].Seq })
 	return out
+}
+
+// subsumeInsideDeletedFolders drops entry deletions whose folder is going too.
+//
+// It can only see the folder an entry was in — the change set holds identities
+// and operations, not the vault's shape — so this closes the direct-child case
+// for every caller. Deeper nesting is the interface's to know, and it does.
+func subsumeInsideDeletedFolders(ops []Op) []Op {
+	doomed := map[string]bool{}
+	for _, op := range ops {
+		if op.Kind == DeleteGroup {
+			doomed[op.Target] = true
+		}
+	}
+	if len(doomed) == 0 {
+		return ops
+	}
+	var kept []Op
+	for _, op := range ops {
+		if op.Kind == DeleteEntry && op.Before != nil && doomed[op.Before.GroupID] {
+			continue
+		}
+		kept = append(kept, op)
+	}
+	return kept
+}
+
+// cancelled is the targets that were created and then un-created by the
+// reduction, closed over what was staged inside them.
+func cancelled(ops, effective []Op) map[string]bool {
+	survives := map[string]bool{}
+	for _, op := range effective {
+		survives[op.Target] = true
+	}
+	gone := map[string]bool{}
+	for _, op := range ops {
+		if (op.Kind == CreateEntry || op.Kind == CreateGroup) && !survives[op.Target] {
+			gone[op.Target] = true
+		}
+	}
+	if len(gone) > 0 {
+		grow(ops, gone)
+	}
+	return gone
 }
 
 // reduceTarget collapses one target's operations. The input is in staging order.

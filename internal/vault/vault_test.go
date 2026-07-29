@@ -185,7 +185,7 @@ func TestBrowseSessionLeavesFileUnchanged(t *testing.T) {
 // A folder name (or title) with an embedded newline must be flattened, or it
 // breaks the single-line display in the TUI.
 func TestOnelineSanitizes(t *testing.T) {
-	db := gokeepasslib.NewDatabase(gokeepasslib.WithDatabaseKDBXVersion4())
+	db := gokeepasslib.NewDatabase(gokeepasslib.WithDatabaseKDBXVersion40())
 	db.Credentials = gokeepasslib.NewPasswordCredentials("pw")
 	e := gokeepasslib.NewEntry()
 	e.Values = append(e.Values, val("Title", "line1\nline2"), val("UserName", "u\tv"))

@@ -13,17 +13,23 @@ type Change struct {
 	State  State
 	Source string
 	Target string
+	Parent string // the folder it lives in, so a reviewer can be told where
 	Title  string // what to call it in a list
 	Detail string // a one-line summary, e.g. "Infra → Archive"
 	Lines  []Line // field-level diff, empty for a move or a delete
 }
 
 // Line is one field's before and after.
+//
+// Text is filled for a field that holds more than one line: the line-level diff,
+// with unchanged runs collapsed. Old and New still carry the one-line summary,
+// so a caller that has no room for a hunk has something to show.
 type Line struct {
 	Op    LineOp
 	Field string
 	Old   string
 	New   string
+	Text  []TextLine
 }
 
 // LineOp is how a field changed.
@@ -72,6 +78,7 @@ func changeOf(s Set, op Op) Change {
 		State:  s.StateOf(op.Target),
 		Source: op.Source,
 		Target: op.Target,
+		Parent: parentOf(op),
 		Title:  titleOf(op),
 	}
 
@@ -104,10 +111,11 @@ func titleOf(op Op) string {
 		return op.After.Title
 	case op.Before != nil && op.Before.Title != "":
 		return op.Before.Title
-	case op.After != nil || op.Before != nil:
-		return "(untitled)"
 	}
-	return op.Target
+	// Never the raw target: it is an opaque, base64 identity token, and a row
+	// reading "own:g:5nhn6H1wWEyWa4KEebc2rQ" tells the reader nothing they can
+	// act on. A caller that stages a change owes it a name.
+	return "(untitled)"
 }
 
 // diffDrafts compares two drafts field by field. A nil before means a creation,
@@ -128,11 +136,25 @@ func diffDrafts(before, after *Draft) []Line {
 		}
 		lines = append(lines, Line{Op: lineOp(old, next), Field: field, Old: old, New: next})
 	}
+	// A field that holds more than one line gets the line-level treatment, and
+	// keeps the one-line summary for callers with no room for a hunk.
+	addText := func(field, old, next string) {
+		if old == next {
+			return
+		}
+		lines = append(lines, Line{
+			Op:    lineOp(old, next),
+			Field: field,
+			Old:   oneLine(old),
+			New:   oneLine(next),
+			Text:  diffLines(old, next),
+		})
+	}
 
 	add("Title", b.Title, after.Title)
 	add("Username", b.Username, after.Username)
 	add("URL", b.URL, after.URL)
-	add("Notes", oneLine(b.Notes), oneLine(after.Notes))
+	addText("Notes", b.Notes, after.Notes)
 	add("Tags", b.Tags, after.Tags)
 
 	// Passwords and other protected values are compared, never shown.
@@ -271,4 +293,19 @@ func (s Set) Summary() string {
 		parts = append(parts, fmt.Sprintf("%s: %d", src, counts[src]))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// parentOf is the folder a change happened in — the destination for a move or a
+// creation, otherwise wherever the item lived.
+func parentOf(op Op) string {
+	if op.Parent != "" {
+		return op.Parent
+	}
+	if op.After != nil && op.After.GroupID != "" {
+		return op.After.GroupID
+	}
+	if op.Before != nil {
+		return op.Before.GroupID
+	}
+	return ""
 }

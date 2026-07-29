@@ -278,14 +278,14 @@ same change. This is the normal Go consequence of extending a struct, but it is
 the reviewer's call, so it belongs in the description rather than buried in a
 diff.
 
-harmos consumes it in the meantime through a `replace` directive pointing at our
-branch. **When (if) upstream merges it, the `replace` is deleted and the
-dependency returns to the published module** — that is the intended end state,
-not a fork we mean to keep.
-
-Until then, we own the security maintenance of the vendored copy: upstream
-releases must be watched and rebased onto. That cost is accepted deliberately,
-recorded here so it is not a surprise later.
+**Outcome.** The maintainer chose to implement it himself after this report was
+filed as [issue #150](https://github.com/tobischo/gokeepasslib/issues/150), using the
+references and the element order recorded here, and released it in **v3.7.0**
+(PR #151). harmos dropped its `replace`, its vendored copy and the CI job that
+tested it. This document stays as the record of what the format requires and how
+it was established; the round-trip itself is checked by
+`internal/vault/kdbx41_test.go`, because it is harmos's promise to its users
+rather than the library's to its callers.
 
 ## How the data loss was found
 

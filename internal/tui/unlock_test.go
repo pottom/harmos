@@ -18,7 +18,7 @@ import (
 
 func makeKDBX(t *testing.T, path, password, title string) {
 	t.Helper()
-	db := gokeepasslib.NewDatabase(gokeepasslib.WithDatabaseKDBXVersion4())
+	db := gokeepasslib.NewDatabase(gokeepasslib.WithDatabaseKDBXVersion40())
 	db.Credentials = gokeepasslib.NewPasswordCredentials(password)
 	e := gokeepasslib.NewEntry()
 	e.Values = append(e.Values, gokeepasslib.ValueData{Key: "Title", Value: gokeepasslib.V{Content: title}})

@@ -34,7 +34,7 @@ The spec anticipated this milestone (`docs/harmos-spec.md` §3):
 | Review surface | **Both**: in-place colouring in the tree and entry list, *and* a separate Changes tab with a git-style diff. |
 | Extra scope | All four: password generator in the editor, custom field add/remove, KeePass history writing, move/rename. |
 | Edit-mode affordance | vim-like: the active panel border turns amber and the UI says it is in edit mode. |
-| KDBX 4.1 | **Teach the library**, do not refuse (decided 2026-07-28, after finding the target vault is 4.1 and uses 4.1 elements). Offer the change upstream; consume it via `replace` until it lands. Do the library work to publishable quality — see `kdbx-4.1-support.md`. |
+| KDBX 4.1 | **Teach the library**, do not refuse (decided 2026-07-28, after finding the target vault is 4.1 and uses 4.1 elements). Offer the change upstream; consume it via `replace` until it lands (it landed: v3.7.0). Do the library work to publishable quality — see `kdbx-4.1-support.md`. |
 
 ### Non-goals
 
@@ -104,8 +104,8 @@ Refusing was the original plan. It is safe but useless: it would leave the whole
 milestone unable to touch the vaults it was built for. The library change turned
 out to be small and well-bounded — seven elements plus one pre-existing gap — and
 is specified in full in `kdbx-4.1-support.md`, which doubles as the upstream
-pull-request description. harmos consumes it through a `replace` directive until
-upstream merges it; then the `replace` is deleted.
+pull-request description. Upstream implemented it themselves after the report and
+released it in v3.7.0, so the `replace` and the vendored copy are gone.
 
 **A version label is not evidence of content.** Whatever the library supports,
 the writer's gate is **content-based**, not version-based: it refuses only when
@@ -372,6 +372,36 @@ machinery, so there is no wrong-undo class of bug, and reverting from the middle
 chain is well defined. Reverting a `create` cascades to every op targeting it; the
 confirmation line says so.
 
+### 5.3a Reviewing: the vault's shape, the diff's language
+
+The Changes tab answers two questions at once, and the layout serves both. *Where
+did I touch something* is a tree — the same source → folder → item shape the
+Vault tab shows, because that is the shape the reader's memory of their own vault
+has. *What exactly changed* is a diff, and a diff has an established alphabet: a
+marker column, a colour per kind, removals above additions, unchanged context
+kept thin.
+
+So the tree supplies the headings and the indentation, and under each changed
+item sits a hunk in git's idiom. Multi-line fields (Notes, a pasted block in a
+custom field) get a real line-level diff — LCS, two lines of context, longer
+untouched runs collapsed to `⋯ n unchanged lines` — because "Notes: 12 lines → 14
+lines" is true and useless. Protected values never take that path: they are
+masked to a constant, so the only honest thing a diff can say about a secret is
+that it changed, and that is what it says.
+
+Where a change lives is resolved by the TUI, not by `internal/edit`: the change
+set holds identities and operations and deliberately knows nothing about paths.
+
+**A deletion is shown three times before it happens.** One keystroke on a folder
+can remove forty entries; the reader has to be able to *see* that rather than be
+told a number. So: the vault marks the rows themselves — the folder and, without
+markers of their own, everything under it; the Changes tab draws that subtree as
+a tree, names every entry and sub-folder, and elides nothing (the pane scrolls);
+and the write confirmation counts the result in **folders and entries rather
+than in operations**, with the permanent share stated first, because "5 changes"
+is a number about the program and "2 folders and 12 entries removed, 14 of them
+permanently" is a number about their vault.
+
 ### 5.4 One source of truth, two surfaces
 
 ```go
@@ -510,7 +540,8 @@ that is currently duplicated three times (`vault_test.go`, `session_test.go`,
 `recyclebin.go`, `history.go`.
 
 **Recycle bin.** If `Meta.RecycleBinEnabled == false`, `d` is *also* permanent and the
-confirm overlay says so out loud (KeePassXC-consistent). A missing bin is created as a
+flash that reports the staging says so out loud (KeePassXC-consistent), as does the
+write confirmation. A missing bin is created as a
 direct child of the root group with `IconID = 43`, setting `Meta.RecycleBinUUID` and
 `RecycleBinChanged`. Permanent delete appends to `Root.DeletedObjects` with a
 non-nil `DeletionTime`; deleting a group tombstones **every descendant**.
@@ -551,8 +582,19 @@ and the field hint says so.
 
 ### PR8 notes
 
-The save confirmation shows three things before `y`: the full destination path, the
-per-source change counts, and **the backup path it is about to create**.
+**One confirmation, at the write.** Staging asks nothing — deleting included. Staging
+writes no bytes, the row is decorated the moment the key is pressed, and `x` on the
+Changes tab takes it back; a prompt in front of a reversible act is not a safeguard but
+a keystroke people learn to dismiss unread, which is what you least want at the prompt
+that does matter. So the write confirmation carries the whole weight: the full
+destination path, the per-source change counts, **the backup path it is about to
+create**, and — first, in its own words — the count of **permanent deletions**, the one
+thing the vault cannot get back afterwards.
+
+Its buttons follow the rule in `confirm.go`: the answer the user came for leads, except
+where the act is irreversible. An ordinary write leads with **Write**; a set containing
+a permanent delete leads with **Cancel**, so an enter pressed out of habit costs
+nothing.
 
 `saveCmd` runs **outside the update loop** as a `tea.Cmd` — the Argon2 re-derivation
 takes ~0.5–1 s, the same reason `openCmd` exists.

@@ -285,6 +285,25 @@ func (m Model) modal(title, info string, lines []string, hint string) string {
 		inner = t
 	}
 	boxW := max(40, min(inner+4, m.w-4))
+
+	// Height was never clamped, so a modal taller than the terminal simply ran
+	// off it — and the one that does that first is the save confirmation, whose
+	// top rows are the question and the "deleted permanently" warning. A
+	// confirmation that can scroll its own warning off the screen is worse than
+	// no confirmation.
+	//
+	// The tail is what is kept: the buttons and the hint are how you answer, and
+	// the rows nearest them are the ones about this decision. A marker says the
+	// rest is above.
+	avail := max(3, m.h-2)
+	if hint != "" {
+		avail -= 2
+	}
+	if len(lines)+2 > avail {
+		keep := max(1, avail-3)
+		lines = append([]string{theme.Faded.Render("  ⋯ " + itoa(len(lines)-keep) + " more above — widen or heighten the window")},
+			lines[len(lines)-keep:]...)
+	}
 	panel := box(title, info, lines, boxW, len(lines)+2, true)
 	block := panel
 	if hint != "" {
@@ -297,6 +316,12 @@ func (m Model) modal(title, info string, lines []string, hint string) string {
 // with the hint truncated so the two never collide.
 func (m Model) footer(left string) string {
 	ti := m.tabIndicator()
+	// On a narrow terminal the hint hits its floor and the indicator is what
+	// overflows — spread only guarantees a gap, not a width. The indicator gives
+	// way: which tab you are on is on the header too, and the keys are not.
+	if room := m.w - dw(ti) - 2; room < 4 {
+		ti = trunc(ti, max(0, m.w-6))
+	}
 	return spread(trunc(left, max(4, m.w-dw(ti)-2)), ti, m.w)
 }
 
@@ -630,6 +655,12 @@ func (m Model) searchLine() string {
 	if n := len(m.excluded); n > 0 && !m.showResults() {
 		right += theme.Bad.Render(fmt.Sprintf("  ⚠ %d unavailable", n))
 	}
+	// The search box takes whatever the brand and the badge leave. It used to
+	// take its natural width and push the line past the terminal — 57 columns on
+	// a 41-column screen, on the surface the program opens on.
+	if room := m.w - dw(right) - 2; dw(left) > room {
+		left = trunc(left, max(4, room))
+	}
 	return spread(left, right, m.w)
 }
 
@@ -677,30 +708,40 @@ func (m Model) treeLines(w, rows int) []string {
 		}
 		nameW := max(1, w-badgeW)
 
+		chg := changed[n]
+		nameStyle, iconStyle, markerStyle, markerGlyph := m.treeRowStyle(n, chg)
+		marker, markerPlain := "", ""
+		if markerGlyph != "" {
+			marker = markerStyle.Render(markerGlyph)
+			markerPlain = " " + markerGlyph
+		}
+
 		if k == m.tsel {
-			// The badge goes *inside* the selected row rather than after it.
-			// SelRow pads to the full width, so anything appended afterwards is
-			// pushed past the edge and clipped by the panel — which looked like
-			// the padlock vanishing whenever the cursor landed on a source. It
-			// is plain text here for the same reason the rest of the row is: the
-			// selection's colours own the line.
+			// The badge and the marker go *inside* the selected row rather than
+			// after it. SelRow pads to the full width, so anything appended
+			// afterwards is pushed past the edge and clipped by the panel — which
+			// looked like the padlock vanishing whenever the cursor landed on a
+			// source. They are plain text here for the same reason the rest of the
+			// row is: the selection's colours own the line.
 			st := theme.Hi
 			if m.focus == 0 && !m.showResults() {
 				st = theme.SelRow.Width(w)
 			}
-			out = append(out, st.Render(trunc(indent+icon+" "+n.name+count, nameW)+badgePlain))
+			st = selRowStyle(st, chg.own)
+			plain := trunc(indent+icon+" "+n.name+count+markerPlain, nameW) + badgePlain
+			out = append(out, st.Render(plain))
 			continue
 		}
 
-		nameStyle, iconStyle := theme.Strong, m.iconStyleFor(n)
-		if st := changed[n]; st != 0 {
-			nameStyle, _ = changeStyle(st)
-		}
 		if counts != nil && counts[n] == 0 { // searching: dim folders with no hits
 			nameStyle, iconStyle = theme.Dimmed, theme.Faded
 		}
-		name := nameStyle.Render(trunc(n.name, max(1, nameW-dw(indent)-2-dw(count))))
-		out = append(out, iconStyle.Render(indent+icon)+" "+name+countStyle.Render(count)+badge)
+		name := nameStyle.Render(trunc(n.name, max(1, nameW-dw(indent)-2-dw(count)-dw(markerPlain))))
+		row := iconStyle.Render(indent+icon) + " " + name + countStyle.Render(count)
+		if marker != "" {
+			row += " " + marker
+		}
+		out = append(out, row+badge)
 	}
 	return out
 }
@@ -729,33 +770,47 @@ func (m Model) entryLines(w, rows int) []string {
 		return out
 	}
 	states := m.chg.State()
+	doomed := m.doomedPrefixes()
 	avail := max(1, rows-1)
 	start := windowStart(m.esel, avail, len(f.entries))
 	end := min(start+avail, len(f.entries))
 	for k := start; k < end; k++ {
 		e := f.entries[k]
+		// An entry in a folder staged for deletion is going too, and says so —
+		// without a marker, since nothing was staged against the entry itself.
+		state, staged := states[e.ID], true
+		if state == 0 && atOrUnderDoomedFolder(doomed, e.Source, e.Path) {
+			state, staged = edit.Deleted, false
+		}
 		if k == m.esel && m.focus == 1 {
-			_, marker := changeStyle(states[e.ID])
+			_, marker := changeStyle(state)
 			plain := pad(marker+" "+e.Title, titleW) + " " + pad(e.Username, userW)
 			if urlCol {
 				plain += " " + e.URL
 			}
-			// The selected row renders a plain string, so a nested style does not
-			// survive — the strikethrough has to go on the row style itself.
-			// StrikethroughSpaces(false) keeps the line off the width padding.
-			st := theme.SelRow.Width(w)
-			if states[e.ID] == edit.Deleted {
-				st = st.Strikethrough(true).StrikethroughSpaces(false)
-			}
-			out = append(out, st.Render(trunc(plain, w)))
+			out = append(out, selRowStyle(theme.SelRow.Width(w), state).Render(trunc(plain, w)))
 			continue
 		}
-		titleStyle, marker := changeStyle(states[e.ID])
-		line := theme.Faded.Render(marker+" ") +
+		titleStyle, marker := changeStyle(state)
+		markerStyle := titleStyle
+		if !staged {
+			// Going because its folder is going. The marker is faded rather than
+			// absent: something has to say so without colour, but it is a
+			// consequence of one decision elsewhere, not a decision here.
+			markerStyle = theme.Faded
+		}
+		// A deleted row is deleted all the way across: title, username and URL.
+		// Striking the title alone read as "this title is going", which is not
+		// what is about to happen, and left the row looking half-marked.
+		rest := theme.Dimmed
+		if state == edit.Deleted {
+			rest = titleStyle
+		}
+		line := markerStyle.Render(marker+" ") +
 			titleStyle.Render(pad(trunc(e.Title, titleW-2), titleW-2)) + " " +
-			theme.Dimmed.Render(pad(trunc(e.Username, userW), userW))
+			rest.Render(pad(trunc(e.Username, userW), userW))
 		if urlCol {
-			line += " " + theme.Dimmed.Render(trunc(e.URL, urlW))
+			line += " " + rest.Render(trunc(e.URL, urlW))
 		}
 		out = append(out, line)
 	}
@@ -1161,19 +1216,41 @@ func (m Model) tooSmall() string {
 // carries the same meaning without one.
 //
 // Colour alone is not a signal — it is gone under NO_COLOR, in a mono terminal,
-// and for a good share of readers — so every state has a marker, and a deletion
-// is struck through as well.
+// and for a good share of readers — so every state has a marker. The marker is
+// the whole non-colour signal now: deletions used to be struck through as well,
+// and a line drawn through the one text you are reading in order to decide is a
+// poor trade for a signal already carried twice.
 func changeStyle(st edit.State) (lipgloss.Style, string) {
 	i := ic()
 	switch st {
 	case edit.New:
 		return theme.Ok, i.plus
-	case edit.Modified, edit.Moved:
+	case edit.Modified:
 		return theme.Noted, i.pencil
+	case edit.Moved:
+		return theme.Noted, i.moved
 	case edit.Deleted:
-		return theme.Bad.Strikethrough(true), i.trash
+		return theme.Bad, i.trash
 	}
 	return theme.Strong, i.entry
+}
+
+// selRowStyle is the selected row, tinted by whatever is staged against it.
+//
+// The selection owns the line: it renders a plain string, so a nested style does
+// not survive and the state has to travel on the row style itself — the state's
+// colour as the foreground, over the selection's background. Without this the
+// row under the cursor was the one row that did not say what was about to happen
+// to it, which is the row the reader is looking at.
+//
+// Used by all three lists — tree, entries, changes — so the cursor never changes
+// what a row means, only which row is current.
+func selRowStyle(base lipgloss.Style, st edit.State) lipgloss.Style {
+	if st == 0 {
+		return base
+	}
+	s, _ := changeStyle(st)
+	return base.Foreground(s.GetForeground())
 }
 
 // iconStyleFor is the colour a tree row's icon takes.

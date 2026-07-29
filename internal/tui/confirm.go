@@ -55,3 +55,28 @@ func confirmNav(key string, sel, n int) (int, bool) {
 func unlockChoices() []confirmChoice {
 	return []confirmChoice{{label: "Unlock"}, {label: "Cancel"}}
 }
+
+// saveChoices: writing is what the user asked for and a backup is taken first,
+// so Write leads — unless the set contains a permanent delete, the one thing in
+// harmos no backup inside the file can undo. Then the cursor starts on Cancel
+// and the caller says why, because that is the case where an enter pressed out
+// of habit costs something real.
+func saveChoices(permanent bool) ([]confirmChoice, int) {
+	choices := []confirmChoice{{label: "Write", danger: permanent}, {label: "Cancel"}}
+	if permanent {
+		return choices, 1
+	}
+	return choices, 0
+}
+
+// quitChoices: the staged work is the thing worth protecting, so saving leads
+// and discarding is marked as the destructive answer it is.
+func quitChoices() []confirmChoice {
+	return []confirmChoice{{label: "Save and quit"}, {label: "Discard and quit", danger: true}, {label: "Stay"}}
+}
+
+// conflictChoices: reloading keeps the staged changes and shows what the file
+// now says, which is the only answer that loses nothing.
+func conflictChoices() []confirmChoice {
+	return []confirmChoice{{label: "Reload"}, {label: "Leave it"}}
+}

@@ -10,6 +10,7 @@ import (
 	"github.com/pottom/harmos/internal/pwgen"
 	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/theme"
+	"github.com/pottom/harmos/internal/vault"
 )
 
 // The editor.
@@ -30,26 +31,58 @@ const (
 	editEntry
 	editFolder
 	editMove
-	editDelete
 )
 
 // openEntryEditor loads an entry losslessly and stages nothing yet.
+//
+// An entry that has only been staged is not in the file, so the file cannot be
+// asked for it: e on something created a moment ago used to fail with "no
+// entry", which is a strange thing to be told about a row you are looking at.
+// The staged draft is the entry, until a save makes it one.
 func (m Model) openEntryEditor(id string) Model {
 	h := m.handles[m.editSource]
 	if h == nil {
 		m.flash = "this source is not open for writing"
 		return m
 	}
-	d, err := h.EntryDraft(id)
-	if err != nil {
-		m.flash = err.Error()
-		return m
+
+	d, staged := m.stagedDraft(id)
+	if !staged {
+		fromFile, err := h.EntryDraft(id)
+		if err != nil {
+			m.flash = err.Error()
+			return m
+		}
+		d = fromFile
 	}
+
 	m.edit = editEntry
 	m.editTarget = id
-	m.editBefore = &d
+	m.editNew = m.chg.StateOf(id) == edit.New
+	// Where it lives is where the projection says it lives — the draft's own
+	// group can be older than a move staged since.
+	m.editParent = d.GroupID
+	if home := m.homeOf(id); home != "" {
+		m.editParent = home
+	}
+	m.editBefore = nil
+	if !m.editNew {
+		before := d
+		m.editBefore = &before
+	}
 	m.editForm = entryForm(d, m.formWidth())
 	return m
+}
+
+// stagedDraft is the latest staged version of an entry, if it has one. Editing
+// twice has to start from what the first edit said, not from what the file says.
+func (m Model) stagedDraft(id string) (edit.Draft, bool) {
+	for _, op := range m.chg.Effective() {
+		if op.Target == id && op.After != nil {
+			return *op.After, true
+		}
+	}
+	return edit.Draft{}, false
 }
 
 // openNewEntry mints an identity for an entry that does not exist yet.
@@ -64,12 +97,12 @@ func (m Model) openNewEntry(groupID string) Model {
 		m.flash = "this source is not open for writing"
 		return m
 	}
-	id, err := h.MintEntryID(groupID)
-	if err != nil {
-		m.flash = err.Error()
+	if folder, yes := m.doomedParent(groupID); yes {
+		m.flash = "that folder is going with " + folder + " — undo the deletion first"
 		return m
 	}
-	d := edit.Draft{ID: id, GroupID: groupID}
+	d := edit.Draft{ID: h.MintEntryID(), GroupID: groupID}
+	id := d.ID
 	m.edit = editEntry
 	m.editTarget = id
 	m.editNew = true
@@ -96,7 +129,12 @@ func entryForm(d edit.Draft, width int) form {
 		textField("username", "Username", "", d.Username),
 		maskedField("password", "Password", d.Password.Reveal()),
 		textField("url", "URL", "", d.URL),
-		textField("totp", "TOTP", "otpauth://…", d.TOTP),
+		// Masked, like the password: an otpauth:// URI *is* the shared seed, and
+		// every other surface treats it as a secret — the detail pane shows only
+		// the derived code, the diff masks it. The editor was printing it in
+		// full, on e, with no reveal keypress, onto a screen that is in the
+		// scrollback. ^r reveals it here, as it does the password.
+		maskedField("totp", "TOTP", d.TOTP),
 		textField("tags", "Tags", "separated by ;", d.Tags),
 		multiField("notes", "Notes", d.Notes, 4),
 		rowsField("fields", "Fields", rows),
@@ -123,8 +161,14 @@ func (m Model) draftFromForm() edit.Draft {
 		Fields:   fields,
 	}
 	if m.editBefore != nil {
-		d.GroupID = m.editBefore.GroupID
 		d.Expires, d.ExpiryTime = m.editBefore.Expires, m.editBefore.ExpiryTime
+		if d.GroupID == "" {
+			// Where it lives is not the editor's business, and the draft it was
+			// loaded from came off the file: taking the group from there undid a
+			// move staged earlier, so the projection put the entry in one folder
+			// while its GroupID named another.
+			d.GroupID = m.editBefore.GroupID
+		}
 	}
 	return d
 }
@@ -132,8 +176,6 @@ func (m Model) draftFromForm() edit.Draft {
 // updateEditor owns every key while the editor is open.
 func (m Model) updateEditor(key string, msg tea.KeyMsg) (Model, tea.Cmd) {
 	switch m.edit {
-	case editDelete:
-		return m.updateDeleteConfirm(key), nil
 	case editMove:
 		return m.updateMovePicker(key), nil
 	}
@@ -188,9 +230,17 @@ func (m Model) stageEdit() Model {
 	}
 
 	m.chg, _ = m.chg.Add(op)
+	created, wasFolder := m.editNew, m.edit == editFolder
+	target := m.editTarget
 	m.edit, m.editNew = editNone, false
 	m.editBefore = nil
 	m.flash = "staged — nothing is written until you save"
+
+	m = m.restage()
+	if created {
+		// Show what was just made, wherever it landed.
+		m = m.revealTarget(target, wasFolder)
+	}
 	return m
 }
 
@@ -201,17 +251,16 @@ func (m Model) openFolderEditor(parentID, existingID, name string) Model {
 		m.flash = "this source is not open for writing"
 		return m
 	}
+	if folder, yes := m.doomedParent(parentID); yes {
+		m.flash = "that folder is going with " + folder + " — undo the deletion first"
+		return m
+	}
 	m.edit = editFolder
 	m.editNew = existingID == ""
 	m.editParent = parentID
 	m.editTarget = existingID
 	if m.editNew {
-		id, err := h.MintGroupID(parentID)
-		if err != nil {
-			m.flash = err.Error()
-			return m
-		}
-		m.editTarget = id
+		m.editTarget = h.MintGroupID()
 	}
 	m.editForm = newForm("Stage", m.formWidth(),
 		textField("name", "Name", "folder name", name).
@@ -225,67 +274,156 @@ func (m Model) openFolderEditor(parentID, existingID, name string) Model {
 	return m
 }
 
-// openDeleteConfirm asks before staging a deletion.
-func (m Model) openDeleteConfirm(target string, isFolder, permanent bool) Model {
-	m.edit = editDelete
-	m.editTarget = target
-	m.editFolderTarget = isFolder
-	m.editPerm = permanent
+// stageDelete stages a deletion. It does not ask.
+//
+// There used to be a confirmation here, and it was answering a question nobody
+// had: staging writes nothing, the row turns red and struck through the moment
+// you press the key, and x on the Changes tab takes it back. A prompt in front
+// of a reversible act is not a safeguard — it is a keystroke people learn to
+// dismiss without reading, which is exactly what you do not want them doing at
+// the one prompt that matters, the write.
+//
+// So the confirmation lives at the write, once, and it names what is about to
+// happen — including a permanent delete, which is the only part of this that
+// cannot be taken back afterwards.
+// The key is a toggle. Pressing it again on the same row takes the staging back,
+// because "I did not mean that" arrives one keystroke after "delete this", and
+// making the reader travel to another tab to undo something they have not done
+// yet is a strange thing to ask. It needs no second binding: the row already
+// says which state it is in, so the same key can mean both directions.
+//
+// D on a row already staged for the bin does not toggle it off — it changes
+// which deletion it is. Otherwise upgrading would mean pressing D twice, with
+// the row briefly un-staged in between, which reads as the key having failed.
+func (m Model) stageDelete(target, name string, isFolder, permanent bool) Model {
+	if folder, yes := m.inDoomedFolder(target); yes {
+		// It is already going, with the folder above it. Staging it separately
+		// produced a set that could not be applied — and on the paths where it
+		// could, the child was pulled out of the folder it was deleted with.
+		m.flash = "already going with " + lastSegment(folder)
+		return m
+	}
+
+	kind := edit.DeleteEntry
+	if isFolder {
+		kind = edit.DeleteGroup
+	}
+	perm := permanent || !m.binEnabled(m.editSource)
+
+	if prev, ok := m.stagedDeletion(target); ok {
+		m.chg, _ = m.chg.Revert(prev.Seq)
+		if prev.Perm == perm {
+			m.flash = "no longer staged for deletion" + describes(name)
+			return m.restage()
+		}
+	}
+
+	if isFolder {
+		// Anything under it that was already staged for deletion goes with the
+		// folder now. Leaving both staged applied both, and the child was pulled
+		// out of the folder it was deleted with.
+		m = m.dropDeletionsUnder(target)
+	}
+
+	op := edit.Op{Kind: kind, Source: m.editSource, Target: target, Name: name, Perm: perm}
+	if h := m.handles[m.editSource]; h != nil && !isFolder {
+		if d, err := h.EntryDraft(target); err == nil {
+			op.Before = &d
+		}
+	}
+	m.chg, _ = m.chg.Add(op)
+
+	// Say which of the two deletions this is — with the recycle bin switched
+	// off, d is a permanent delete and silence would be a lie — and say how to
+	// take it back.
+	what := "entry"
+	if isFolder {
+		what = "folder and its contents"
+	}
+	where := "to the recycle bin"
+	if perm {
+		where = "permanently"
+		if !permanent {
+			where = "permanently (this database has no recycle bin)"
+		}
+	}
+	// Move on. Marking a run of rows should cost one key per row, not a key and
+	// an arrow, which is how every file manager has done it for thirty years.
+	// Only after staging: un-staging is a correction, and moving away from a
+	// correction is the wrong direction.
+	m = m.restage()
+	moved := false
+	m, moved = m.advanceCursor()
+
+	undo := toggleKey(permanent) + " again undoes it"
+	if moved {
+		undo = "↑ then " + toggleKey(permanent) + " undoes it"
+	}
+	m.flash = "staged: delete " + what + " " + where + " · " + undo
 	return m
 }
 
-func (m Model) updateDeleteConfirm(key string) Model {
-	switch key {
-	case "y", "Y", "enter":
-		kind := edit.DeleteEntry
-		if m.editFolderTarget {
-			kind = edit.DeleteGroup
-		}
-		op := edit.Op{
-			Kind: kind, Source: m.editSource, Target: m.editTarget,
-			Perm: m.editPerm || !m.binEnabled(m.editSource),
-		}
-		if !m.editFolderTarget {
-			if d, err := m.handles[m.editSource].EntryDraft(m.editTarget); err == nil {
-				op.Before = &d
-			}
-		}
-		m.chg, _ = m.chg.Add(op)
-		m.flash = "staged — nothing is written until you save"
+// advanceCursor steps one row down whichever list has focus, and reports whether
+// it actually moved — at the end of a list it stays, and the caller has to know,
+// because a hint that names a key for "the row above" is a lie if there is none.
+func (m Model) advanceCursor() (Model, bool) {
+	// Only in a list. In the entry-detail split there is nothing to advance
+	// through — moving the selection swaps the entry the pane is rendering
+	// while the reader believes they are still looking at the one they marked,
+	// which is a plausible route to copying the wrong password. In the results
+	// list the move is to the tree cursor, which is not even on screen.
+	if m.detail || m.showResults() {
+		return m, false
 	}
-	m.edit = editNone
-	return m
+	if m.focus == 1 {
+		if f := m.currentFolder(); f != nil && m.esel < len(f.entries)-1 {
+			m.esel++
+			return m, true
+		}
+		return m, false
+	}
+	if m.tsel < len(m.visible())-1 {
+		m.tsel, m.esel = m.tsel+1, 0
+		return m, true
+	}
+	return m, false
+}
+
+// toggleKey is the key that staged this deletion, so the hint names the key the
+// reader just pressed rather than a general one.
+func toggleKey(permanent bool) string {
+	if permanent {
+		return "D"
+	}
+	return "d"
+}
+
+// describes appends a name to a message when there is one worth showing.
+func describes(name string) string {
+	if name == "" {
+		return ""
+	}
+	return ": " + name
+}
+
+// stagedDeletion is the deletion staged against a target, if any. It is what
+// makes the delete key a toggle.
+func (m Model) stagedDeletion(target string) (edit.Op, bool) {
+	for _, op := range m.chg.Effective() {
+		if op.Target != target {
+			continue
+		}
+		if op.Kind == edit.DeleteEntry || op.Kind == edit.DeleteGroup {
+			return op, true
+		}
+	}
+	return edit.Op{}, false
 }
 
 // binEnabled reports whether the source keeps deleted items in a recycle bin.
 func (m Model) binEnabled(source string) bool {
 	h := m.handles[source]
 	return h != nil && h.RecycleBinEnabled()
-}
-
-// deleteConfirmView says what will actually happen — which is not always what
-// the key implies. With the recycle bin switched off, a "move to bin" delete is
-// a permanent one, and a prompt that did not say so would be lying.
-func (m Model) deleteConfirmView() string {
-	what := "entry"
-	if m.editFolderTarget {
-		what = "folder and everything in it"
-	}
-	permanent := m.editPerm || !m.binEnabled(m.editSource)
-
-	lines := []string{"", "  " + theme.Strong.Render("Delete this "+what+"?"), ""}
-	if permanent {
-		lines = append(lines,
-			"  "+theme.Bad.Render("PERMANENTLY")+theme.Dimmed.Render(" — it cannot be recovered from the file"))
-		if !m.editPerm {
-			lines = append(lines,
-				"  "+theme.Faded.Render("this database has its recycle bin switched off"))
-		}
-	} else {
-		lines = append(lines, "  "+theme.Dimmed.Render("into the recycle bin, where it can be restored"))
-	}
-	lines = append(lines, "", "  "+theme.Faded.Render("staged only — nothing is written until you save"), "")
-	return m.modal("Delete", m.editSource, lines, "y stage · n cancel")
 }
 
 // openMovePicker chooses a destination folder.
@@ -302,14 +440,41 @@ func (m Model) openMovePicker(target string, isFolder bool) Model {
 	return m
 }
 
-// moveDestinations lists the folders in the same source.
+// moveDestinations lists the folders in the same source that the target could
+// actually go to: not itself, and not where it already is.
 func (m Model) moveDestinations() []vaultFolderRef {
+	home := m.homeOf(m.editTarget)
+
+	// A folder cannot be moved inside itself, and the guard for that lived in
+	// the vault — after the review and the confirmation. The picker is where a
+	// destination stops being offered.
+	inside := m.editFolderTarget && m.editTarget != ""
+	targetPath := ""
+	if inside {
+		if f, ok := m.folderByID(m.editTarget); ok {
+			targetPath = f.Path
+		}
+	}
+
 	var out []vaultFolderRef
 	var walk func(ns []*node, depth int)
 	walk = func(ns []*node, depth int) {
 		for _, n := range ns {
-			if n.source == m.editSource && n.id != "" && n.id != m.editTarget {
-				out = append(out, vaultFolderRef{id: n.id, label: strings.Repeat("  ", depth) + n.name})
+			ok := n.source == m.editSource && n.id != "" && n.id != m.editTarget && n.id != home
+			if ok && targetPath != "" && strings.HasPrefix(m.pathOfNode(n), targetPath+"/") {
+				ok = false // its own descendant
+			}
+			if ok {
+				if _, doomed := m.doomedParent(n.id); doomed {
+					ok = false // about to stop existing
+				}
+			}
+			if ok {
+				out = append(out, vaultFolderRef{
+					id:    n.id,
+					label: strings.Repeat("  ", depth) + n.name,
+					path:  strings.ReplaceAll(m.pathOfNode(n), "/", " › "),
+				})
 			}
 			walk(n.children, depth+1)
 		}
@@ -318,9 +483,26 @@ func (m Model) moveDestinations() []vaultFolderRef {
 	return out
 }
 
+// homeOf is the folder something is in now — offering it as a destination is
+// offering to do nothing.
+func (m Model) homeOf(id string) string {
+	for _, e := range m.viewEntries {
+		if e.ID == id {
+			return e.GroupID
+		}
+	}
+	for _, f := range m.viewFolders {
+		if f.ID == id {
+			return f.ParentID
+		}
+	}
+	return ""
+}
+
 type vaultFolderRef struct {
 	id    string
-	label string
+	label string // indented, for the picker
+	path  string // plain, for the messages
 }
 
 func (m Model) updateMovePicker(key string) Model {
@@ -342,10 +524,14 @@ func (m Model) updateMovePicker(key string) Model {
 		}
 		m.chg, _ = m.chg.Add(edit.Op{
 			Kind: kind, Source: m.editSource, Target: m.editTarget,
+			// The name travels with the operation: a review that cannot say
+			// what moved is not a review.
+			Name:   m.nameOfTarget(m.editTarget, m.editFolderTarget),
 			Parent: m.moveDests[m.moveSel].id,
 		})
-		m.flash = "staged — nothing is written until you save"
+		m.flash = "staged: move to " + m.moveDests[m.moveSel].path + " · nothing is written until you save"
 		m.edit = editNone
+		m = m.restage()
 	}
 	return m
 }
@@ -371,8 +557,6 @@ func (m Model) movePickerView() string {
 // editorView renders whichever editor surface is open.
 func (m Model) editorView() string {
 	switch m.edit {
-	case editDelete:
-		return m.deleteConfirmView()
 	case editMove:
 		return m.movePickerView()
 	}
@@ -423,8 +607,22 @@ func (m Model) editKey(key string) (Model, bool) {
 	}
 	m.editSource = source
 
-	entry := m.selEntry()
+	entry := m.editEntryTarget()
 	folderID, folderName := m.currentFolderID()
+
+	// In the results list the tree cursor is not on screen, so it cannot be the
+	// parent for anything created here: it belongs to whichever source the user
+	// last browsed, and staging against it produced ops whose source and parent
+	// came from different vaults. The result's own folder is the answer.
+	if m.showResults() {
+		folderID, folderName = "", ""
+		if entry != nil {
+			folderID = entry.GroupID
+			if f, ok := m.folderByID(folderID); ok {
+				folderName = f.Name
+			}
+		}
+	}
 
 	switch key {
 	case "e":
@@ -435,11 +633,9 @@ func (m Model) editKey(key string) (Model, bool) {
 			return m.openFolderEditor("", folderID, folderName), true
 		}
 	case "n":
-		if folderID != "" {
-			return m.openNewEntry(folderID), true
-		}
-		m.flash = "pick a folder to create the entry in"
-		return m, true
+		// An empty folder ID is the source's own root group, which is a real
+		// folder in the file even though the tree shows the source there.
+		return m.openNewEntry(folderID), true
 	case "N":
 		return m.openFolderEditor(folderID, "", ""), true
 	case "r":
@@ -449,10 +645,10 @@ func (m Model) editKey(key string) (Model, bool) {
 	case "d", "D":
 		perm := key == "D"
 		if entry != nil {
-			return m.openDeleteConfirm(entry.ID, false, perm), true
+			return m.stageDelete(entry.ID, entry.Title, false, perm), true
 		}
 		if folderID != "" {
-			return m.openDeleteConfirm(folderID, true, perm), true
+			return m.stageDelete(folderID, folderName, true, perm), true
 		}
 	case "m":
 		if entry != nil {
@@ -463,6 +659,24 @@ func (m Model) editKey(key string) (Model, bool) {
 		}
 	}
 	return m, true
+}
+
+// editEntryTarget is the entry an edit key acts on — and it is nil when the
+// cursor is in the tree.
+//
+// selEntry answers a different question: which entry is "current", which is the
+// selected row of the open folder's table whether or not the table has focus,
+// because that is what the copy keys and the detail pane want. Using it here
+// meant d on a folder row deleted an entry inside the folder instead of the
+// folder — the wrong object, silently, with no way to tell from the screen.
+func (m Model) editEntryTarget() *vault.Entry {
+	if m.showResults() {
+		return m.selEntry() // in the results list there are only entries
+	}
+	if m.focus != 1 {
+		return nil // the tree has focus: the folder under the cursor is the target
+	}
+	return m.selEntry()
 }
 
 // currentFolderID is the folder under the cursor, if the cursor is on one.

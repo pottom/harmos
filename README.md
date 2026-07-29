@@ -135,13 +135,13 @@ with `1` / `2` / `3` / `4`:
 
 - **Vault** — a collapsible source / folder tree, an entry table with a live
   search bar, and a detail pane (notes, custom fields, dates, attachments, TOTP).
+- **Changes** — edits you have staged but not written, as a diff, with per-change
+  revert. Empty until you unlock a source and change something.
 - **Generate** — a `crypto/rand` password generator with a strength bar, class
   breakdown, and recent-roll history (the same engine as `harmos gen`).
 - **Settings** — sources (add / edit / sync / save-password / remove), the live
   theme picker, Nerd Font toggle, and preferences (clipboard timeout, cache
   staleness), all persisted to the config.
-- **Changes** — edits you have staged but not written, as a diff, with per-change
-  revert. Empty until you unlock a source and change something.
 
 Press `?` for the full key map. The staples:
 
@@ -158,7 +158,7 @@ Press `?` for the full key map. The staples:
 | `ctrl+b` | Hide / show the folder tree pane |
 | `1` / `2` / `3` / `4` | Switch Vault / Changes / Generate / Settings tab |
 | `ctrl+w` | Unlock this source for editing (or lock it again) |
-| `e` · `n` / `N` · `d` / `D` · `m` / `r` | Edit · new entry / folder · delete to bin / permanently · move / rename |
+| `e` · `n` / `N` · `d` / `D` · `m` / `r` | Edit · new entry / folder · delete to bin / permanently (press again to undo) · move / rename |
 | `ctrl+s` | Review the staged changes and write them |
 | `?` / `q` | Help · quit (clears the clipboard) |
 
@@ -269,7 +269,7 @@ refused rather than overwriting it. KeePass history is written the way other
 clients expect, and deletions leave the tombstones a synchronising client needs.
 
 **KDBX 4.1** is supported through a patched copy of the kdbx library
-(`third_party/gokeepasslib`, offered upstream). A file harmos cannot round-trip
+(now upstream in gokeepasslib v3.7.0). A file harmos cannot round-trip
 without losing something is refused for writing, and it says which element it
 would have lost.
 

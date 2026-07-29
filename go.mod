@@ -11,7 +11,7 @@ require (
 	github.com/charmbracelet/x/exp/teatest v0.0.0-20260727090823-41c9e6be3365
 	github.com/minio/selfupdate v0.6.0
 	github.com/spf13/cobra v1.10.2
-	github.com/tobischo/gokeepasslib/v3 v3.6.2
+	github.com/tobischo/gokeepasslib/v3 v3.7.0
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/term v0.45.0
 )
@@ -41,18 +41,12 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/text v0.34.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 )
 
 require (
 	github.com/google/uuid v1.6.0
 	github.com/tobischo/argon2 v0.1.0 // indirect
-	golang.org/x/crypto v0.48.0 // indirect
+	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 )
-
-// The kdbx library is patched for KDBX 4.1 (docs/design/kdbx-4.1-support.md).
-// Upstream models none of the 4.1 elements and encoding/xml discards unknown
-// ones, so saving a 4.1 file silently drops data. Offered upstream; delete this
-// replace when it lands there.
-replace github.com/tobischo/gokeepasslib/v3 => ./third_party/gokeepasslib

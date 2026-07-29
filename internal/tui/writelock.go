@@ -221,7 +221,19 @@ func (m Model) changesPlaceholder() []string {
 // Generate's carries "crypto/rand".
 func (m Model) changesView() string {
 	panelsH := max(3, m.h-3)
-	body := m.changesBody(m.w - 4)
+	visible := max(1, panelsH-2)
+
+	// Measure with the same width the box will hand back, scrollbar and all —
+	// rows built a column too wide are rows drawn over the border.
+	rows := m.changeRows(m.w - 2)
+	inner := m.w - 2 - boolToInt(len(rows) > visible)
+	rows = m.changeRows(inner)
+
+	start := clampScroll(m.chgScroll, len(rows), visible)
+	body := m.renderChangeRows(rows, inner, start, visible)
+	if len(rows) == 0 {
+		body = m.changesPlaceholder()
+	}
 
 	note := ""
 	if m.dirtyCount() > 0 {
@@ -234,14 +246,19 @@ func (m Model) changesView() string {
 	ctx := ""
 	if m.remaining > 0 {
 		ctx = m.countdown()
-	} else if n := m.dirtyCount(); n > 0 {
-		ctx = theme.Faded.Render(trunc("^s writes "+m.chg.Summary(), m.w))
+	} else if n := m.permanentlyRemoved(); n > 0 {
+		// The tally on the border says how much. This line is kept for the part
+		// of it that no backup inside the file can undo.
+		ctx = trunc(" "+theme.Bad.Render(plural(n, "thing", "things")+" would be deleted permanently")+
+			theme.Faded.Render("  ·  ^s to review and write"), m.w)
+	} else if m.dirtyCount() > 0 {
+		ctx = trunc(" "+theme.Faded.Render("^s to review and write"), m.w)
 	}
 
 	return header + "\n" +
-		box("Changes", m.chg.Summary(), body, m.w, panelsH, true) + "\n" +
+		boxV("Changes", m.changesPanelInfo(), body, m.w, panelsH, true, len(rows), start, 0) + "\n" +
 		ctx + "\n" +
-		m.footer(theme.Faded.Render("↑↓ pick · x revert · ↵ go to it · ^s save · 1 back to the vault"))
+		m.footer(theme.Faded.Render("↑↓ move · PgUp/Dn page · z/Z fold · x revert · ↵ go to it · ^s write"))
 }
 
 // persistWritable records the choice in the config and returns the message to

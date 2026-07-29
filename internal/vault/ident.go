@@ -164,7 +164,19 @@ func (h *Handle) findEntry(id string) (*gokeepasslib.Group, *gokeepasslib.Entry,
 // findGroup resolves a group ID to the group and its parent. The parent is nil
 // for a root group, which is what makes "you cannot move or delete the root"
 // checkable.
+//
+// An empty ID means the root group. A source's root is a real KeePass group but
+// it has no row of its own in the read projection — the tree shows the *source*
+// there — so "the folder I am in" is legitimately empty when the cursor is at
+// the top, and creating something there has to work rather than fail with
+// "malformed id" at save time. Writability already guarantees exactly one root.
 func (h *Handle) findGroup(id string) (parent, group *gokeepasslib.Group, err error) {
+	if id == "" {
+		if len(h.db.Content.Root.Groups) != 1 {
+			return nil, nil, fmt.Errorf("no single root group")
+		}
+		return nil, &h.db.Content.Root.Groups[0], nil
+	}
 	if _, _, _, isGroup, perr := parseID(id); perr != nil {
 		return nil, nil, perr
 	} else if !isGroup {

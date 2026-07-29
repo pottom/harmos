@@ -91,7 +91,7 @@ func Map(zr *zip.Reader, meta Meta) (*Result, error) {
 		return nil, fmt.Errorf("parse manifest: %w", err)
 	}
 
-	db := gokeepasslib.NewDatabase(gokeepasslib.WithDatabaseKDBXVersion4())
+	db := gokeepasslib.NewDatabase(gokeepasslib.WithDatabaseKDBXVersion40())
 	db.Content.Meta.DatabaseName = "harmos cache"
 	db.Content.Meta.CustomData = append(db.Content.Meta.CustomData,
 		gokeepasslib.CustomData{Key: MetaSourceURL, Value: meta.SourceURL},

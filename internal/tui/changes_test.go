@@ -1,13 +1,17 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/pottom/harmos/internal/edit"
+	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/vault"
 )
 
@@ -222,3 +226,542 @@ func TestKeysAreIgnoredWhileSaving(t *testing.T) {
 }
 
 func vaultErrChangedUnderneath() error { return vault.ErrChangedUnderneath }
+
+// The tab files every change under the source and folder it actually lives in.
+// Everything used to land under one heading, because the model's merged view was
+// only populated by a reload.
+func TestChangesGroupedByWhereTheyLive(t *testing.T) {
+	m := stageAnEdit(t, editModel(t))
+	m = up(m, tabKey(tabChanges))
+
+	groups := m.groupChanges()
+	if len(groups) == 0 {
+		t.Fatal("a staged change should produce a group")
+	}
+	for _, g := range groups {
+		if g.source == "" {
+			t.Error("every group belongs to a source")
+		}
+		if g.path == "" {
+			t.Errorf("the change is in a folder, but it was filed at the root: %+v", g)
+		}
+	}
+
+	out := ansi.Strip(m.View())
+	if !strings.Contains(out, "›") && !strings.Contains(out, groups[0].path) {
+		t.Errorf("the folder should appear as a heading:\n%s", out)
+	}
+}
+
+// z folds what the cursor is on; Z folds the lot. Same keys as the vault tree.
+func TestChangesFolding(t *testing.T) {
+	m := up(stageAnEdit(t, editModel(t)), tabKey(tabChanges))
+
+	rows := m.changeRows(m.contentW())
+	full := len(rows)
+	hunks := 0
+	for _, r := range rows {
+		if r.kind == rowHunk {
+			hunks++
+		}
+	}
+	if hunks == 0 {
+		t.Fatal("an edit should show a hunk to fold")
+	}
+
+	m = up(m, key2("z")) // the cursor starts on the change
+	if got := len(m.changeRows(m.contentW())); got != full-hunks {
+		t.Errorf("z should hide this change's %d hunk rows: %d rows, was %d", hunks, got, full)
+	}
+	m = up(m, key2("z"))
+	if got := len(m.changeRows(m.contentW())); got != full {
+		t.Errorf("z again should bring them back: %d rows, want %d", got, full)
+	}
+
+	m = up(m, key2("Z"))
+	for _, r := range m.changeRows(m.contentW()) {
+		if r.kind == rowChange || r.kind == rowHunk {
+			t.Errorf("Z should fold every group, %q is still shown", r.text())
+		}
+	}
+	m = up(m, key2("Z"))
+	if got := len(m.changeRows(m.contentW())); got != full {
+		t.Errorf("Z again should open everything: %d rows, want %d", got, full)
+	}
+}
+
+// x on a folder heading takes back everything filed under it.
+func TestRevertAWholeGroup(t *testing.T) {
+	m := up(stageAnEdit(t, editModel(t)), tabKey(tabChanges))
+	if m.dirtyCount() == 0 {
+		t.Fatal("nothing staged to revert")
+	}
+
+	// Onto the heading above the change.
+	rows := m.changeRows(m.contentW())
+	for i, idx := range selectableRows(rows) {
+		if rows[idx].kind == rowFolder {
+			m.chgSel = i
+			break
+		}
+	}
+	m = up(m, key2("x"))
+	if m.dirtyCount() != 0 {
+		t.Errorf("x on a heading should revert its group, %d left", m.dirtyCount())
+	}
+	if !strings.Contains(m.flash, "reverted") {
+		t.Errorf("it should say what it did, got %q", m.flash)
+	}
+}
+
+// The state belongs to the name of the thing being deleted, and to nothing
+// else: the summary describes what will happen, and dressing it up as deleted
+// says it will not. The selection must not smear either across the row.
+func TestOnlyTheNameCarriesTheState(t *testing.T) {
+	c := edit.Change{State: edit.Deleted, Kind: edit.DeleteEntry, Title: "PrismaCloud",
+		Detail: "moved to the recycle bin"}
+	segs := changeHeading(c, false, "", 80)
+
+	var name, detail rowSeg
+	for _, s := range segs {
+		switch {
+		case strings.Contains(s.text, "PrismaCloud"):
+			name = s
+		case strings.Contains(s.text, "recycle bin"):
+			detail = s
+		}
+	}
+	if name.text == "" || detail.text == "" {
+		t.Fatalf("expected a name and a summary segment, got %+v", segs)
+	}
+	del, marker := changeStyle(edit.Deleted)
+	if name.style.GetForeground() != del.GetForeground() {
+		t.Error("the name of a deleted thing should carry the delete colour")
+	}
+	if !strings.Contains(name.text, strings.TrimSpace(marker)) {
+		t.Errorf("and its marker, which is the signal readers without colour get: %q", name.text)
+	}
+	if detail.style.GetForeground() == del.GetForeground() {
+		t.Error("the summary is not the thing being deleted")
+	}
+	// Nothing is struck through any more: a line through the text you are
+	// reading in order to decide is a poor trade for a signal carried twice.
+	if name.style.GetStrikethrough() || detail.style.GetStrikethrough() {
+		t.Error("the review should not strike anything through")
+	}
+
+	// Under the cursor the row keeps both: nothing is re-styled, a background is
+	// put behind what is already there.
+	row := changeRow{kind: rowChange, segs: segs}
+	plain, selected := row.render(80, false), row.render(80, true)
+	if ansiStrip(plain) != ansiStrip(selected) {
+		t.Errorf("selection changed the text:\n%q\n%q", ansiStrip(plain), ansiStrip(selected))
+	}
+}
+
+// A folder and an entry with the same name are very different things to be
+// deleting, so the row says which it is.
+func TestChangeRowsNameTheKindOfThing(t *testing.T) {
+	entry := changeHeading(edit.Change{State: edit.Deleted, Kind: edit.DeleteEntry, Title: "same"}, false, "", 60)
+	group := changeHeading(edit.Change{State: edit.Deleted, Kind: edit.DeleteGroup, Title: "same"}, false, "", 60)
+
+	var eText, gText string
+	for _, s := range entry {
+		eText += s.text
+	}
+	for _, s := range group {
+		gText += s.text
+	}
+	if eText == gText {
+		t.Errorf("an entry and a folder render identically: %q", eText)
+	}
+	i := ic()
+	if !strings.Contains(eText, i.entry) {
+		t.Errorf("an entry change should carry the entry icon: %q", eText)
+	}
+	if !strings.Contains(gText, i.folder) {
+		t.Errorf("a folder change should carry the folder icon: %q", gText)
+	}
+}
+
+// Nothing is hidden from the review, however long it runs, so the pane has to
+// scroll on its own — the cursor only stops on changes, and everything between
+// them is what the reader is about to approve.
+func TestChangesScrollsThroughEverything(t *testing.T) {
+	entries := make([]vault.Entry, 0, 60)
+	for i := range 60 {
+		entries = append(entries, vault.Entry{
+			ID: fmt.Sprintf("s:%d", i), GroupID: "s:g:1", Source: "s", Path: "Big",
+			Title: fmt.Sprintf("entry-%02d", i), Password: secret.New("p"),
+		})
+	}
+	m := up(New(entries, []vault.Folder{{ID: "s:g:1", Source: "s", Path: "Big", Name: "Big"}},
+		"", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.writeOK = map[string]bool{"s": true} // staged by hand; the UI would have unlocked it
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "s:g:1", Name: "Big"})
+	m = m.switchTab(tabChanges)
+
+	rows := m.changeRows(m.contentW())
+	if len(rows) < 60 {
+		t.Fatalf("every entry going with the folder should be listed, got %d rows", len(rows))
+	}
+	for _, e := range entries {
+		found := false
+		for _, r := range rows {
+			if strings.Contains(r.text(), e.Title) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("%q is being deleted but is not in the review", e.Title)
+		}
+	}
+
+	// PageDown reaches the end; the last row is visible there.
+	visible := m.changesVisibleRows()
+	for range 20 {
+		m = up(m, tea.KeyMsg{Type: tea.KeyPgDown})
+	}
+	if m.chgScroll+visible < len(rows) {
+		t.Errorf("paging down should reach the end: offset %d of %d rows", m.chgScroll, len(rows))
+	}
+	last := ansiStrip(rows[len(rows)-1].text())
+	if !strings.Contains(ansi.Strip(m.View()), strings.TrimSpace(last)) {
+		t.Errorf("the last row should be on screen after paging to the end:\n%s", ansi.Strip(m.View()))
+	}
+
+	// And the wheel does the same, without moving the cursor.
+	before := m.chgSel
+	m = up(m, tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	if m.chgScroll == 0 {
+		t.Error("the wheel should scroll back up")
+	}
+	if m.chgSel != before {
+		t.Error("the wheel scrolls the review; it does not move the cursor")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyHome})
+	if m.chgScroll != 0 {
+		t.Errorf("home should go to the top, offset %d", m.chgScroll)
+	}
+}
+
+// Folding is worked by the tree's keys, because it is the tree's idea.
+func TestChangesFoldsWithTheTreeKeys(t *testing.T) {
+	m := up(stageAnEdit(t, editModel(t)), tabKey(tabChanges))
+	rowsOf := func(m Model) int { return len(m.changeRows(m.contentW())) }
+	full := rowsOf(m)
+
+	m = up(m, tea.KeyMsg{Type: tea.KeyLeft}) // close this change
+	folded := rowsOf(m)
+	if folded >= full {
+		t.Fatalf("← should close the change under the cursor: %d rows, was %d", folded, full)
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyRight}) // and open it again
+	if got := rowsOf(m); got != full {
+		t.Errorf("→ should open it: %d rows, want %d", got, full)
+	}
+
+	// ← from something already closed steps out to the heading.
+	m = up(m, tea.KeyMsg{Type: tea.KeyLeft}) // close
+	m = up(m, tea.KeyMsg{Type: tea.KeyLeft}) // step out
+	rows := m.changeRows(m.contentW())
+	if cur := rows[m.chgCursor(rows)]; cur.kind != rowFolder {
+		t.Errorf("a second ← should land on the folder heading, got kind %v", cur.kind)
+	}
+
+	// ⇧← closes the heading and everything under it; ⇧→ opens the lot.
+	m = up(m, tea.KeyMsg{Type: tea.KeyShiftLeft})
+	for _, r := range m.changeRows(m.contentW()) {
+		if r.kind == rowChange || r.kind == rowHunk {
+			t.Errorf("⇧← should close the whole folder, %q is still shown", r.text())
+		}
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyShiftRight})
+	if got := rowsOf(m); got != full {
+		t.Errorf("⇧→ should open it all: %d rows, want %d", got, full)
+	}
+
+	// → from an open heading steps into it.
+	m = m.selectHeadingOf(m.changeRows(m.contentW()), changeRow{})
+	rows = m.changeRows(m.contentW())
+	for i, idx := range selectableRows(rows) {
+		if rows[idx].kind == rowFolder {
+			m.chgSel = i
+			break
+		}
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyRight})
+	rows = m.changeRows(m.contentW())
+	if cur := rows[m.chgCursor(rows)]; cur.kind != rowChange {
+		t.Errorf("→ on an open heading should step into it, got kind %v", cur.kind)
+	}
+}
+
+// The help on this tab describes this tab. It used to show the vault's keys.
+func TestChangesHelpIsItsOwn(t *testing.T) {
+	m := up(testModel(), tabKey(tabChanges))
+	out := strings.Join(m.keyList(60), "\n")
+	for _, want := range []string{"revert", "fold", "scroll"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the Changes help should mention %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "save attachments") {
+		t.Errorf("it should not be the vault's list:\n%s", out)
+	}
+}
+
+// The arrows walk every row, so everything in the review can be reached the way
+// anyone would first try to reach it.
+func TestArrowsWalkEveryRow(t *testing.T) {
+	entries := make([]vault.Entry, 0, 40)
+	for i := range 40 {
+		entries = append(entries, vault.Entry{
+			ID: fmt.Sprintf("s:%d", i), GroupID: "s:g:1", Source: "s", Path: "Big",
+			Title: fmt.Sprintf("entry-%02d", i), Password: secret.New("p"),
+		})
+	}
+	m := up(New(entries, []vault.Folder{{ID: "s:g:1", Source: "s", Path: "Big", Name: "Big"}},
+		"", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 20})
+	m.writeOK = map[string]bool{"s": true} // staged by hand; the UI would have unlocked it
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "s:g:1", Name: "Big"})
+	m = m.switchTab(tabChanges)
+
+	rows := m.changeRows(m.contentW())
+	start := m.chgScroll
+	for range len(rows) {
+		m = up(m, tea.KeyMsg{Type: tea.KeyDown})
+	}
+	if m.chgScroll <= start {
+		t.Error("holding ↓ should scroll the review, not stop at the first change")
+	}
+	last := strings.TrimSpace(ansiStrip(rows[len(rows)-1].text()))
+	if !strings.Contains(ansi.Strip(m.View()), last) {
+		t.Errorf("↓ should reach the last row:\n%s", ansi.Strip(m.View()))
+	}
+
+	// And the keys still act on the change the cursor is inside, not on the
+	// line it happens to be standing on.
+	if cur := m.contextRow(m.changeRows(m.contentW())); cur.kind != rowChange {
+		t.Errorf("deep inside a listing, the context should still be the change, got %v", cur.kind)
+	}
+	m = up(m, key2("x"))
+	if m.dirtyCount() != 0 {
+		t.Errorf("x from inside a change should revert it, %d left", m.dirtyCount())
+	}
+}
+
+// What a folder deletion takes is a tree, and reads as one: a flat list of
+// folders followed by a flat list of entries says what is going but not what is
+// inside what.
+func TestDoomedContentsAreATree(t *testing.T) {
+	m := up(New([]vault.Entry{
+		{ID: "e1", Source: "s", Path: "top", Title: "loose", Password: secret.New("p")},
+		{ID: "e2", Source: "s", Path: "top/sub", Title: "nested", Password: secret.New("p")},
+		{ID: "e3", Source: "s", Path: "top/sub/deep", Title: "buried", Password: secret.New("p")},
+	}, []vault.Folder{
+		{ID: "g1", Source: "s", Path: "top", Name: "top"},
+		{ID: "g2", Source: "s", Path: "top/sub", Name: "sub"},
+		{ID: "g3", Source: "s", Path: "top/sub/deep", Name: "deep"},
+	}, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 26})
+	m.writeOK = map[string]bool{"s": true} // staged by hand; the UI would have unlocked it
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "g1", Name: "top"})
+	m = m.switchTab(tabChanges)
+
+	indent := map[string]int{}
+	for _, r := range m.changeRows(m.contentW()) {
+		text := r.text()
+		for _, name := range []string{"sub", "deep", "nested", "buried", "loose"} {
+			if strings.HasSuffix(strings.TrimRight(text, " "), name) {
+				indent[name] = strings.Index(text, name) // how far in the name starts
+			}
+		}
+	}
+	for _, name := range []string{"sub", "deep", "nested", "buried", "loose"} {
+		if _, ok := indent[name]; !ok {
+			t.Fatalf("%q is being deleted but is not in the review", name)
+		}
+	}
+	if indent["deep"] <= indent["sub"] {
+		t.Errorf("a sub-folder should sit under its parent: sub=%d deep=%d", indent["sub"], indent["deep"])
+	}
+	if indent["nested"] <= indent["sub"] {
+		t.Errorf("an entry should sit under its folder: sub=%d nested=%d", indent["sub"], indent["nested"])
+	}
+	if indent["buried"] <= indent["deep"] {
+		t.Errorf("and at whatever depth it lives: deep=%d buried=%d", indent["deep"], indent["buried"])
+	}
+	if indent["loose"] >= indent["nested"] {
+		t.Errorf("an entry in the deleted folder itself is not nested: loose=%d nested=%d",
+			indent["loose"], indent["nested"])
+	}
+}
+
+// The write confirmation counts what a save does to the vault, not how many
+// operations it took to say it. One keystroke on a folder can remove forty
+// entries, and this is the last screen before it happens.
+func TestWriteConfirmationCountsThings(t *testing.T) {
+	var ents []vault.Entry
+	for i := range 12 {
+		ents = append(ents, vault.Entry{ID: fmt.Sprintf("e%d", i), Source: "own", Path: "doomed/sub",
+			Title: fmt.Sprintf("entry-%d", i), Password: secret.New("p")})
+	}
+	m := up(New(ents, []vault.Folder{
+		{ID: "g1", Source: "own", Path: "doomed", Name: "doomed"},
+		{ID: "g2", Source: "own", Path: "doomed/sub", Name: "sub"},
+	}, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 30})
+	m.writeOK = map[string]bool{"own": true} // staged by hand; the UI would have unlocked it
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "own", Target: "g1", Name: "doomed", Perm: true})
+
+	im := m.impactOf("own")
+	if im.folders != 2 {
+		t.Errorf("the folder and its sub-folder go: counted %d", im.folders)
+	}
+	if im.entries != 12 {
+		t.Errorf("every entry inside goes: counted %d", im.entries)
+	}
+	if im.permanent != 14 {
+		t.Errorf("all of it permanently: counted %d", im.permanent)
+	}
+
+	m, _ = m.switchTab(tabChanges).askToSave()
+	out := ansi.Strip(m.View())
+	if !strings.Contains(out, "14 things deleted permanently") {
+		t.Errorf("the confirmation should count the things, not the operations:\n%s", out)
+	}
+	if !strings.Contains(out, "12 entries") {
+		t.Errorf("and say what they are:\n%s", out)
+	}
+	if m.confirmSel != 1 {
+		t.Error("a permanent deletion should leave the cursor on Cancel")
+	}
+}
+
+// A folder staged inside another staged folder must not be counted twice.
+func TestImpactDoesNotDoubleCount(t *testing.T) {
+	m := up(New([]vault.Entry{
+		{ID: "e1", Source: "s", Path: "top/sub", Title: "one", Password: secret.New("p")},
+	}, []vault.Folder{
+		{ID: "g1", Source: "s", Path: "top", Name: "top"},
+		{ID: "g2", Source: "s", Path: "top/sub", Name: "sub"},
+	}, "", 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 24})
+	m.writeOK = map[string]bool{"s": true} // staged by hand; the UI would have unlocked it
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "g1", Name: "top"})
+	m.writeOK = map[string]bool{"s": true} // staged by hand; the UI would have unlocked it
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "g2", Name: "sub"})
+
+	im := m.impactOf("s")
+	if im.folders != 2 || im.entries != 1 {
+		t.Errorf("counted %d folders and %d entries, want 2 and 1", im.folders, im.entries)
+	}
+}
+
+// The border carries the tally: what the session comes to, in the things a
+// vault is made of. The operation count ("own: 2") says how much typing
+// happened, which is nobody's question.
+func TestChangesShowsTheImpactStat(t *testing.T) {
+	t.Setenv("HARMOS_NERDFONT", "0")
+	var ents []vault.Entry
+	for i := range 6 {
+		ents = append(ents, vault.Entry{ID: fmt.Sprintf("e%d", i), Source: "own", Path: "doomed",
+			Title: fmt.Sprintf("entry-%d", i), Password: secret.New("p")})
+	}
+	ents = append(ents, vault.Entry{ID: "k", Source: "own", Path: "Other", Title: "kept", Password: secret.New("p")})
+
+	m := up(New(ents, []vault.Folder{
+		{ID: "g1", Source: "own", Path: "doomed", Name: "doomed"},
+		{ID: "g2", Source: "own", Path: "Other", Name: "Other"},
+	}, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 24})
+	m.writeOK = map[string]bool{"own": true} // staged by hand; the UI would have unlocked it
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "own", Target: "g1", Name: "doomed"})
+	m.writeOK = map[string]bool{"own": true} // staged by hand; the UI would have unlocked it
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.EditEntry, Source: "own", Target: "k",
+		Before: &edit.Draft{ID: "k", Title: "kept"}, After: &edit.Draft{ID: "k", Title: "kept!"}})
+	m = m.switchTab(tabChanges)
+
+	i := ic()
+	tally := ansi.Strip(m.impactTally())
+	if !strings.Contains(tally, "~1") {
+		t.Errorf("one entry changed: %q", tally)
+	}
+	if !strings.Contains(tally, "-1"+i.folder) || !strings.Contains(tally, "6"+i.entry) {
+		t.Errorf("one folder and the six entries inside it go: %q", tally)
+	}
+	if out := ansi.Strip(m.View()); !strings.Contains(out, tally) {
+		t.Errorf("the tally belongs on the panel border:\n%s", out)
+	}
+}
+
+// The page keys move the cursor a page, as they do in every other list here.
+func TestChangesPageKeysMoveTheCursor(t *testing.T) {
+	var ents []vault.Entry
+	for i := range 40 {
+		ents = append(ents, vault.Entry{ID: fmt.Sprintf("e%d", i), Source: "s", Path: "Big",
+			Title: fmt.Sprintf("entry-%02d", i), Password: secret.New("p")})
+	}
+	m := up(New(ents, []vault.Folder{{ID: "g1", Source: "s", Path: "Big", Name: "Big"}},
+		"", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 20})
+	m.writeOK = map[string]bool{"s": true} // staged by hand; the UI would have unlocked it
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "g1", Name: "Big"})
+	m = m.switchTab(tabChanges)
+
+	page := m.changesVisibleRows()
+	before := m.chgSel
+	m = up(m, tea.KeyMsg{Type: tea.KeyPgDown})
+	if m.chgSel != before+page {
+		t.Errorf("PgDn should move the cursor a page: %d → %d, page is %d", before, m.chgSel, page)
+	}
+	// And the cursor is still on screen after it.
+	rows := m.changeRows(m.contentW())
+	cur := m.chgCursor(rows)
+	if cur < m.chgScroll || cur >= m.chgScroll+page {
+		t.Errorf("the cursor left the window: row %d, window %d..%d", cur, m.chgScroll, m.chgScroll+page)
+	}
+
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnd})
+	if got := m.chgCursor(m.changeRows(m.contentW())); got != len(rows)-1 {
+		t.Errorf("end should land on the last row: %d of %d", got, len(rows))
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyPgUp})
+	if m.chgSel == 0 {
+		t.Error("one PgUp from the end should not jump to the top")
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyHome})
+	if m.chgSel != 0 || m.chgScroll != 0 {
+		t.Errorf("home should go to the top: sel %d scroll %d", m.chgSel, m.chgScroll)
+	}
+}
+
+// The tally is compact enough to survive a session with everything in it.
+func TestImpactTallyStaysShort(t *testing.T) {
+	var ents []vault.Entry
+	for i := range 26 {
+		ents = append(ents, vault.Entry{ID: fmt.Sprintf("e%d", i), Source: "s", Path: "doomed",
+			Title: fmt.Sprintf("entry-%d", i), Password: secret.New("p")})
+	}
+	ents = append(ents, vault.Entry{ID: "k", Source: "s", Path: "Other", Title: "kept", Password: secret.New("p")})
+	m := up(New(ents, []vault.Folder{
+		{ID: "g1", Source: "s", Path: "doomed", Name: "doomed"},
+		{ID: "g2", Source: "s", Path: "Other", Name: "Other"},
+	}, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 24})
+
+	m.writeOK = map[string]bool{"s": true} // staged by hand; the UI would have unlocked it
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "g1", Name: "doomed"})
+	m.writeOK = map[string]bool{"s": true} // staged by hand; the UI would have unlocked it
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.EditEntry, Source: "s", Target: "k",
+		Before: &edit.Draft{ID: "k", Title: "kept"}, After: &edit.Draft{ID: "k", Title: "kept!"}})
+	m.writeOK = map[string]bool{"s": true} // staged by hand; the UI would have unlocked it
+	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.CreateEntry, Source: "s", Target: "new", Parent: "g2",
+		After: &edit.Draft{ID: "new", GroupID: "g2", Title: "new"}})
+
+	tally := ansi.Strip(m.impactTally())
+	if dw(tally) > 24 {
+		t.Errorf("the tally has to fit a panel border, it is %d cells: %q", dw(tally), tally)
+	}
+	for _, want := range []string{"+1", "~1", "-1", "26"} {
+		if !strings.Contains(tally, want) {
+			t.Errorf("the tally should carry %q: %q", want, tally)
+		}
+	}
+}
