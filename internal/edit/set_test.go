@@ -1,8 +1,10 @@
 package edit
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 func draft(title string) *Draft { return &Draft{Title: title} }
@@ -321,5 +323,34 @@ func TestStatesHaveNonColourCues(t *testing.T) {
 	}
 	if Unchanged.String() != "" {
 		t.Error("the unchanged state should render as nothing")
+	}
+}
+
+// The review is drawn several times per keystroke, so it cannot re-reduce the
+// log per change. It used to: changeOf asked StateOf, which asked State, which
+// reduced everything again — quadratic in the number of staged changes.
+func TestDiffReducesOncePerCall(t *testing.T) {
+	var s Set
+	for i := range 400 {
+		id := fmt.Sprintf("s:e%03d", i)
+		s, _ = s.Add(Op{Kind: EditEntry, Source: "s", Target: id,
+			Before: &Draft{ID: id, Title: "before"}, After: &Draft{ID: id, Title: "after"}})
+	}
+
+	start := time.Now()
+	changes := s.Diff()
+	took := time.Since(start)
+
+	if len(changes) != 400 {
+		t.Fatalf("expected 400 changes, got %d", len(changes))
+	}
+	// Generous by two orders of magnitude against the quadratic version, which
+	// took ~60ms here, so this fails on the shape rather than on the machine.
+	if took > 20*time.Millisecond {
+		t.Errorf("reviewing 400 staged changes took %v — the reduction is being repeated", took)
+	}
+	// And it still says the right thing.
+	if changes[0].State != Modified || changes[0].Title != "after" {
+		t.Errorf("first change reads wrong: %+v", changes[0])
 	}
 }

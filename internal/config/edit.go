@@ -120,12 +120,46 @@ func SourceExists(path, name string) (bool, error) {
 // an existing one when overwrite is true (rewriting only that block). It returns
 // "added" or "updated".
 func WriteKdbxSource(path, name, kdbxPath, keyfile string, overwrite bool) (string, error) {
+	if err := ValidSourceName(name); err != nil {
+		return "", err
+	}
 	return upsert(path, name, buildKdbxBlock(name, kdbxPath, keyfile), overwrite)
 }
 
 // WritePleasantSource is WriteKdbxSource for a Pleasant source.
 func WritePleasantSource(path, name, url, user, cache, caBundle string, overwrite bool) (string, error) {
+	if err := ValidSourceName(name); err != nil {
+		return "", err
+	}
 	return upsert(path, name, buildPleasantBlock(name, url, user, cache, caBundle), overwrite)
+}
+
+// ValidSourceName rejects a name that would break something downstream.
+//
+// A source name is not only a label: every identity harmos hands out is
+// "<name>:<base64 uuid>" for an entry and "<name>:g:<…>" for a folder, with a
+// "#n" suffix for a duplicated UUID. A name containing ":" or "#" makes every
+// one of those ambiguous, and the failure is delayed and total — the interface
+// stages changes happily and then every save of that source fails forever with
+// "malformed id", with nothing in the program able to repair it but an edit to
+// the config file.
+//
+// The rest are the ordinary ones: a name is used in messages, in the keyring
+// account, and as a directory-adjacent filename for the cache keyfile.
+func ValidSourceName(name string) error {
+	switch {
+	case strings.TrimSpace(name) == "":
+		return errors.New("a source needs a name")
+	case name != strings.TrimSpace(name):
+		return errors.New("a source name cannot start or end with a space")
+	case strings.ContainsAny(name, ":#"):
+		return errors.New(`a source name cannot contain ":" or "#" — they separate the parts of an entry's identity`)
+	case strings.ContainsAny(name, "/\\"):
+		return errors.New("a source name cannot contain a path separator")
+	case strings.ContainsFunc(name, func(r rune) bool { return r < ' ' || r == 0x7f }):
+		return errors.New("a source name cannot contain control characters")
+	}
+	return nil
 }
 
 // RemoveSource deletes a source's block (and a top-level default that named it),

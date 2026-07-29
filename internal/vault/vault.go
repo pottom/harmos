@@ -188,8 +188,8 @@ func entryFrom(db *gokeepasslib.Database, e *gokeepasslib.Entry, source, id, gro
 		URL:      oneline(e.GetContent("URL")),
 		Tags:     splitTags(e.Tags),
 		Password: secret.New(e.GetPassword()),
-		TOTP:     e.GetContent("otp"),
-		Notes:    e.GetContent("Notes"),
+		TOTP:     oneline(e.GetContent("otp")),
+		Notes:    multiline(e.GetContent("Notes")),
 		Custom:   customFields(e),
 		Created:  timeOf(e.Times.CreationTime),
 		Modified: timeOf(e.Times.LastModificationTime),
@@ -201,9 +201,35 @@ func entryFrom(db *gokeepasslib.Database, e *gokeepasslib.Entry, source, id, gro
 // oneline flattens a display string to a single line: control characters
 // (newlines/tabs, e.g. a Pleasant folder name that embeds a newline) become
 // spaces, so a value can never break the TUI layout.
+// OneLine is oneline for callers outside this package that render the same rows.
+func OneLine(s string) string { return oneline(s) }
+
+// MultiLine is multiline, likewise.
+func MultiLine(s string) string { return multiline(s) }
+
 func oneline(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r < ' ' {
+			return ' '
+		}
+		return r
+	}, s)
+}
+
+// multiline is oneline for a value whose line breaks are the point.
+//
+// Notes are rendered as lines — the review diffs them line by line — so
+// flattening them would destroy what is being shown. Everything else in C0 still
+// goes: a tab measures one cell to ansi.StringWidth and eight to the terminal,
+// and an ESC is a command to the terminal rather than text. A vault file is
+// input like any other, and "\x1b[2J" in a note clears the screen it is being
+// drawn on.
+func multiline(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\n':
+			return r
+		case r < ' ' || r == 0x7f:
 			return ' '
 		}
 		return r
@@ -266,7 +292,11 @@ func splitTags(s string) []string {
 	}
 	// KeePass stores tags separated by ";" (harmos) or ","; accept both.
 	f := func(r rune) bool { return r == ';' || r == ',' }
-	return strings.FieldsFunc(s, f)
+	tags := strings.FieldsFunc(oneline(s), f)
+	for i := range tags {
+		tags[i] = strings.TrimSpace(tags[i])
+	}
+	return tags
 }
 
 func buildCredentials(c Credentials) (*gokeepasslib.DBCredentials, error) {

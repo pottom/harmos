@@ -136,10 +136,16 @@ func project(entries []vault.Entry, folders []vault.Folder, set edit.Set) ([]vau
 // everything else in the tree — and it is never a source for a write: the write
 // applies the draft, not this.
 func entryFromDraft(source, path string, d edit.Draft) vault.Entry {
+	// Sanitised the same way the reader sanitises what it takes off the file:
+	// these rows are rendered by the same code, and a staged value is no more
+	// trustworthy than a stored one. It happened to hold anyway — the text
+	// widget strips control runes on the way in — but by accident rather than
+	// by construction, and the editor is not the only way a draft can be built.
 	e := vault.Entry{
 		ID: d.ID, GroupID: d.GroupID, Source: source, Path: path,
-		Title: d.Title, Username: d.Username, URL: d.URL, Notes: d.Notes,
-		Password: d.Password, TOTP: d.TOTP,
+		Title: vault.OneLine(d.Title), Username: vault.OneLine(d.Username),
+		URL: vault.OneLine(d.URL), Notes: vault.MultiLine(d.Notes),
+		Password: d.Password, TOTP: vault.OneLine(d.TOTP),
 	}
 	if e.Password.Reveal() == "" {
 		e.Password = secret.New("")

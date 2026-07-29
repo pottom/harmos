@@ -559,3 +559,47 @@ func TestCheapRefusalSkipsTheProof(t *testing.T) {
 		t.Error("the proof should not have run for an already-refused file")
 	}
 }
+
+// A truncated kdbx must not kill the program.
+//
+// The library indexes its own buffer with lengths read out of the file, so a
+// file that stops halfway makes it slice past the end. Opening a vault is the
+// first thing harmos does; a panic there takes the TUI down mid-unlock and
+// prints a stack trace over the CLI.
+func TestATruncatedFileIsAnErrorNotAPanic(t *testing.T) {
+	path := t.TempDir() + "/v.kdbx"
+	vaulttest.Write(t, path, vaulttest.RecycleBin())
+	full, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Every prefix, so nothing has to be guessed about which byte matters. The
+	// last block of a kdbx is padding, so the longest prefixes legitimately
+	// still open; what must never happen at any length is a panic.
+	for _, n := range []int{1, 100, 347, len(full) / 4, len(full) / 2, len(full) - 64, len(full) - 1} {
+		cut := filepath.Join(t.TempDir(), "cut.kdbx")
+		if err := os.WriteFile(cut, full[:n], 0o600); err != nil {
+			t.Fatal(err)
+		}
+		h, err := OpenHandle(cut, "own", Credentials{Password: secret.New("pw")})
+		switch {
+		case err == nil && h == nil:
+			t.Errorf("%d bytes: neither a handle nor an error", n)
+		case err != nil && strings.Contains(err.Error(), "not a readable kdbx"):
+			// what a broken file should produce
+		case err != nil:
+			// some other honest error — a bad HMAC, a short header
+		}
+	}
+	// And the sizes that are unambiguously not a kdbx do say so.
+	for _, n := range []int{1, 100, 347, len(full) / 2} {
+		cut := filepath.Join(t.TempDir(), "cut.kdbx")
+		if err := os.WriteFile(cut, full[:n], 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := OpenHandle(cut, "own", Credentials{Password: secret.New("pw")}); err == nil {
+			t.Errorf("%d bytes of a kdbx opened without complaint", n)
+		}
+	}
+}

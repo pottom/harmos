@@ -110,7 +110,7 @@ func roundTripLoss(db *gokeepasslib.Database, creds *gokeepasslib.DBCredentials)
 
 	probe := gokeepasslib.NewDatabase()
 	probe.Credentials = creds
-	if err := gokeepasslib.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(probe); err != nil {
+	if err := decode(bytes.NewReader(buf.Bytes()), probe); err != nil {
 		return nil, fmt.Errorf("probe decode: %w", err)
 	}
 

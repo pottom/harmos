@@ -159,7 +159,7 @@ func openHandle(path, source string, dbCreds *gokeepasslib.DBCredentials) (*Hand
 
 	db := gokeepasslib.NewDatabase()
 	db.Credentials = dbCreds
-	if err := gokeepasslib.NewDecoder(f).Decode(db); err != nil {
+	if err := decode(f, db); err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 	if err := db.UnlockProtectedEntries(); err != nil {
@@ -169,6 +169,24 @@ func openHandle(path, source string, dbCreds *gokeepasslib.DBCredentials) (*Hand
 	h := &Handle{db: db, path: path, source: source, creds: dbCreds, fp: fp}
 	h.why = h.refuseWriteBecause()
 	return h, nil
+}
+
+// decode reads a kdbx, and survives a file that is not one.
+//
+// The library indexes its own buffer with lengths taken from the file and does
+// not check them against it, so a truncated kdbx — an interrupted sync, a full
+// disk, a copy that stopped halfway — panics with a slice bounds error rather
+// than returning one. Opening a vault must not be able to kill the program: a
+// panic here takes the TUI down mid-unlock and prints a stack trace over the
+// CLI. Reported upstream; the guard stays regardless, because a decoder fed a
+// broken file is exactly where a guard belongs.
+func decode(r io.Reader, db *gokeepasslib.Database) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("this file is not a readable kdbx (it may be truncated or corrupt): %v", p)
+		}
+	}()
+	return gokeepasslib.NewDecoder(r).Decode(db)
 }
 
 // refuseWriteBecause returns "" when this file is safe for harmos to write, else
