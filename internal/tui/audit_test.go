@@ -317,3 +317,25 @@ func TestAuditSelectionKeepsTheState(t *testing.T) {
 		t.Error("an unstaged row keeps the plain selection colours")
 	}
 }
+
+// The one screen guaranteed to be shown on a small terminal must fit one.
+func TestAuditTooSmallFits(t *testing.T) {
+	for _, size := range [][2]int{{1, 1}, {2, 2}, {10, 5}, {20, 7}, {39, 9}, {40, 9}, {39, 10}, {500, 5}} {
+		w, h := size[0], size[1]
+		m := up(New(nil, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: w, Height: h})
+		rows := plainLines(m.View())
+		if len(rows) > h {
+			t.Errorf("%dx%d: %d rows", w, h, len(rows))
+		}
+		for i, ln := range rows {
+			if dw(ln) > w {
+				t.Errorf("%dx%d: row %d is %d columns: %q", w, h, i, dw(ln), ln)
+			}
+		}
+	}
+	// And it names the dimension that is short.
+	short := up(New(nil, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 5})
+	if !strings.Contains(ansi.Strip(short.View()), "taller") {
+		t.Errorf("a wide, short terminal should be told to grow taller:\n%s", ansi.Strip(short.View()))
+	}
+}

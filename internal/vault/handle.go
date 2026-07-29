@@ -34,7 +34,7 @@ type Handle struct {
 	creds  *gokeepasslib.DBCredentials // sha256 hashes, never a plaintext secret
 	fp     fingerprint
 	why    string // cheap refusal computed at open; "" if none
-	backed bool   // a backup has been taken this session
+	backed bool   // a backup has been taken for this file, this run
 
 	// The round-trip proof is expensive — an encode plus a decode, so two KDF
 	// derivations — and its answer is only needed when somebody actually wants
@@ -278,7 +278,16 @@ func (h *Handle) Snapshot() *Vault {
 // the secrets themselves, so the handle can reopen its own file without ever
 // having kept one.
 func Reopen(h *Handle) (*Handle, error) {
-	return openHandle(h.path, h.source, h.creds)
+	fresh, err := openHandle(h.path, h.source, h.creds)
+	if err != nil {
+		return nil, err
+	}
+	// "One backup per run" is a promise about the file, not about a Go value.
+	// The interface reopens the handle after every save, so a fresh zero value
+	// here meant a full copy of the vault beside it on every save, forever —
+	// and nothing prunes them.
+	fresh.backed = h.backed
+	return fresh, nil
 }
 
 // DisableRecycleBinForTest switches the database's recycle bin off.

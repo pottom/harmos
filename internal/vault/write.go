@@ -133,7 +133,11 @@ func (h *Handle) backupOnce() error {
 	if h.backed {
 		return nil
 	}
-	dst := fmt.Sprintf("%s.harmos-backup-%s.kdbx", h.path, time.Now().UTC().Format("20060102T150405Z"))
+	// Sub-second, because two saves inside one second collided: the second
+	// backup overwrote the first, and the first was the only copy of the file as
+	// it stood before any of this session's edits — the one the design calls the
+	// highest-value step.
+	dst := fmt.Sprintf("%s.harmos-backup-%s.kdbx", h.path, time.Now().UTC().Format("20060102T150405.000Z"))
 
 	src, err := os.Open(h.path)
 	if err != nil {
