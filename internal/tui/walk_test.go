@@ -173,6 +173,16 @@ func TestWalkEveryOperation(t *testing.T) {
 		t.Errorf("the message should name the destination plainly: %q", m.flash)
 	}
 
+	// An entry renamed on its own row, after it has been moved — the rename has
+	// to find the entry where the staged move put it, not where the file says.
+	m = onEntry(t, m, "Infra", "db-stage")
+	m = up(m, key2("r"))
+	if m.edit != editInline {
+		t.Fatalf("r on an entry should open the inline field, got mode %d (%q)", m.edit, m.flash)
+	}
+	m = typeStr(m, "-renamed")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+
 	m = onEntry(t, m, "Infra", "jump-host")
 	m = up(m, key2("d"))
 	m = onRow(t, m, "Network")
@@ -181,7 +191,7 @@ func TestWalkEveryOperation(t *testing.T) {
 	// The review names the same things the tree does.
 	c := m.switchTab(tabChanges)
 	review := ansi.Strip(c.View())
-	for _, want := range []string{"Fresh", "brand-new-v2", "db-prod-edited", "db-stage", "jump-host", "router"} {
+	for _, want := range []string{"Fresh", "brand-new-v2", "db-prod-edited", "db-stage-renamed", "jump-host", "router"} {
 		if !strings.Contains(review, want) {
 			t.Errorf("the review should mention %q:\n%s", want, review)
 		}
@@ -226,7 +236,7 @@ func TestWalkEveryOperation(t *testing.T) {
 	want := []string{
 		"Infra/Fresh/",             // the folder that was created
 		"Infra/Fresh/brand-new-v2", // the entry created inside it, edited again
-		"Infra/db-stage",           // moved out of db
+		"Infra/db-stage-renamed",   // moved out of db, then renamed on its row
 		"Infra/db/",
 		"Infra/db/db-prod-edited", // edited
 		"Infra/",
@@ -1308,6 +1318,7 @@ func TestStagingNeverMovesTheReader(t *testing.T) {
 		{"delete a folder", "db", []tea.KeyMsg{key2("d")}},
 		{"delete permanently", "db", []tea.KeyMsg{key2("D")}},
 		{"rename a folder", "db", []tea.KeyMsg{key2("r"), key2("X"), {Type: tea.KeyEnter}}},
+		{"rename an entry", "db", []tea.KeyMsg{key2("r"), key2("X"), {Type: tea.KeyEnter}}},
 		{"edit an entry", "db", []tea.KeyMsg{key2("e"), key2("X"), {Type: tea.KeyEnter}}},
 	}
 
@@ -1322,7 +1333,7 @@ func TestStagingNeverMovesTheReader(t *testing.T) {
 				}
 			}
 			m = onRow(t, m, st.on)
-			if strings.HasPrefix(st.name, "delete an entry") || strings.HasPrefix(st.name, "edit an entry") {
+			if strings.HasSuffix(st.name, "an entry") {
 				m.focus, m.esel = 1, 0 // acting on an entry, from the table
 			}
 

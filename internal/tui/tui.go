@@ -128,6 +128,12 @@ type Model struct {
 	moveDests        []vaultFolderRef
 	moveSel          int
 
+	// Inline rename: the row under the cursor turned into a field. It shares
+	// editTarget and editFolderTarget with the rest, because it is renaming the
+	// same things by the same identity.
+	inlineInput  textinput.Model
+	inlineBefore string // the name it started with, to spot "nothing changed"
+
 	// The Changes tab and the save.
 	chgSel        int             // selected row, counting only selectable ones
 	chgFold       map[string]bool // folded hunks and folder groups (z)
@@ -1042,6 +1048,8 @@ func (m Model) typingText() bool {
 	switch {
 	case m.searchMode:
 		return true
+	case m.edit == editInline:
+		return true // a name is being typed into a row
 	case m.inSettingsModal():
 		return true // the add/edit form, the password prompt, the remove overlay
 	case m.tab == tabGenerate && m.focus == 0 && m.genRow == genExclude:

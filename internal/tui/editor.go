@@ -31,6 +31,10 @@ const (
 	editEntry
 	editFolder
 	editMove
+	// editInline is the odd one out: it takes the keyboard like the others, but
+	// it draws nothing of its own. The row being renamed is already on screen,
+	// so the vault stays visible behind — see inline.go.
+	editInline
 )
 
 // openEntryEditor loads an entry losslessly and stages nothing yet.
@@ -178,6 +182,8 @@ func (m Model) updateEditor(key string, msg tea.KeyMsg) (Model, tea.Cmd) {
 	switch m.edit {
 	case editMove:
 		return m.updateMovePicker(key), nil
+	case editInline:
+		return m.updateInlineRename(key, msg)
 	}
 
 	switch key {
@@ -217,11 +223,8 @@ func (m Model) stageEdit() Model {
 
 	op := edit.Op{Source: m.editSource, Target: m.editTarget, After: &after}
 	switch {
-	case m.edit == editFolder && m.editNew:
-		op.Kind, op.Parent, op.Name = edit.CreateGroup, m.editParent, m.editForm.Value("name")
-		op.After = nil
 	case m.edit == editFolder:
-		op.Kind, op.Name = edit.RenameGroup, m.editForm.Value("name")
+		op.Kind, op.Parent, op.Name = edit.CreateGroup, m.editParent, m.editForm.Value("name")
 		op.After = nil
 	case m.editNew:
 		op.Kind, op.Parent = edit.CreateEntry, m.editParent
@@ -244,8 +247,13 @@ func (m Model) stageEdit() Model {
 	return m
 }
 
-// openFolderEditor creates or renames a folder.
-func (m Model) openFolderEditor(parentID, existingID, name string) Model {
+// openNewFolder names a folder that does not exist yet.
+//
+// Renaming one no longer comes through here: a name is edited on its own row
+// (inline.go), and a modal that covers the tree to ask for one word was the
+// wrong shape for the question. This surface stays because a folder that does
+// not exist yet has no row to edit.
+func (m Model) openNewFolder(parentID string) Model {
 	h := m.handles[m.editSource]
 	if h == nil {
 		m.flash = "this source is not open for writing"
@@ -256,14 +264,11 @@ func (m Model) openFolderEditor(parentID, existingID, name string) Model {
 		return m
 	}
 	m.edit = editFolder
-	m.editNew = existingID == ""
+	m.editNew = true
 	m.editParent = parentID
-	m.editTarget = existingID
-	if m.editNew {
-		m.editTarget = h.MintGroupID()
-	}
+	m.editTarget = h.MintGroupID()
 	m.editForm = newForm("Stage", m.formWidth(),
-		textField("name", "Name", "folder name", name).
+		textField("name", "Name", "folder name", "").
 			withValidation(func(v string) error {
 				if v == "" {
 					return errors.New("a folder needs a name")
@@ -575,10 +580,8 @@ func (m Model) editorView() string {
 
 	title := "Edit entry"
 	switch {
-	case m.edit == editFolder && m.editNew:
-		title = "New folder"
 	case m.edit == editFolder:
-		title = "Rename folder"
+		title = "New folder"
 	case m.editNew:
 		title = "New entry"
 	}
@@ -642,17 +645,25 @@ func (m Model) editKey(key string) (Model, bool) {
 			return m.openEntryEditor(entry.ID), true
 		}
 		if folderID != "" {
-			return m.openFolderEditor("", folderID, folderName), true
+			// A folder has one editable thing, its name, so e lands where r does
+			// rather than on a form with a single field in it.
+			return m.openInlineRename(folderID, folderName, true), true
 		}
 	case "n":
 		// An empty folder ID is the source's own root group, which is a real
 		// folder in the file even though the tree shows the source there.
 		return m.openNewEntry(folderID), true
 	case "N":
-		return m.openFolderEditor(folderID, "", ""), true
+		return m.openNewFolder(folderID), true
 	case "r":
+		// In place, on the row itself. The name is one word and the tree is what
+		// tells you which one you are changing; a modal that covers the tree to
+		// ask for it is the wrong shape for the question.
+		if entry != nil {
+			return m.openInlineRename(entry.ID, entry.Title, false), true
+		}
 		if folderID != "" {
-			return m.openFolderEditor("", folderID, folderName), true
+			return m.openInlineRename(folderID, folderName, true), true
 		}
 	case "d", "D":
 		perm := key == "D"
