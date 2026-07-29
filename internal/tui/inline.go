@@ -11,20 +11,19 @@ import (
 	"github.com/pottom/harmos/internal/theme"
 )
 
-// Renaming, in place.
+// Renaming a folder, in place.
 //
-// A rename is one word, and the modal form asked for a whole screen to collect
-// it — a screen that covered the tree, which is the one thing that tells you
-// what you are renaming. So the row itself becomes the field: the indent, the
-// icon and the position stay put, and only the name turns editable. The
-// surrounding vault is still on screen, which is the point.
+// A folder's name is the only thing about it there is to edit, and it is one
+// word. The modal form asked for a whole screen to collect it — a screen that
+// covered the tree, which is the one thing that tells you which folder you are
+// renaming. So the row itself becomes the field: the indent, the icon and the
+// position stay put, and only the name turns editable.
 //
-// It stages the same operations the form did — RenameGroup for a folder, an
-// EditEntry carrying a new Title for an entry — so the Changes tab, the staged
+// It stages the RenameGroup the form staged, so the Changes tab, the staged
 // colouring and the save path do not know the difference.
 
-// openInlineRename turns the row under the cursor into a text field.
-func (m Model) openInlineRename(target, name string, isFolder bool) Model {
+// openInlineRename turns the folder row under the cursor into a text field.
+func (m Model) openInlineRename(target, name string) Model {
 	if h := m.handles[m.editSource]; h == nil {
 		m.flash = "this source is not open for writing"
 		return m
@@ -48,32 +47,27 @@ func (m Model) openInlineRename(target, name string, isFolder bool) Model {
 	// because that is when it decides which slice of a long value to show. The
 	// renderer trims to the same width again, so a miscount cannot spill into
 	// the frame.
-	ti.Width = max(4, m.inlineWidth(isFolder))
+	ti.Width = max(4, m.inlineWidth())
 	ti.PromptStyle = inlineStyle
 	ti.TextStyle = inlineStyle
 
 	m.edit = editInline
 	m.editTarget = target
-	m.editFolderTarget = isFolder
 	m.inlineBefore = name
 	m.inlineInput = ti
 	return m
 }
 
 // inlineWidth is how much room the name has on the row it is being edited in —
-// the same arithmetic the two renderers do, because a field that thinks it is
-// wider than its row scrolls to the wrong part of a long name.
-func (m Model) inlineWidth(isFolder bool) int {
-	if isFolder {
-		indent := 0
-		if flat := m.visible(); m.tsel < len(flat) {
-			indent = flat[m.tsel].depth * 2
-		}
-		// pane − frame − indent − the icon and the space after it − the cursor
-		return m.leftPaneW() - 2 - indent - 2 - 1
+// the same arithmetic treeLines does, because a field that thinks it is wider
+// than its row scrolls to the wrong part of a long name.
+func (m Model) inlineWidth() int {
+	indent := 0
+	if flat := m.visible(); m.tsel < len(flat) {
+		indent = flat[m.tsel].depth * 2
 	}
-	titleW, _, _, _ := entryCols(m.listPaneW() - 2)
-	return titleW - 2 - 1 // the marker column, and the cursor
+	// pane − frame − indent − the icon and the space after it − the cursor
+	return m.leftPaneW() - 2 - indent - 2 - 1
 }
 
 // updateInlineRename owns the keyboard while a row is being renamed.
@@ -106,55 +100,19 @@ func (m Model) stageInlineRename() Model {
 		return m
 	}
 
-	target, isFolder := m.editTarget, m.editFolderTarget
 	m.edit = editNone
-
-	if isFolder {
-		m.chg, _ = m.chg.Add(edit.Op{
-			Kind: edit.RenameGroup, Source: m.editSource, Target: target,
-			Name: name, Was: m.inlineBefore,
-		})
-		m.flash = "staged: renamed to " + name + " · nothing is written until you save"
-		return m.restage()
-	}
-
-	// An entry's name is its Title, and a title change is an edit like any
-	// other — which means it needs the whole draft, not just the field that
-	// changed, or the save would write an entry with everything else blank.
-	d, staged := m.stagedDraft(target)
-	var before *edit.Draft
-	if !staged {
-		h := m.handles[m.editSource]
-		if h == nil {
-			m.flash = "this source is not open for writing"
-			return m
-		}
-		fromFile, err := h.EntryDraft(target)
-		if err != nil {
-			m.flash = err.Error()
-			return m
-		}
-		d = fromFile
-		was := fromFile
-		before = &was
-	}
-	if home := m.homeOf(target); home != "" {
-		d.GroupID = home // a move staged since is where it lives now
-	}
-	d.Title = name
-
 	m.chg, _ = m.chg.Add(edit.Op{
-		Kind: edit.EditEntry, Source: m.editSource, Target: target,
-		Before: before, After: &d,
+		Kind: edit.RenameGroup, Source: m.editSource, Target: m.editTarget,
+		Name: name, Was: m.inlineBefore,
 	})
 	m.flash = "staged: renamed to " + name + " · nothing is written until you save"
 	return m.restage()
 }
 
-// renamingRow reports whether this row is the one being renamed, so the two list
-// renderers can hand it the field instead of a label.
-func (m Model) renamingRow(id string, isFolder bool) bool {
-	return m.edit == editInline && m.editFolderTarget == isFolder && m.editTarget == id && id != ""
+// renamingRow reports whether this tree row is the one being renamed, so
+// treeLines can hand it the field instead of a label.
+func (m Model) renamingRow(id string) bool {
+	return m.edit == editInline && m.editTarget == id && id != ""
 }
 
 // inlineStyle is how an editable name reads: the amber says the same thing the

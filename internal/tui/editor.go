@@ -604,7 +604,7 @@ func (m Model) editorView() string {
 // that explains itself.
 func (m Model) editKey(key string) (Model, bool) {
 	switch key {
-	case "e", "n", "N", "d", "D", "m", "r":
+	case "e", "n", "N", "d", "D", "m":
 	default:
 		return m, false
 	}
@@ -643,13 +643,16 @@ func (m Model) editKey(key string) (Model, bool) {
 
 	switch key {
 	case "e":
+		// One editing key, whatever is under the cursor. An entry has fields, so
+		// it gets the form; a folder is its name, so the name becomes editable
+		// on the row itself. There was an r as well, doing the same thing to a
+		// folder that e did — two keys for one act, which is a keymap asking to
+		// be misremembered.
 		if entry != nil {
 			return m.openEntryEditor(entry.ID), true
 		}
 		if folderID != "" {
-			// A folder has one editable thing, its name, so e lands where r does
-			// rather than on a form with a single field in it.
-			return m.openInlineRename(folderID, folderName, true), true
+			return m.openInlineRename(folderID, folderName), true
 		}
 	case "n":
 		// An empty folder ID is the source's own root group, which is a real
@@ -657,16 +660,6 @@ func (m Model) editKey(key string) (Model, bool) {
 		return m.openNewEntry(folderID), true
 	case "N":
 		return m.openNewFolder(folderID), true
-	case "r":
-		// In place, on the row itself. The name is one word and the tree is what
-		// tells you which one you are changing; a modal that covers the tree to
-		// ask for it is the wrong shape for the question.
-		if entry != nil {
-			return m.openInlineRename(entry.ID, entry.Title, false), true
-		}
-		if folderID != "" {
-			return m.openInlineRename(folderID, folderName, true), true
-		}
 	case "d", "D":
 		perm := key == "D"
 		if entry != nil {

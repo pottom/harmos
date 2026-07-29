@@ -26,14 +26,16 @@ func intoFolder(t *testing.T, m Model) Model {
 	return m
 }
 
-// r on a folder edits its name where the name is, and stages a rename.
+// e on a folder edits its name where the name is, and stages a rename. There is
+// only one editing key: an entry has fields and gets the form, a folder is its
+// name and gets the row.
 func TestInlineRenameFolder(t *testing.T) {
 	m := intoFolder(t, editModel(t))
 	id, was := m.currentFolderID()
 
-	m = up(m, key2("r"))
+	m = up(m, key2("e"))
 	if m.edit != editInline {
-		t.Fatalf("r should open the inline field, got mode %d", m.edit)
+		t.Fatalf("e on a folder should open the inline field, got mode %d", m.edit)
 	}
 	// The tree is still on screen behind the field — that is the whole point.
 	view := ansi.Strip(m.View())
@@ -62,47 +64,12 @@ func TestInlineRenameFolder(t *testing.T) {
 	}
 }
 
-// r on an entry renames its title, and keeps everything else the entry had. A
-// rename that blanked the password would be a rename that lost the password.
-func TestInlineRenameEntryKeepsTheRest(t *testing.T) {
-	m := intoTable(t, editModel(t))
-	e := *m.selEntry()
-
-	m = up(m, key2("r"))
-	if m.edit != editInline {
-		t.Fatalf("r should open the inline field, got mode %d", m.edit)
-	}
-	m.inlineInput.SetValue("")
-	m = typeStr(m, "New title")
-	m = up(m, key2("enter"))
-
-	var op *edit.Op
-	for _, o := range m.chg.Effective() {
-		if o.Kind == edit.EditEntry && o.Target == e.ID {
-			cp := o
-			op = &cp
-		}
-	}
-	if op == nil {
-		t.Fatalf("↵ should stage an edit of %s; ops: %v", e.ID, m.chg.Effective())
-	}
-	if op.After.Title != "New title" {
-		t.Errorf("title = %q, want %q", op.After.Title, "New title")
-	}
-	if op.After.Password.Reveal() == "" {
-		t.Error("the rename dropped the password")
-	}
-	if op.After.Username != e.Username {
-		t.Errorf("username = %q, want %q", op.After.Username, e.Username)
-	}
-}
-
 // esc leaves the name alone and stages nothing.
 func TestInlineRenameEscape(t *testing.T) {
 	m := intoFolder(t, editModel(t))
 	before := len(m.chg.Effective())
 
-	m = up(m, key2("r"))
+	m = up(m, key2("e"))
 	m.inlineInput.SetValue("")
 	m = typeStr(m, "Nope")
 	m = up(m, tea.KeyMsg{Type: tea.KeyEsc})
@@ -120,7 +87,7 @@ func TestInlineRenameEscape(t *testing.T) {
 func TestInlineRenameRefusesEmpty(t *testing.T) {
 	m := intoFolder(t, editModel(t))
 
-	m = up(m, key2("r"))
+	m = up(m, key2("e"))
 	m.inlineInput.SetValue("")
 	m = up(m, key2("enter"))
 
@@ -138,7 +105,7 @@ func TestInlineRenameUnchangedStagesNothing(t *testing.T) {
 	m := intoFolder(t, editModel(t))
 	before := len(m.chg.Effective())
 
-	m = up(m, key2("r"))
+	m = up(m, key2("e"))
 	m = up(m, key2("enter"))
 
 	if m.edit != editNone {
@@ -154,7 +121,7 @@ func TestInlineRenameUnchangedStagesNothing(t *testing.T) {
 // is a test is that a rename field lives on a surface where those keys work.
 func TestInlineRenameSwallowsHotkeys(t *testing.T) {
 	m := intoFolder(t, editModel(t))
-	m = up(m, key2("r"))
+	m = up(m, key2("e"))
 	m.inlineInput.SetValue("")
 
 	m = typeStr(m, "q/nd")
@@ -177,7 +144,7 @@ func TestInlineRenameRefusedOnADoomedRow(t *testing.T) {
 
 	m = up(m, key2("d"))
 	m.tsel = sel // d moves on; come back to the row it marked
-	m = up(m, key2("r"))
+	m = up(m, key2("e"))
 
 	if m.edit == editInline {
 		t.Error("a row staged for deletion should not open a rename field")
