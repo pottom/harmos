@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1254,4 +1255,103 @@ func TestStagingLeavesTheTreeAsItWas(t *testing.T) {
 	if got := rowNames(m2.restage()); strings.Join(got, " ") != strings.Join(closed, " ") {
 		t.Errorf("a rebuild reopened the tree: %v", got)
 	}
+}
+
+// Marking a folder leaves the cursor on the folder. The rebuild restored the
+// selection through selEntry, which answers "which entry is current" even when
+// the tree has focus — so marking a folder that happened to hold entries threw
+// the reader into the entry table. On an empty folder nothing happened, which is
+// what made it look arbitrary.
+func TestMarkingAFolderKeepsTheCursorInTheTree(t *testing.T) {
+	m, _ := walkModel(t)
+	m = onRow(t, m, "db") // holds two entries
+	if f := m.currentFolder(); f == nil || len(f.entries) == 0 {
+		t.Fatal("this test needs a folder with entries in it")
+	}
+	rows := rowNames(m)
+	at := m.tsel
+
+	m = up(m, key2("d"))
+	if m.focus != 0 {
+		t.Errorf("marking a folder should not move into the entry table (focus %d)", m.focus)
+	}
+	// It advances one row, as marking does everywhere — but along the tree,
+	// which is where the cursor was.
+	if m.tsel != at+1 && at+1 < len(rows) {
+		t.Errorf("the cursor should step to the next row of the tree: %d → %d", at, m.tsel)
+	}
+
+	// And the same for an empty one, which always behaved.
+	m2, _ := walkModel(t)
+	m2 = onRow(t, m2, "Net")
+	m2 = up(m2, key2("d"))
+	if m2.focus != 0 {
+		t.Errorf("an empty folder should behave the same (focus %d)", m2.focus)
+	}
+}
+
+// The invariant the two fixes above are instances of: staging changes what the
+// vault will contain, never how the reader is looking at it.
+//
+// Every staging rebuilds the tree, because the tree shows the vault as it will
+// be. So every staging is a chance to lose the reader's place — and the two ways
+// it did were found by hand, one at a time, because the tests until now covered
+// each key on its own and nothing covered what they share.
+func TestStagingNeverMovesTheReader(t *testing.T) {
+	type step struct {
+		name string
+		on   string // the tree row to stand on
+		keys []tea.KeyMsg
+	}
+	steps := []step{
+		{"delete an entry", "db", []tea.KeyMsg{key2("d")}},
+		{"delete a folder", "db", []tea.KeyMsg{key2("d")}},
+		{"delete permanently", "db", []tea.KeyMsg{key2("D")}},
+		{"rename a folder", "db", []tea.KeyMsg{key2("r"), key2("X"), {Type: tea.KeyEnter}}},
+		{"edit an entry", "db", []tea.KeyMsg{key2("e"), key2("X"), {Type: tea.KeyEnter}}},
+	}
+
+	for _, st := range steps {
+		t.Run(st.name, func(t *testing.T) {
+			m, _ := walkModel(t)
+			m = m.expandAll(true)
+			// A shape worth preserving: one folder closed, the rest open.
+			for _, tl := range m.visible() {
+				if tl.node.name == "Net" {
+					tl.node.expanded = false
+				}
+			}
+			m = onRow(t, m, st.on)
+			if strings.HasPrefix(st.name, "delete an entry") || strings.HasPrefix(st.name, "edit an entry") {
+				m.focus, m.esel = 1, 0 // acting on an entry, from the table
+			}
+
+			shape, focus := treeShape(m), m.focus
+			for _, k := range st.keys {
+				m = up(m, k)
+			}
+			if m.edit != editNone {
+				t.Fatalf("the editor should have closed (mode %d)", m.edit)
+			}
+			if m.dirtyCount() == 0 {
+				t.Fatalf("nothing was staged (flash %q)", m.flash)
+			}
+			if got := treeShape(m); strings.Join(got, " ") != strings.Join(shape, " ") {
+				t.Errorf("the tree changed shape:\n%v\nwas:\n%v", got, shape)
+			}
+			if m.focus != focus {
+				t.Errorf("the focus moved between panes: %d → %d", focus, m.focus)
+			}
+		})
+	}
+}
+
+// treeShape is which rows are visible and how deep, by identity — a rename
+// changes a row's name and that is not a change of shape.
+func treeShape(m Model) []string {
+	var out []string
+	for _, tl := range m.visible() {
+		out = append(out, fmt.Sprintf("%d:%s/%s", tl.depth, tl.node.source, tl.node.id))
+	}
+	return out
 }

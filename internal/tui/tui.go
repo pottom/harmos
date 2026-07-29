@@ -307,9 +307,20 @@ func (m Model) rebuild(entries []vault.Entry, folders []vault.Folder) Model {
 	}
 	collect(m.roots)
 
-	var selectedEntry string
-	if e := m.selEntry(); e != nil {
-		selectedEntry = e.ID
+	// What the cursor is on, in the terms of whichever pane has it. selEntry
+	// answers "which entry is current" even when the tree has focus — that is
+	// what the copy keys want — so restoring by it threw the reader into the
+	// entry table every time they marked a folder that happened to hold
+	// entries. On an empty folder it did nothing, which is why it looked
+	// arbitrary.
+	var selectedEntry, selectedFolder string
+	if m.focus == 1 {
+		if e := m.selEntry(); e != nil {
+			selectedEntry = e.ID
+		}
+	}
+	if f := m.currentFolder(); f != nil {
+		selectedFolder = f.source + "\x00" + f.id
 	}
 
 	// The tree is built from the vault as it will be — see project — while the
@@ -337,8 +348,11 @@ func (m Model) rebuild(entries []vault.Entry, folders []vault.Folder) Model {
 		restore(m.roots)
 	}
 
-	if selectedEntry != "" {
+	switch {
+	case selectedEntry != "":
 		m = m.selectEntryByID(selectedEntry)
+	case selectedFolder != "":
+		m = m.selectFolderByKey(selectedFolder)
 	}
 	m.refilter()
 	return m
@@ -348,6 +362,18 @@ func (m Model) rebuild(entries []vault.Entry, folders []vault.Folder) Model {
 // created is somewhere you can put things and something just renamed answers to
 // its new name.
 func (m Model) restage() Model { return m.rebuild(m.mergedEntries, m.mergedFolders) }
+
+// selectFolderByKey puts the cursor back on a tree row after a rebuild, leaving
+// the focus where it was — the tree.
+func (m Model) selectFolderByKey(key string) Model {
+	for i, tl := range m.visible() {
+		if tl.node.source+"\x00"+tl.node.id == key {
+			m.tsel = i
+			return m
+		}
+	}
+	return m
+}
 
 // selectEntryByID puts the cursor back on an entry after a rebuild, if it is
 // still there.
