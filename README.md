@@ -159,7 +159,7 @@ Press `?` for the full key map. The staples:
 | `ctrl+b` | Hide / show the folder tree pane |
 | `1` / `2` / `3` / `4` | Switch Vault / Changes / Generate / Settings tab |
 | `ctrl+w` | Unlock this source for editing (or lock it again) |
-| `e` · `n` / `N` · `d` / `D` · `m` | Edit an entry, or rename a folder on its own row · new entry / folder · delete to bin / permanently (press again to undo) · move |
+| `e` · `r` · `n` / `N` · `d` / `D` · `m` | Edit an entry · rename in place · new entry / folder · delete to bin / permanently (press again to undo) · move |
 | `ctrl+s` | Review the staged changes and write them |
 | `?` / `q` | Help · quit (clears the clipboard) |
 
@@ -251,10 +251,11 @@ Editing is deliberately several steps, and reversible until the last:
    the choice is remembered (`writable = true` in the config), so you are asked
    once rather than every launch. `ctrl+w` again locks it.
 2. **Change** things: `e` edits, `n` and `N` create an entry or a folder, `d`
-   sends to the recycle bin (`D` deletes permanently), `m` moves. There is one
-   editing key: an entry has fields, so `e` opens the form; a folder is its
-   name, so `e` makes the name editable on its own row, with the tree still on
-   screen behind it. `ctrl+g` rolls a password in the editor using your
+   sends to the recycle bin (`D` deletes permanently), `m` moves. `r` renames
+   in place: the row under the cursor turns into a field — a folder in the tree,
+   an entry's title in the list — so the vault you are renaming inside stays on
+   screen. `e` is the whole form, which only an entry has; on a folder row it
+   points you at `r`. `ctrl+g` rolls a password in the editor using your
    Generate-tab settings.
 3. **Look at it.** Staged rows are coloured where they are — teal for new, amber
    for changed, rust with a marker for deleted — every state carries a glyph as

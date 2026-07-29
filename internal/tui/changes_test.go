@@ -776,11 +776,11 @@ func TestReviewSaysFromWhatToWhat(t *testing.T) {
 	// A folder rename, twice — the review has to name what the *file* has, not
 	// the interim name nobody ever saw.
 	m = onRow(t, m, "Net")
-	m = up(m, key2("e"))
+	m = up(m, key2("r"))
 	m = typeStr(m, "work")
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
 	m = onRow(t, m, "Network")
-	m = up(m, key2("e"))
+	m = up(m, key2("r"))
 	m = typeStr(m, "s")
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
 
@@ -791,7 +791,7 @@ func TestReviewSaysFromWhatToWhat(t *testing.T) {
 
 	// A single-field edit, whose one-line summary is all a folded row shows.
 	m = onEntry(t, m, "db", "db-prod")
-	m = up(m, key2("e"))
+	m = up(m, key2("r"))
 	m = typeStr(m, "-new")
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
 

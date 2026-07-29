@@ -233,6 +233,10 @@ func (m Model) leftPaneW() int {
 	return min(42, max(18, m.w*2/5))
 }
 
+// listPaneW is the entry pane's outer width: whatever the tree leaves, less the
+// one-column gap between them.
+func (m Model) listPaneW() int { return m.w - m.leftPaneW() - 1 }
+
 // treeRail renders the collapsed folder pane: a thin bordered rail with the source
 // icons stacked, so the tree is clearly still there (reopen with ctrl+b or a
 // click).
@@ -713,7 +717,7 @@ func (m Model) treeLines(w, rows int) []string {
 		}
 		nameW := max(1, w-badgeW)
 
-		if m.renamingRow(n.id) {
+		if m.renamingRow(n.id, true) {
 			// The row keeps its indent and its icon — what is being renamed has
 			// to stay recognisable while you rename it — and the name becomes
 			// the field.
@@ -818,6 +822,18 @@ func (m Model) entryLines(w, rows int) []string {
 		state, staged := states[e.ID], true
 		if state == 0 && goingWith(e.GroupID) {
 			state, staged = edit.Deleted, false
+		}
+		if m.renamingRow(e.ID, false) {
+			// The username and URL stay where they are, so the row still reads
+			// as the entry it is while its title is in hand — and the field
+			// starts in the title column, not in the marker's.
+			line := " " + m.inlineField(titleW-2) + " " +
+				theme.Dimmed.Render(pad(e.Username, userW))
+			if urlCol {
+				line += " " + theme.Dimmed.Render(trunc(e.URL, urlW))
+			}
+			out = append(out, line)
+			continue
 		}
 		if k == m.esel && m.focus == 1 {
 			_, marker := changeStyle(state)
@@ -1248,7 +1264,7 @@ func (m Model) hints() string {
 		if m.focus == 1 {
 			full = "e edit · n new · d delete · m move · ^s write · ↵ copy pw · → details · ?"
 		} else {
-			full = "e rename · N folder · d delete · m move · ^s write · →/⇥ into · / search · ?"
+			full = "r rename · N folder · d delete · m move · ^s write · →/⇥ into · / search · ?"
 		}
 	case m.focus == 1:
 		full = "↑↓ move · ↵ copy pw · → details · c get-cmd · ^b tree · / search · ?"

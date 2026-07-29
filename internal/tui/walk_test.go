@@ -148,7 +148,7 @@ func TestWalkEveryOperation(t *testing.T) {
 
 	// A rename, which the tree has to answer to.
 	m = onRow(t, m, "Net")
-	m = up(m, key2("e"))
+	m = up(m, key2("r"))
 	m = typeStr(m, "work")
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if !slices.Contains(rowNames(m), "Network") {
@@ -173,10 +173,13 @@ func TestWalkEveryOperation(t *testing.T) {
 		t.Errorf("the message should name the destination plainly: %q", m.flash)
 	}
 
-	// An entry edited after it has been moved — the editor has to find it where
-	// the staged move put it, not where the file says.
+	// An entry renamed on its own row, after it has been moved — the rename has
+	// to find the entry where the staged move put it, not where the file says.
 	m = onEntry(t, m, "Infra", "db-stage")
-	m = up(m, key2("e"))
+	m = up(m, key2("r"))
+	if m.edit != editInline {
+		t.Fatalf("r on an entry should open the inline field, got mode %d (%q)", m.edit, m.flash)
+	}
 	m = typeStr(m, "-renamed")
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
 
@@ -1314,7 +1317,8 @@ func TestStagingNeverMovesTheReader(t *testing.T) {
 		{"delete an entry", "db", []tea.KeyMsg{key2("d")}},
 		{"delete a folder", "db", []tea.KeyMsg{key2("d")}},
 		{"delete permanently", "db", []tea.KeyMsg{key2("D")}},
-		{"rename a folder", "db", []tea.KeyMsg{key2("e"), key2("X"), {Type: tea.KeyEnter}}},
+		{"rename a folder", "db", []tea.KeyMsg{key2("r"), key2("X"), {Type: tea.KeyEnter}}},
+		{"rename an entry", "db", []tea.KeyMsg{key2("r"), key2("X"), {Type: tea.KeyEnter}}},
 		{"edit an entry", "db", []tea.KeyMsg{key2("e"), key2("X"), {Type: tea.KeyEnter}}},
 	}
 

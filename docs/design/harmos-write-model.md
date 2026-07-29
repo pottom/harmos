@@ -565,10 +565,11 @@ the existing bindings in results (`c`, `g`), tree (`/`, `c`) and detail (`s`, `c
 
 | Key | Action |
 |---|---|
-| `e` | edit the selected entry; on a folder row, rename it in place on that row |
+| `e` | edit the selected entry — the whole form; a folder has none, so `e` names `r` there |
 | `n` / `N` | new entry / new folder |
 | `d` / `D` | delete → recycle bin / **permanent** |
 | `m` | move |
+| `r` | rename in place — the row itself becomes the field, folder or entry |
 | `ctrl+g` | roll a password in the editor (uses the Generate tab's saved options) |
 | `ctrl+w` | toggle the source lock |
 | `ctrl+s` | save |
