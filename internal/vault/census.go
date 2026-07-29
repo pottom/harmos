@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 
 	gokeepasslib "github.com/tobischo/gokeepasslib/v3"
 )
@@ -39,7 +40,16 @@ func censusOf(db *gokeepasslib.Database) (census, error) {
 
 	c := census{}
 	var stack []string
+	var pending string // the path of an element whose text we still need
+	var text []byte    // that text
 	dec := xml.NewDecoder(bytes.NewReader(raw[start:]))
+
+	count := func(path string, body []byte) {
+		if carriesNothing(path, body) {
+			return
+		}
+		c[path]++
+	}
 
 	for {
 		tok, err := dec.Token()
@@ -51,19 +61,50 @@ func censusOf(db *gokeepasslib.Database) (census, error) {
 		}
 		switch e := tok.(type) {
 		case xml.StartElement:
+			if pending != "" {
+				c[pending]++ // it has children, so its own text is not the point
+			}
 			path := e.Name.Local
 			if len(stack) > 0 {
 				path = stack[len(stack)-1] + ">" + e.Name.Local
 			}
-			c[path]++
+			pending, text = path, nil
 			stack = append(stack, e.Name.Local)
+		case xml.CharData:
+			if pending != "" {
+				text = append(text, e...)
+			}
 		case xml.EndElement:
+			if pending != "" {
+				count(pending, text)
+				pending, text = "", nil
+			}
 			if len(stack) > 0 {
 				stack = stack[:len(stack)-1]
 			}
 		}
 	}
+	if pending != "" {
+		count(pending, text)
+	}
 	return c, nil
+}
+
+// carriesNothing reports whether an element says nothing that its absence would
+// not say just as well, so the census does not count it.
+//
+// One case, and it is a real file's real shape: a CustomIconUUID of all zeros
+// means "no custom icon", which is exactly what leaving the element out means.
+// KeePass only writes the element when an icon is set; other writers put the
+// zero UUID there instead. gokeepasslib v3.7.0 drops those on a rewrite — no
+// information is lost, but the element count changes, and a census that counted
+// them refused to write a vault with 444 of them in it. What this gate exists
+// to catch is *information* the library cannot carry, not punctuation.
+func carriesNothing(path string, body []byte) bool {
+	if !strings.HasSuffix(path, ">CustomIconUUID") {
+		return false
+	}
+	return len(bytes.TrimSpace(body)) == 0 || string(bytes.TrimSpace(body)) == gokeepasslib.ZeroUUIDText
 }
 
 // lostSince reports element paths that were in the original and are missing (or
