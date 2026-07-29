@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	gokeepasslib "github.com/tobischo/gokeepasslib/v3"
 
+	"github.com/pottom/harmos/internal/clip"
 	"github.com/pottom/harmos/internal/config"
 	"github.com/pottom/harmos/internal/edit"
 	"github.com/pottom/harmos/internal/secret"
@@ -366,13 +367,40 @@ func TestCopyChordsWhileSearching(t *testing.T) {
 	if !m.searchMode || len(m.results) == 0 {
 		t.Fatalf("expected results while searching: mode=%v n=%d", m.searchMode, len(m.results))
 	}
+	query := m.input.Value()
 	m = up(m, tea.KeyMsg{Type: tea.KeyCtrlY})
-	if m.copiedWhat != "password" {
-		t.Errorf("ctrl+y should copy the selected result's password, copied %q", m.copiedWhat)
+
+	// True everywhere: the chord is a command, not a character, and it does not
+	// take you out of the box you are typing in.
+	if m.input.Value() != query {
+		t.Errorf("the chord was typed into the search box: %q", m.input.Value())
 	}
 	if !m.searchMode {
-		t.Error("and leave the search box where it was")
+		t.Error("and it should leave the search box where it was")
 	}
+
+	// The rest needs somewhere to copy to. CI has no clipboard on Linux and
+	// none is implemented on Windows, so say what is missing rather than
+	// failing for a reason that has nothing to do with the behaviour.
+	if err := clip.Copy([]byte("probe")); err != nil {
+		t.Skipf("no clipboard here: %v", err)
+	}
+	m2 := up(mustSearch(t), tea.KeyMsg{Type: tea.KeyCtrlY})
+	if m2.copiedWhat != "password" {
+		t.Errorf("ctrl+y should copy the selected result's password, copied %q", m2.copiedWhat)
+	}
+}
+
+// mustSearch is a model with a query typed and results showing.
+func mustSearch(t *testing.T) Model {
+	t.Helper()
+	m, _ := walkModel(t)
+	m = up(m, key2("/"))
+	m = typeStr(m, "db-prod")
+	if len(m.results) == 0 {
+		t.Fatal("expected results")
+	}
+	return m
 }
 
 // secondSource opens another real kdbx as a second writable source.
