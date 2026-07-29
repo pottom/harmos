@@ -221,6 +221,7 @@ func TestEmptyFolderAppearsInTheTree(t *testing.T) {
 			{ID: "s:g:2", Source: "s", Path: "Empty", Name: "Empty"},
 		}, "", 30*time.Second)
 	m = up(m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = m.expandAll(true) // the tree arrives shut
 
 	var names []string
 	for _, tl := range m.visible() {

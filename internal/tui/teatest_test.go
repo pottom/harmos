@@ -110,6 +110,8 @@ func TestEditInteractionContract(t *testing.T) {
 	}
 
 	send(tea.WindowSizeMsg{Width: 110, Height: 34})
+	send(key('z'))                       // open the source — the tree arrives closed
+	send(tea.KeyMsg{Type: tea.KeyDown})  // onto the folder
 	send(tea.KeyMsg{Type: tea.KeyTab})   // tree → entry table
 	send(key('e'))                       // → the editor
 	send(key('!'))                       // type into the title

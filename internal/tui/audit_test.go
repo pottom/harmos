@@ -67,9 +67,8 @@ func auditSurfacesAt(width, height int) []surface {
 
 	staged := func(t *testing.T) Model {
 		t.Helper()
-		m := sized(editModel(t))
-		m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the entry table
-		return up(m, key2("d"))                 // stage a deletion
+		m := intoTable(t, sized(editModel(t)))
+		return up(m, key2("d")) // stage a deletion
 	}
 
 	return []surface{
@@ -80,10 +79,14 @@ func auditSurfacesAt(width, height int) []surface {
 			return m.View()
 		}},
 		{"vault/entry-focus", func(t *testing.T) string {
-			return up(base(t), tea.KeyMsg{Type: tea.KeyTab}).View()
+			m := base(t).expandAll(true)
+			m.tsel = firstFolderWithEntries(m.roots)
+			return up(m, tea.KeyMsg{Type: tea.KeyTab}).View()
 		}},
 		{"vault/detail", func(t *testing.T) string {
-			m := up(base(t), tea.KeyMsg{Type: tea.KeyTab})
+			m := base(t).expandAll(true)
+			m.tsel = firstFolderWithEntries(m.roots)
+			m = up(m, tea.KeyMsg{Type: tea.KeyTab})
 			return up(m, tea.KeyMsg{Type: tea.KeyRight}).View()
 		}},
 		{"vault/search", func(t *testing.T) string {

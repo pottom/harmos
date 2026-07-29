@@ -1443,3 +1443,54 @@ func TestMarkingOneOfTwoSameNamedFolders(t *testing.T) {
 		t.Errorf("an entry inside a folder already going should not stage again (%q)", m.flash)
 	}
 }
+
+// Working down a list costs one key per row, whatever each row turns out to
+// need — including rows that are already going with a folder above them, which
+// used to stall the run.
+func TestTheDeleteKeyAlwaysMovesOn(t *testing.T) {
+	m, _ := walkModel(t)
+	m = onRow(t, m, "db")
+	m.focus, m.esel = 1, 0
+	f := m.currentFolder()
+	if f == nil || len(f.entries) < 2 {
+		t.Fatal("this test needs two entries in one folder")
+	}
+
+	// Advance while there is somewhere to go; at the end of the list it stays,
+	// which is the only place it should.
+	at := m.esel
+	for range len(f.entries) {
+		m = up(m, key2("d"))
+		want := min(at+1, len(f.entries)-1)
+		if m.esel != want {
+			t.Fatalf("staging from row %d should land on %d, landed on %d", at, want, m.esel)
+		}
+		at = m.esel
+	}
+
+	// Back to the top and press again: it un-stages, and still moves on.
+	m.esel = 0
+	m = up(m, key2("d"))
+	if m.esel != 1 {
+		t.Errorf("un-staging should advance too, esel = %d", m.esel)
+	}
+
+	// And a row that is already going with its folder does not stall either.
+	m2, _ := walkModel(t)
+	m2 = onRow(t, m2, "db")
+	m2 = up(m2, key2("d")) // the folder goes
+	m2 = m2.expandAll(true)
+	for i, tl := range m2.visible() {
+		if tl.node.name == "db" {
+			m2.tsel, m2.focus, m2.esel = i, 1, 0
+		}
+	}
+	before := m2.esel
+	m2 = up(m2, key2("d"))
+	if m2.esel == before {
+		t.Errorf("a row already going should not stall the run (%q)", m2.flash)
+	}
+	if !strings.Contains(m2.flash, "already going") {
+		t.Errorf("and it should still say why: %q", m2.flash)
+	}
+}

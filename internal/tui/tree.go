@@ -35,7 +35,7 @@ type treeLine struct {
 
 // buildTree assembles the per-source folder tree: a root node per source, then
 // the folders as the file relates them, with entries hanging off the folder they
-// live in.
+// live in. Everything starts closed.
 //
 // It is built from identities, not from path strings. Splitting Path on "/" was
 // shorter and wrong twice over: two sibling folders with the same name collapsed
@@ -58,7 +58,11 @@ func buildTree(entries []vault.Entry, folders []vault.Folder) []*node {
 		if n, ok := rootOf[source]; ok {
 			return n
 		}
-		n := &node{name: source, source: source, expanded: true}
+		// Closed on arrival, sources included. A vault with a few hundred
+		// folders opens as a wall of rows otherwise, and the reader's first act
+		// is to close it again; z, Z and the arrows open exactly as much as
+		// somebody wants.
+		n := &node{name: source, source: source}
 		rootOf[source] = n
 		roots = append(roots, n)
 		return n

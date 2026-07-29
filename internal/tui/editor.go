@@ -300,6 +300,7 @@ func (m Model) stageDelete(target, name string, isFolder, permanent bool) Model 
 		// It is already going, with the folder above it. Staging it separately
 		// produced a set that could not be applied — and on the paths where it
 		// could, the child was pulled out of the folder it was deleted with.
+		m, _ = m.advanceCursor()
 		m.flash = "already going with " + lastSegment(folder)
 		return m
 	}
@@ -313,8 +314,10 @@ func (m Model) stageDelete(target, name string, isFolder, permanent bool) Model 
 	if prev, ok := m.stagedDeletion(target); ok {
 		m.chg, _ = m.chg.Revert(prev.Seq)
 		if prev.Perm == perm {
-			m.flash = "no longer staged for deletion" + describes(name)
-			return m.restage()
+			m = m.restage()
+			m, moved := m.advanceCursor()
+			m.flash = "no longer staged for deletion" + describes(name) + backTo(moved, permanent)
+			return m
 		}
 	}
 
@@ -347,20 +350,29 @@ func (m Model) stageDelete(target, name string, isFolder, permanent bool) Model 
 			where = "permanently (this database has no recycle bin)"
 		}
 	}
-	// Move on. Marking a run of rows should cost one key per row, not a key and
-	// an arrow, which is how every file manager has done it for thirty years.
-	// Only after staging: un-staging is a correction, and moving away from a
-	// correction is the wrong direction.
+	// Move on. Working down a list should cost one key per row, not a key and an
+	// arrow, which is how every file manager has done it for thirty years.
+	//
+	// The key always advances, whatever it did — staged, un-staged, or refused
+	// because the thing is already going with its folder. It used to advance
+	// only on staging, on the argument that un-staging is a correction and you
+	// want to see what you corrected; but that is a rule with an exception you
+	// have to know, and working down a list it stalled on exactly the rows you
+	// had already dealt with.
 	m = m.restage()
-	moved := false
-	m, moved = m.advanceCursor()
+	m, moved := m.advanceCursor()
 
-	undo := toggleKey(permanent) + " again undoes it"
-	if moved {
-		undo = "↑ then " + toggleKey(permanent) + " undoes it"
-	}
-	m.flash = "staged: delete " + what + " " + where + " · " + undo
+	m.flash = "staged: delete " + what + " " + where + backTo(moved, permanent)
 	return m
+}
+
+// backTo names the key that undoes what just happened, from wherever the cursor
+// now is.
+func backTo(moved, permanent bool) string {
+	if moved {
+		return " · ↑ then " + toggleKey(permanent) + " undoes it"
+	}
+	return " · " + toggleKey(permanent) + " again undoes it"
 }
 
 // advanceCursor steps one row down whichever list has focus, and reports whether
