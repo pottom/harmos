@@ -1187,19 +1187,39 @@ func (m Model) countdown() string {
 	return " " + bar + secTxt + " " + prefix + theme.Strong.Render(trunc(m.copied, provW))
 }
 
+// hints is the footer's left half: what the keys do here.
+//
+// It says different things on an unlocked source, because otherwise the editing
+// keys are invisible. Before, ^w changed the footer not at all — e, n, N, d, D,
+// m, r and ^s appeared nowhere outside the ? overlay, so the whole editing
+// feature was undiscoverable from the interface, and ^w itself was taught only
+// by the flash you get for pressing e on a locked source.
 func (m Model) hints() string {
 	var full string
 	switch {
 	case m.searchMode:
-		full = "type to filter · ↑↓ pick · ↵ apply · esc cancel"
+		full = "type to filter · ↑↓ pick · ↵ apply · esc cancel · field: | - \"…\" · ? syntax"
 	case m.showResults():
 		full = "↑↓ results · ↵ copy pw · → details · c get-cmd · g folder · / edit · esc clear"
+	case m.editableHere():
+		// The editing keys, on the surface where they work.
+		if m.focus == 1 {
+			full = "e edit · n new · d delete · m move · ^s write · ↵ copy pw · → details · ?"
+		} else {
+			full = "e edit · N folder · d delete · r rename · ^s write · →/⇥ into · / search · ?"
+		}
 	case m.focus == 1:
 		full = "↑↓ move · ↵ copy pw · → details · c get-cmd · ^b tree · / search · ?"
 	default:
-		full = "↑↓ move · →/⇥ into · ← collapse · ↵ open folder · ^b tree · / search · q quit"
+		full = "↑↓ move · →/⇥ into · ← collapse · ↵ open folder · ^w edit · / search · q quit"
 	}
 	return theme.Faded.Render(trunc(full, m.w))
+}
+
+// editableHere reports whether the source under the cursor is unlocked for
+// writing, which is what decides whether the footer offers the editing keys.
+func (m Model) editableHere() bool {
+	return !m.detail && m.writeUnlocked(m.writeCandidate())
 }
 
 func (m Model) tooSmall() string {

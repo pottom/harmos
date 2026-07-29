@@ -165,6 +165,14 @@ func (m Model) submitForm() Model {
 	}
 
 	m.setStatus = verb + " " + name
+	if m.onboarding {
+		// The first source is added and the vault is still empty, because the
+		// sources were opened before this one existed. Nothing on any screen
+		// said so, and the word "restart" appeared nowhere in the program — a
+		// first-time user concluded harmos could not read their vault.
+		m.setStatus = verb + " " + name + " — restart harmos to open it"
+		m.onboarding = false
+	}
 	m.setMode = setList
 	profs := m.sources()
 	if m.setSel >= len(profs) {

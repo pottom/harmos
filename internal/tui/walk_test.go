@@ -968,3 +968,61 @@ func TestFileContentCannotDriveTheTerminal(t *testing.T) {
 		}
 	}
 }
+
+// Unlocking a source has to change what the interface offers. It used to change
+// the footer not at all: the editing keys appeared nowhere outside the ? overlay,
+// so the headline feature of v0.2 was undiscoverable from the interface.
+func TestUnlockingChangesWhatTheFooterOffers(t *testing.T) {
+	m, _ := walkModel(t)
+	m.writeOK = map[string]bool{} // locked, as a fresh config would be
+	m = onRow(t, m, "Infra")
+
+	locked := ansi.Strip(m.hints())
+	if !strings.Contains(locked, "^w") {
+		t.Errorf("a locked source should name the key that unlocks it: %q", locked)
+	}
+
+	m.writeOK = map[string]bool{"own": true}
+	unlocked := ansi.Strip(m.hints())
+	if unlocked == locked {
+		t.Fatal("the footer is identical before and after unlocking")
+	}
+	for _, key := range []string{"e ", "d ", "^s"} {
+		if !strings.Contains(unlocked, key) {
+			t.Errorf("an unlocked source should offer %q: %q", key, unlocked)
+		}
+	}
+
+	// And in the entry table, where the keys mean slightly different things.
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab})
+	table := ansi.Strip(m.hints())
+	if !strings.Contains(table, "n new") {
+		t.Errorf("the table should offer the new-entry key: %q", table)
+	}
+}
+
+// The first source is added to a config that was read before it existed, so the
+// vault stays empty. The screen has to say what to do about that.
+func TestOnboardingSaysWhatHappensNext(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.toml")
+	m := up(New(nil, nil, cfg, 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m.tab, m.setCat, m.focus, m.onboarding = tabSettings, catSources, 1, true
+
+	m = up(m, key2("a"))
+	if m.setMode != setForm {
+		t.Fatalf("a should open the add form, mode %d", m.setMode)
+	}
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // type toggle → name
+	m = typeStr(m, "first")
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // name → path
+	m = typeStr(m, filepath.Join(dir, "v.kdbx"))
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if m.setMode != setList {
+		t.Fatalf("the form should submit (status %q)", m.setStatus)
+	}
+	if !strings.Contains(m.setStatus, "restart") {
+		t.Errorf("the first source needs a next step, got %q", m.setStatus)
+	}
+}
