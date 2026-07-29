@@ -436,15 +436,21 @@ func readable(path string) string { return strings.ReplaceAll(path, "/", " › "
 func changeHeading(c edit.Change, folded bool, extra string, w int) []rowSeg {
 	style, marker := changeStyle(c.State)
 
+	was := renamedFrom(c)
+
 	detail := c.Detail
-	if detail == "" && len(c.Lines) > 0 {
+	switch {
+	case was != "":
+		// The name half is about to say old → new. Saying it again on the right
+		// is the row answering one question twice.
+		detail = ""
+	case len(c.Lines) == 1:
+		// One changed field fits on the line, so say which and to what. "1
+		// field" told the reader something changed and left the only part they
+		// could not already see for them to go and unfold.
+		detail = oneFieldSummary(c.Lines[0], max(8, w/2))
+	case len(c.Lines) > 0:
 		detail = plural(len(c.Lines), "field", "fields")
-		if len(c.Lines) == 1 {
-			// One changed field fits on the line, so say which and to what. "1
-			// field" told the reader something changed and left the only part
-			// they could not already see for them to go and unfold.
-			detail = oneFieldSummary(c.Lines[0], max(8, w/2))
-		}
 	}
 	if folded {
 		// Folded away, the contents cannot be read, so say how much is under
@@ -461,15 +467,75 @@ func changeHeading(c edit.Change, folded bool, extra string, w int) []rowSeg {
 	// The name wears the state, because the name is the thing being deleted. The
 	// summary never does: it describes what will happen, and dressing it as
 	// deleted says it will not.
-	name := marker + " " + typeIcon(c.Kind) + " " + c.Title
+	// The marker keeps the state's colour along with the name: it is the signal
+	// a reader without colour has, and it is no use to them in the same grey as
+	// the indentation.
 	lead := "     "
-	gap := max(1, w-dw(lead)-dw(name)-dw(detail))
-	return []rowSeg{
-		{lead, theme.Faded},
-		{trunc(name, max(1, w-dw(lead)-dw(detail)-1)), style},
-		{strings.Repeat(" ", gap), theme.Faded},
-		{detail, theme.Faded.Strikethrough(false)},
+	badge := marker + " " + typeIcon(c.Kind) + " "
+	right := detailSegs(detail)
+	room := max(6, w-dw(lead)-dw(badge)-dw(detail)-1) // what the name half has
+
+	var left []rowSeg
+	// A name change is written where the name is, not remarked on at the far
+	// edge. It used to sit in the right margin in the faintest colour the theme
+	// has, on top of the selection background — present, and unreadable. The one
+	// thing a rename has to say is old → new, so the row says it, in the place
+	// the eye already is. A folder's name and an entry's title are the same
+	// thing to a reader, so they read the same way.
+	if was != "" {
+		// The old name stays legible — it is half of what the reader is here to
+		// compare — and the new one takes the state's colour, so which is which
+		// needs no explaining.
+		from := trunc(was, max(3, room/2))
+		left = []rowSeg{
+			{from, theme.Dimmed},
+			{" → ", theme.Noted},
+			{trunc(c.Title, max(1, room-dw(from)-3)), style},
+		}
+	} else {
+		left = []rowSeg{{trunc(c.Title, room), style}}
 	}
+
+	out := []rowSeg{{lead, theme.Faded}, {badge, style}}
+	out = append(out, left...)
+	used := dw(lead) + dw(badge)
+	for _, s := range left {
+		used += dw(s.text)
+	}
+	out = append(out, rowSeg{strings.Repeat(" ", max(1, w-used-dw(detail))), theme.Faded})
+	return append(out, right...)
+}
+
+// renamedFrom is what this change used to be called, when that is the thing it
+// mostly is. A folder rename says so outright; an entry whose only changed field
+// is its Title is the same act by another name, and the reader should not have to
+// know which of the two they are looking at.
+func renamedFrom(c edit.Change) string {
+	if c.Kind == edit.RenameGroup {
+		return c.Was
+	}
+	if len(c.Lines) == 1 && c.Lines[0].Field == "Title" {
+		return c.Lines[0].Old
+	}
+	return ""
+}
+
+// detailSegs styles the sentence beside a change.
+//
+// Dimmed, not faded: this row can be under the cursor, and the faintest colour
+// in the palette on the selection background is text that is technically on
+// screen. What it changed *to* takes the amber, so the outcome is the part that
+// catches the eye.
+func detailSegs(detail string) []rowSeg {
+	base := theme.Dimmed.Strikethrough(false)
+	if before, after, found := strings.Cut(detail, " → "); found {
+		return []rowSeg{
+			{before, base},
+			{" → ", theme.Noted},
+			{after, theme.Noted},
+		}
+	}
+	return []rowSeg{{detail, base}}
 }
 
 // oneFieldSummary is a single changed field on one line: what it is, and what it

@@ -322,11 +322,15 @@ func TestOnlyTheNameCarriesTheState(t *testing.T) {
 		Detail: "moved to the recycle bin"}
 	segs := changeHeading(c, false, "", 80)
 
-	var name, detail rowSeg
+	del, marker := changeStyle(edit.Deleted)
+
+	var name, badge, detail rowSeg
 	for _, s := range segs {
 		switch {
 		case strings.Contains(s.text, "PrismaCloud"):
 			name = s
+		case strings.Contains(s.text, strings.TrimSpace(marker)):
+			badge = s
 		case strings.Contains(s.text, "recycle bin"):
 			detail = s
 		}
@@ -334,12 +338,16 @@ func TestOnlyTheNameCarriesTheState(t *testing.T) {
 	if name.text == "" || detail.text == "" {
 		t.Fatalf("expected a name and a summary segment, got %+v", segs)
 	}
-	del, marker := changeStyle(edit.Deleted)
 	if name.style.GetForeground() != del.GetForeground() {
 		t.Error("the name of a deleted thing should carry the delete colour")
 	}
-	if !strings.Contains(name.text, strings.TrimSpace(marker)) {
-		t.Errorf("and its marker, which is the signal readers without colour get: %q", name.text)
+	// The marker is its own segment — a rename puts two names in the name half,
+	// so the badge cannot ride along with one of them — and it carries the same
+	// colour, because it is the signal readers without colour get.
+	if badge.text == "" {
+		t.Errorf("no marker segment: %+v", segs)
+	} else if badge.style.GetForeground() != del.GetForeground() {
+		t.Error("the marker should carry the state's colour too")
 	}
 	if detail.style.GetForeground() == del.GetForeground() {
 		t.Error("the summary is not the thing being deleted")
@@ -797,9 +805,9 @@ func TestReviewSaysFromWhatToWhat(t *testing.T) {
 
 	out := ansi.Strip(m.switchTab(tabChanges).View())
 	for _, want := range []string{
-		"Net → Networks",              // the first name, not "Network"
-		"Infra › db → Infra",          // out of here, into there
-		"Title db-prod → db-prod-new", // which field, and its two values
+		"Net → Networks",        // the first name, not "Network"
+		"Infra › db → Infra",    // out of here, into there
+		"db-prod → db-prod-new", // a title change reads where the title is
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the review should say %q:\n%s", want, out)
