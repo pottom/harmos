@@ -435,9 +435,8 @@ func TestFolderDeletionCarriesItsContents(t *testing.T) {
 	}
 
 	// The entries inside it read as going, without a marker of their own.
-	doomed := m.doomedPrefixes()
 	for _, e := range folder.entries {
-		if !atOrUnderDoomedFolder(doomed, e.Source, e.Path) {
+		if _, going := m.inDoomedFolder(e.ID); !going {
 			t.Errorf("%q is inside the deleted folder but does not know it", e.Title)
 		}
 		if m.chg.StateOf(e.ID) != 0 {

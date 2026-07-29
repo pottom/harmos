@@ -1355,3 +1355,91 @@ func treeShape(m Model) []string {
 	}
 	return out
 }
+
+// Two folders of the same name in one place are two folders, and marking one
+// must not speak for the other. A recycle bin routinely holds a pair: the guard
+// keyed on the path refused the second with "already going with Ibasa copy".
+func TestMarkingOneOfTwoSameNamedFolders(t *testing.T) {
+	path := t.TempDir() + "/pair.kdbx"
+	vaulttest.Write(t, path, vaulttest.RecycleBin(), vaulttest.Shape(func(db *gokeepasslib.Database) []gokeepasslib.Group {
+		mk := func(title string) gokeepasslib.Entry {
+			e := gokeepasslib.NewEntry()
+			e.Values = append(e.Values, vaulttest.Val("Title", title), vaulttest.PVal("Password", "pw"))
+			e.Times = gokeepasslib.NewTimeData()
+			return e
+		}
+		inner := gokeepasslib.NewGroup()
+		inner.Name = "amq"
+		inner.Entries = []gokeepasslib.Entry{mk("deep")}
+
+		first := gokeepasslib.NewGroup()
+		first.Name = "copy"
+		first.Entries = []gokeepasslib.Entry{mk("in-first")}
+		second := gokeepasslib.NewGroup()
+		second.Name = "copy"
+		second.Groups = []gokeepasslib.Group{inner}
+		second.Entries = []gokeepasslib.Entry{mk("in-second")}
+
+		holder := gokeepasslib.NewGroup()
+		holder.Name = "Holder"
+		holder.Groups = []gokeepasslib.Group{first, second}
+		root := gokeepasslib.NewGroup()
+		root.Name = "Root"
+		root.Groups = []gokeepasslib.Group{holder}
+		return []gokeepasslib.Group{root}
+	}))
+
+	h, err := vault.OpenHandle(path, "own", vault.Credentials{Password: secret.New("pw")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := h.Snapshot()
+	m := up(New(v.Entries, v.Folders, "", 30*time.Second), tea.WindowSizeMsg{Width: 110, Height: 34})
+	m.handles = map[string]*vault.Handle{"own": h}
+	m.writeOK = map[string]bool{"own": true}
+	m = m.expandAll(true)
+
+	var ids []string
+	for _, tl := range m.visible() {
+		if tl.node.name == "copy" {
+			ids = append(ids, tl.node.id)
+		}
+	}
+	if len(ids) != 2 {
+		t.Fatalf("expected two folders named copy, got %d", len(ids))
+	}
+
+	mark := func(m Model, id string) Model {
+		t.Helper()
+		for i, tl := range m.visible() {
+			if tl.node.id == id {
+				m.tsel, m.focus = i, 0
+			}
+		}
+		return up(m, key2("d"))
+	}
+
+	m = mark(m, ids[0])
+	if m.dirtyCount() != 1 {
+		t.Fatalf("the first should stage: %d (%q)", m.dirtyCount(), m.flash)
+	}
+	m = mark(m, ids[1])
+	if m.dirtyCount() != 2 {
+		t.Errorf("the second is a different folder and must stage too: %d staged (%q)",
+			m.dirtyCount(), m.flash)
+	}
+
+	// And what is genuinely inside one of them is still refused.
+	var deep string
+	for _, e := range m.viewEntries {
+		if e.Title == "deep" {
+			deep = e.ID
+		}
+	}
+	before := m.dirtyCount()
+	m = m.revealTarget(deep, false)
+	m = up(m, key2("d"))
+	if m.dirtyCount() != before {
+		t.Errorf("an entry inside a folder already going should not stage again (%q)", m.flash)
+	}
+}

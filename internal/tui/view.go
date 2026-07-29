@@ -773,7 +773,21 @@ func (m Model) entryLines(w, rows int) []string {
 		return out
 	}
 	states := m.chg.State()
-	doomed := m.doomedPrefixes()
+	doomedFolder := m.doomedFolders()
+	parents := m.folderParents()
+	goingWith := func(groupID string) bool {
+		if doomedFolder[groupID] {
+			return true
+		}
+		seen := map[string]bool{}
+		for p := parents[groupID]; p != "" && !seen[p]; p = parents[p] {
+			seen[p] = true
+			if doomedFolder[p] {
+				return true
+			}
+		}
+		return false
+	}
 	avail := max(1, rows-1)
 	start := windowStart(m.esel, avail, len(f.entries))
 	end := min(start+avail, len(f.entries))
@@ -782,7 +796,7 @@ func (m Model) entryLines(w, rows int) []string {
 		// An entry in a folder staged for deletion is going too, and says so —
 		// without a marker, since nothing was staged against the entry itself.
 		state, staged := states[e.ID], true
-		if state == 0 && atOrUnderDoomedFolder(doomed, e.Source, e.Path) {
+		if state == 0 && goingWith(e.GroupID) {
 			state, staged = edit.Deleted, false
 		}
 		if k == m.esel && m.focus == 1 {

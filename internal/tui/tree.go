@@ -405,7 +405,18 @@ func (m Model) changeStates() map[*node]nodeChange {
 	}
 	byFolder := m.chg.Parents() // where a changed target lives
 	byTarget := m.chg.State()   // what a target itself is
-	doomed := m.doomedPrefixes()
+	doomed := m.doomedFolders()
+	parents := m.folderParents()
+	goingWith := func(id string) bool {
+		seen := map[string]bool{}
+		for p := parents[id]; p != "" && !seen[p]; p = parents[p] {
+			seen[p] = true
+			if doomed[p] {
+				return true
+			}
+		}
+		return false
+	}
 	out := map[*node]nodeChange{}
 
 	var walk func(ns []*node) edit.State
@@ -415,7 +426,7 @@ func (m Model) changeStates() map[*node]nodeChange {
 			c := nodeChange{
 				own:    byTarget[n.id],
 				inside: byFolder[n.id],
-				doomed: underDoomedFolder(doomed, n.source, m.pathOfNode(n)),
+				doomed: n.id != "" && goingWith(n.id),
 			}
 			if below := walk(n.children); below > c.inside {
 				c.inside = below
