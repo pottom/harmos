@@ -293,13 +293,15 @@ func (m Model) intoBrowsing(res *session.Result) Model {
 // any more. Expanded folders are restored the same way, or reloading after a
 // save would collapse the tree the user had just arranged.
 func (m Model) rebuild(entries []vault.Entry, folders []vault.Folder) Model {
+	// Every row's state, not only the open ones. Recording just the open ones
+	// meant a rebuild could open but never close, so a folder the reader had
+	// collapsed — a source root, most visibly — sprang open again on the next
+	// one. Staging rebuilds, so marking anything for deletion reopened the tree.
 	expanded := map[string]bool{}
 	var collect func(ns []*node)
 	collect = func(ns []*node) {
 		for _, n := range ns {
-			if n.expanded {
-				expanded[n.source+"\x00"+n.id] = true
-			}
+			expanded[n.source+"\x00"+n.id] = n.expanded
 			collect(n.children)
 		}
 	}
@@ -319,12 +321,15 @@ func (m Model) rebuild(entries []vault.Entry, folders []vault.Folder) Model {
 	m.roots = buildTree(m.viewEntries, m.viewFolders)
 	m.nSrc = len(m.roots)
 
+	// A row we knew about keeps exactly the state it had. A row we did not —
+	// something just created, or a source that has only now been opened — keeps
+	// what buildTree gave it.
 	if len(expanded) > 0 {
 		var restore func(ns []*node)
 		restore = func(ns []*node) {
 			for _, n := range ns {
-				if expanded[n.source+"\x00"+n.id] {
-					n.expanded = true
+				if was, known := expanded[n.source+"\x00"+n.id]; known {
+					n.expanded = was
 				}
 				restore(n.children)
 			}

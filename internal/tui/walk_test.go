@@ -1219,3 +1219,39 @@ func TestHelpDoesNotPromiseKeysThatDoNothingHere(t *testing.T) {
 		}
 	}
 }
+
+// Staging rebuilds the tree, so it must leave the tree looking exactly as it
+// did. It used to restore only the open rows and never the closed ones, so a
+// folder the reader had collapsed — a source root most visibly — sprang open
+// again the moment anything was marked.
+func TestStagingLeavesTheTreeAsItWas(t *testing.T) {
+	m, _ := walkModel(t)
+	m = m.expandAll(true)
+
+	// Close one folder and one source root, and remember the shape.
+	for _, tl := range m.visible() {
+		if tl.node.name == "db" {
+			tl.node.expanded = false
+		}
+	}
+	openShape := rowNames(m)
+
+	m = onEntry(t, m, "Infra", "jump-host")
+	m = up(m, key2("d"))
+	if got := rowNames(m); strings.Join(got, " ") != strings.Join(openShape, " ") {
+		t.Errorf("marking an entry changed the tree:\n%v\nwas:\n%v", got, openShape)
+	}
+
+	// The same for a collapsed source root, which is the one every reader hits.
+	m2, _ := walkModel(t)
+	for _, r := range m2.roots {
+		r.expanded = false
+	}
+	closed := rowNames(m2)
+	if len(closed) != 1 {
+		t.Fatalf("a closed source should be one row, got %v", closed)
+	}
+	if got := rowNames(m2.restage()); strings.Join(got, " ") != strings.Join(closed, " ") {
+		t.Errorf("a rebuild reopened the tree: %v", got)
+	}
+}
