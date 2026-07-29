@@ -53,6 +53,12 @@ type Op struct {
 	Target string // entry or folder ID
 	Parent string // destination folder, for a create or a move
 	Name   string // folder name, for a create or a rename
+	// Was is what the target was called, or where it lived, before this
+	// operation — the readable form, because the review has to say what changed
+	// and "renamed" without the old name only tells the reader half of it. An
+	// entry carries its before-state in Before; a folder has no Draft, and a
+	// move's origin is not in the op at all, so both need this.
+	Was    string
 	Before *Draft // the entry as it was; nil for a creation
 	After  *Draft // the entry as it should be; nil for a deletion
 	Perm   bool   // delete: permanently, rather than to the recycle bin

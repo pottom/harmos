@@ -541,9 +541,11 @@ func (m Model) updateMovePicker(key string) Model {
 		}
 		m.chg, _ = m.chg.Add(edit.Op{
 			Kind: kind, Source: m.editSource, Target: m.editTarget,
-			// The name travels with the operation: a review that cannot say
-			// what moved is not a review.
+			// The name and the origin travel with the operation: a review that
+			// cannot say what moved, or where from, is not a review. The
+			// destination the view reads back off the projection.
 			Name:   m.nameOfTarget(m.editTarget, m.editFolderTarget),
+			Was:    m.readablePath(m.homeOf(m.editTarget)),
 			Parent: m.moveDests[m.moveSel].id,
 		})
 		m.flash = "staged: move to " + m.moveDests[m.moveSel].path + " · nothing is written until you save"

@@ -169,6 +169,14 @@ func (m Model) pathOfChange(c edit.Change) string {
 	return ""
 }
 
+// readablePath is a folder's path as a reader should see it, by ID.
+func (m Model) readablePath(id string) string {
+	if f, ok := m.folderByID(id); ok {
+		return readable(f.Path)
+	}
+	return ""
+}
+
 func (m Model) folderByID(id string) (folder, bool) {
 	if id == "" {
 		return folder{}, false
@@ -403,16 +411,26 @@ func (m Model) nameOfTarget(id string, isFolder bool) string {
 	return ""
 }
 
-// detailOf is the sentence beside a change. A move says where to: "moved" alone
-// is the half of it the reader already knew.
+// detailOf is the sentence beside a change. A move says where from and where to:
+// "moved" alone is the half of it the reader already knew, and either half on
+// its own leaves them to work out the other.
 func (m Model) detailOf(c edit.Change) string {
 	if c.Kind == edit.MoveEntry || c.Kind == edit.MoveGroup {
 		if f, ok := m.folderByID(c.Parent); ok {
-			return "moved to " + strings.ReplaceAll(f.Path, "/", " › ")
+			to := readable(f.Path)
+			if from := readable(c.Was); from != "" {
+				return from + " → " + to
+			}
+			return "moved to " + to
 		}
 	}
 	return c.Detail
 }
+
+// readable is a stored path as a reader should see it. The separator is a
+// chevron everywhere a path is shown to somebody, so a folder whose own name
+// contains a slash cannot pass for two folders.
+func readable(path string) string { return strings.ReplaceAll(path, "/", " › ") }
 
 // changeHeading is one staged item: its marker, its name, and what will happen.
 func changeHeading(c edit.Change, folded bool, extra string, w int) []rowSeg {
@@ -421,6 +439,12 @@ func changeHeading(c edit.Change, folded bool, extra string, w int) []rowSeg {
 	detail := c.Detail
 	if detail == "" && len(c.Lines) > 0 {
 		detail = plural(len(c.Lines), "field", "fields")
+		if len(c.Lines) == 1 {
+			// One changed field fits on the line, so say which and to what. "1
+			// field" told the reader something changed and left the only part
+			// they could not already see for them to go and unfold.
+			detail = oneFieldSummary(c.Lines[0], max(8, w/2))
+		}
 	}
 	if folded {
 		// Folded away, the contents cannot be read, so say how much is under
@@ -446,6 +470,26 @@ func changeHeading(c edit.Change, folded bool, extra string, w int) []rowSeg {
 		{strings.Repeat(" ", gap), theme.Faded},
 		{detail, theme.Faded.Strikethrough(false)},
 	}
+}
+
+// oneFieldSummary is a single changed field on one line: what it is, and what it
+// went from and to.
+//
+// The values are whatever the diff put in the Line, which means a protected one
+// arrives already masked — the summary can no more leak a password than the hunk
+// below it can.
+func oneFieldSummary(l edit.Line, w int) string {
+	half := max(3, (w-dw(l.Field)-5)/2)
+	old, next := trunc(l.Old, half), trunc(l.New, half)
+	switch {
+	case old == next && next != "":
+		return l.Field + " changed" // two identical masks say nothing
+	case old == "":
+		return l.Field + " + " + next
+	case next == "":
+		return l.Field + " − " + old
+	}
+	return l.Field + " " + old + " → " + next
 }
 
 // hunkLines renders one field's change in git's shape: the field named once,

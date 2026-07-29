@@ -111,7 +111,8 @@ func (m Model) stageInlineRename() Model {
 
 	if isFolder {
 		m.chg, _ = m.chg.Add(edit.Op{
-			Kind: edit.RenameGroup, Source: m.editSource, Target: target, Name: name,
+			Kind: edit.RenameGroup, Source: m.editSource, Target: target,
+			Name: name, Was: m.inlineBefore,
 		})
 		m.flash = "staged: renamed to " + name + " · nothing is written until you save"
 		return m.restage()
