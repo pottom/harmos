@@ -277,8 +277,8 @@ func (m Model) openFolderEditor(parentID, existingID, name string) Model {
 // stageDelete stages a deletion. It does not ask.
 //
 // There used to be a confirmation here, and it was answering a question nobody
-// had: staging writes nothing, the row turns red and struck through the moment
-// you press the key, and x on the Changes tab takes it back. A prompt in front
+// had: staging writes nothing, the row turns red and takes the delete marker the
+// moment you press the key, and x on the Changes tab takes it back. A prompt in front
 // of a reversible act is not a safeguard — it is a keystroke people learn to
 // dismiss without reading, which is exactly what you do not want them doing at
 // the one prompt that matters, the write.

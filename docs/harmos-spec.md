@@ -17,7 +17,7 @@ A CLI/TUI tool for browsing and copying my passwords. Two sources:
 
 **v1 is strictly read-only.** Browse, search, copy. No writing back to the server, no entry editing, no bidirectional sync. This is a deliberate scope decision — see §3.
 
-> **Amended by M6.** Read-only against the **Pleasant server is permanent** — every argument in §3 still holds. **Local `.kdbx` sources became writable** in M6: they are read-only by default, unlocked per source for one run, edited as staged changes, and written only after an explicit confirmation. The design is `docs/design/harmos-write-model.md`; §3 below is the reasoning that keeps the *server* side closed.
+> **Amended by M6.** Read-only against the **Pleasant server is permanent** — every argument in §3 still holds. **Local `.kdbx` sources became writable** in M6: they are read-only by default, unlocked per source, remembered in the config, edited as staged changes, and written only after an explicit confirmation. The design is `docs/design/harmos-write-model.md`; §3 below is the reasoning that keeps the *server* side closed.
 
 ### Ship it in two stages, and stop after the first
 
@@ -73,7 +73,7 @@ I will have several sources at once: more than one Pleasant server, plus several
 
 > **Safety requirement:** for a local kdbx source, open the file **read-only**. Never write to it, never create a `.lock` file beside it, never rewrite it. State it in code as an invariant and test it (assert mtime and bytes unchanged after a full browse session).
 >
-> **M6 narrows this, it does not repeal it.** A *browse* session still leaves the file byte- and mtime-unchanged, and that test stays. The only thing that may ever write is an explicit, confirmed save on a source the user unlocked this run. No `.lock` file is created even then — concurrent modification is detected by fingerprint, not by locking.
+> **M6 narrows this, it does not repeal it.** A *browse* session still leaves the file byte- and mtime-unchanged, and that test stays. The only thing that may ever write is an explicit, confirmed save on a source the user unlocked (remembered in the config). No `.lock` file is created even then — concurrent modification is detected by fingerprint, not by locking.
 
 ## 3. Why the server side stays read-only (do not talk me out of this)
 

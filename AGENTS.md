@@ -92,7 +92,7 @@ harmos is not a fork — there is no upstream engine and no three-branch sync mo
 
 - `internal/vault/` — the single kdbx reader. Everything downstream (search, TUI, CLI) goes through it. It knows nothing about Pleasant.
 - `internal/source/pleasant/` — the only package that knows Pleasant exists: API client + mapper. Produces a kdbx cache.
-- `internal/source/localkdbx/` — reads external `.kdbx` files as sources, read-only unless the user unlocks one for writing this run (M6).
+- `internal/source/localkdbx/` — reads external `.kdbx` files as sources, read-only unless the source is unlocked for writing, which is remembered in the config (M6).
 
 If two readers ever appear, that is an architecture violation, not a feature. There is one reader; the sources feed it.
 

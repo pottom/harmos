@@ -148,7 +148,8 @@ Press `?` for the full key map. The staples:
 | Key | Action |
 | --- | --- |
 | `/` | Search (supports `field:`, `\|` for OR, `"phrase"`, `-exclude`) |
-| `→` / `enter` | Open entry detail · `esc` / `←` to go back |
+| `→` | Open entry detail · `esc` / `←` to go back |
+| `enter` | Expand a folder · **copy** the selected password |
 | `ctrl+y` | Copy the password (concealed, auto-cleared) |
 | `ctrl+u` / `ctrl+o` | Copy the username / URL |
 | `ctrl+t` | Copy the current TOTP code |
@@ -253,7 +254,9 @@ Editing is deliberately several steps, and reversible until the last:
    sends to the recycle bin (`D` deletes permanently), `m` moves, `r` renames.
    `ctrl+g` rolls a password in the editor using your Generate-tab settings.
 3. **Look at it.** Staged rows are coloured where they are — teal for new, amber
-   for changed, struck through for deleted — and the Changes tab shows a diff,
+   for changed, rust with a marker for deleted — every state carries a glyph as
+   well as a colour — and the Changes tab shows your vault's own tree with a
+   git-style diff under each item,
    with `x` to revert one. No password ever appears there.
 4. **Write** with `ctrl+s`, which names the file, the number of changes, and the
    backup it will take before asking.
@@ -353,7 +356,7 @@ Not yet audited. The design:
   keyring; the config file never holds a secret. A copied password is written to
   a **concealed** clipboard (the platform's do-not-record hints) and cleared
   after the timeout.
-- **Cache at rest** — the Pleasant cache is a KDBX4 file (Argon2id, ChaCha20)
+- **Cache at rest** — the Pleasant cache is a KDBX4 file (Argon2d, ChaCha20)
   locked with a **composite key**: your master password *and* a random keyfile
   harmos generates on first sync at `$XDG_CONFIG_HOME/harmos/<name>.key` (mode
   `0600`), kept in the config dir, apart from the cache under `$XDG_DATA_HOME`.

@@ -489,7 +489,7 @@ fallback is a checkmark — do not reuse it.
 
 ### 6.4 Tabs
 
-**`1`/`2`/`3` stay Vault/Generate/Settings; Changes is `4`.** v0.2.1 has just
+**Display order is Vault / Changes / Generate / Settings** — Changes is `2` and Settings moved to `4`; the reasoning is in `tabs.go`. (This paragraph originally argued the opposite.) v0.2.1 has just
 corrected the help overlay and README to that mapping; moving Settings from `3` to `4`
 would be a muscle-memory regression. The Changes tab is **always present**; when empty
 it reads *"nothing pending — no source is unlocked for writing (ctrl+w)"*.
