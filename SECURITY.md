@@ -16,9 +16,13 @@ deliberate design goal (the codebase is meant to be small and auditable).
 
 ## At-rest protection of the cache
 
-Each Pleasant cache is a KDBX4 file encrypted with ChaCha20-256, keyed from your
-harmos master password via Argon2d. The cache is a re-syncable derived artifact,
-so the KDF cost is a deliberate middle ground (spec §14): **19 MiB memory, 2
+Each Pleasant cache is a KDBX4 file encrypted with ChaCha20-256, keyed from a
+**composite key** via Argon2d: your harmos master password *and* a random
+per-source keyfile that lives apart from the cache — `$XDG_CONFIG_HOME/harmos/`
+`<name>.key`, mode 0600, while the cache is under `$XDG_DATA_HOME`. A cache
+copied off the machine cannot be opened with the master password alone.
+
+The cache is a re-syncable derived artifact, so the KDF cost is a deliberate middle ground (spec §14): **19 MiB memory, 2
 iterations** — the OWASP Argon2 baseline, far dearer to brute-force than a
 library default, while keeping unlock well under a second.
 

@@ -41,10 +41,10 @@ const (
 //
 // Rows are kept as segments rather than as one rendered string because the
 // cursor must not change what a row means: a row staged for deletion has to keep
-// its strikethrough under the selection, and — just as important — the
-// strikethrough has to stay on the name of the thing being deleted and off the
-// sentence describing what will happen to it. Striking "moved to the recycle
-// bin" says the move is cancelled, which is the opposite of the truth.
+// its delete colour under the selection, and — just as important — that colour
+// has to stay on the name of the thing being deleted and off the sentence
+// describing what will happen to it. A summary dressed as deleted says the
+// deletion is cancelled, which is the opposite of the truth.
 type rowSeg struct {
 	text  string
 	style lipgloss.Style
@@ -433,9 +433,9 @@ func changeHeading(c edit.Change, folded bool, extra string, w int) []rowSeg {
 	// and an entry with the same name read identically — and they are very
 	// different things to be deleting.
 	//
-	// The name wears the state — struck through for a deletion, because the name
-	// is the thing being deleted. The summary never does: it describes what will
-	// happen, and striking it through says it will not.
+	// The name wears the state, because the name is the thing being deleted. The
+	// summary never does: it describes what will happen, and dressing it as
+	// deleted says it will not.
 	name := marker + " " + typeIcon(c.Kind) + " " + c.Title
 	lead := "     "
 	gap := max(1, w-dw(lead)-dw(name)-dw(detail))
@@ -632,8 +632,8 @@ func (m Model) contentW() int { return max(1, m.w-2) }
 // Deleting a folder stages one operation, deliberately: one thing was decided,
 // so there is one thing to undo, and exploding it into an operation per child
 // would make reverting it a scavenger hunt. But the contents are going, and a
-// screen that shows the folder struck through while its entries sit there in
-// ordinary type is telling the reader something false.
+// screen that marks the folder while its entries sit there in ordinary type is
+// telling the reader something false.
 //
 // So the deletion is one operation and the whole subtree wears it. Only the
 // folder carries the marker, because only the folder is staged.

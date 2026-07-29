@@ -65,9 +65,11 @@ the footer alone** — `TestTabFrameIsUniform` pins both.
 
 ## Writing
 
-`m.writeOK` is the per-source write lock, and it starts **empty on every run**:
-nothing is persisted, so a vault is editable only because the user unlocked it
-this session. Do not conflate it with `m.locked`, which means the unlock phase.
+`m.writeOK` is the per-source write lock. It is **seeded at startup from the
+config** (`writable = true`, via `writableFromConfig`) and written back by
+`persistWritable` on every `ctrl+w`, so a vault stays editable across launches
+once the user has said so — and a config that has never heard of the feature
+keeps the old read-only behaviour. Do not conflate it with `m.locked`, which means the unlock phase.
 `m.handles` holds the sources the session could open for writing — a Pleasant
 cache never gets one — and `m.chg` is the staged change set. `ctrl+w` toggles the
 lock, asking before unlocking and never before locking.

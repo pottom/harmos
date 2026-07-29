@@ -384,7 +384,7 @@ func (m Model) folderCrumb(flat []treeLine, sel int) string {
 // because the two mean different things to whoever is reading the row.
 //
 // own is the folder itself: it is being deleted, created or renamed, so the row
-// carries the state — struck through, for a deletion. inside is only that
+// carries the state — the delete colour and marker. inside is only that
 // something below it changed. Conflating them made a folder holding one deleted
 // entry look exactly like a folder that was itself about to be deleted.
 type nodeChange struct {
@@ -454,9 +454,9 @@ func (m Model) treeRowStyle(n *node, c nodeChange) (name, icon, markerStyle lipg
 		return st, st, theme.Faded, mk
 	}
 	if c.own != 0 {
-		// The row is the thing that changed: colour, strikethrough and marker,
-		// icon included — an icon left in the writable colour reads as "this is
-		// fine" next to a struck-through name.
+		// The row is the thing that changed: colour and marker, icon included —
+		// an icon left in the writable colour reads as "this is fine" next to a
+		// name marked for deletion.
 		st, mk := changeStyle(c.own)
 		return st, st, st, mk
 	}

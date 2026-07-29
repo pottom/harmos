@@ -1197,3 +1197,25 @@ func TestOneBackupPerRunAcrossSaves(t *testing.T) {
 		t.Errorf("later saves in the same run add %d more", n-1)
 	}
 }
+
+// The help must name keys that work where it names them. ^w and / are bound on
+// the Vault tab only, and the shared trailer advertised them on all four.
+func TestHelpDoesNotPromiseKeysThatDoNothingHere(t *testing.T) {
+	m, _ := walkModel(t)
+
+	vault := strings.Join(m.keyList(60), "\n")
+	for _, key := range []string{"^w", "/"} {
+		if !strings.Contains(vault, key) {
+			t.Errorf("the Vault help should name %q: %s", key, vault)
+		}
+	}
+
+	for _, tab := range []int{tabChanges, tabGenerate, tabSettings} {
+		list := strings.Join(up(m, tabKey(tab)).keyList(60), "\n")
+		for _, key := range []string{"unlock / lock", "search every source"} {
+			if strings.Contains(list, key) {
+				t.Errorf("tab %d names %q, which is not bound there:\n%s", tab, key, list)
+			}
+		}
+	}
+}

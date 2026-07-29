@@ -158,6 +158,8 @@ func (m Model) keyList(w int) []string {
 			row("⇧← ⇧→", "fold shut / open, where ⇧ survives"),
 			row("↵", "expand a folder · copy password"),
 			row("^b", "hide / show the folder tree"),
+			row("^w", "unlock / lock this source for writing"),
+			row("/", "search every source"),
 			row("PgUp/Dn", "page any list"),
 			"",
 			head("SEARCH RESULTS"),
@@ -191,10 +193,8 @@ func (m Model) keyList(w int) []string {
 		"",
 		head("GENERAL"),
 		row("1 2 3 4", tabNames()),
-		row("^w", "unlock / lock this source for writing"),
-		row("/", "search every source"),
-		row("? q", "help · quit (clears clip)"),
-		row("^p ^n", "up / down, anywhere"),
+		row("? q", "help · quit (clears the clipboard)"),
+		row("^p ^n", "up / down in a list"),
 	)
 
 	if len(m.excluded) > 0 {
