@@ -511,3 +511,29 @@ func ansiStrip(s string) string {
 	}
 	return s
 }
+
+// savingView is what a write looks like while it happens.
+//
+// A save re-derives the key with Argon2 twice per source — once to encode, once
+// for the verify-decode before the rename — and every key is swallowed while it
+// runs. Without this the screen was identical to the moment before it, so the
+// only signal that anything was happening was that the program had stopped
+// responding. The unlock screen has said "unlocking…" through its own Argon2
+// call since the beginning; this is the same courtesy at the other end.
+func (m Model) savingView() string {
+	lines := []string{
+		"",
+		"  " + theme.Strong.Render("Writing…"),
+		"",
+		"  " + theme.Dimmed.Render(m.chg.Summary()),
+		"",
+		"  " + theme.Faded.Render("re-deriving the key and verifying what was written"),
+		"",
+	}
+	for _, src := range m.chg.Sources() {
+		if h := m.handles[src]; h != nil {
+			lines = append(lines, "  "+theme.Faded.Render(trunc(h.Path(), max(10, m.w-8))))
+		}
+	}
+	return m.modal("Save", "", lines, "")
+}

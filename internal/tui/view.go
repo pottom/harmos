@@ -147,6 +147,9 @@ func (m Model) View() string {
 	if m.saveConfirm {
 		return m.saveConfirmView()
 	}
+	if m.saving {
+		return m.savingView()
+	}
 	if m.edit != editNone {
 		return m.editorView()
 	}
@@ -1222,14 +1225,51 @@ func (m Model) editableHere() bool {
 	return !m.detail && m.writeUnlocked(m.writeCandidate())
 }
 
+// tooSmall is the one screen guaranteed to be shown on a small terminal, so it
+// is the one screen that must not overflow one. lipgloss.Place pads but never
+// truncates, so a fixed block ran off both edges at every size below its own —
+// and every size below its own is exactly when this is drawn.
 func (m Model) tooSmall() string {
-	msg := lipgloss.JoinVertical(lipgloss.Center,
-		theme.Brand.Render("harmos"), "",
-		theme.Strong.Render("Terminal too small"), "",
-		theme.Bad.Render(fmt.Sprintf("%d × %d", m.w, m.h))+theme.Dimmed.Render(" — need ")+theme.Strong.Render("40 × 10"), "",
-		theme.Faded.Render("Widen the window."),
-	)
-	return lipgloss.Place(max(1, m.w), max(1, m.h), lipgloss.Center, lipgloss.Center, msg)
+	size := theme.Bad.Render(fmt.Sprintf("%d × %d", m.w, m.h)) + theme.Dimmed.Render(" — need ") + theme.Strong.Render("40 × 10")
+	lines := []string{
+		theme.Brand.Render("harmos"),
+		"",
+		theme.Strong.Render("Terminal too small"),
+		"",
+		size,
+		"",
+		theme.Faded.Render(m.growHint()),
+	}
+	// Shorter forms rather than a truncated one: what is left has to be the part
+	// that says what is wrong and what to do, not the two lines that happened to
+	// come first.
+	switch {
+	case m.h < 3:
+		lines = []string{theme.Faded.Render(m.growHint())}
+	case m.h < len(lines):
+		lines = []string{theme.Strong.Render("Terminal too small"), size, theme.Faded.Render(m.growHint())}
+	}
+	if len(lines) > m.h {
+		lines = lines[:max(1, m.h)]
+	}
+	for i := range lines {
+		lines[i] = trunc(lines[i], max(1, m.w))
+	}
+	return lipgloss.Place(max(1, m.w), max(1, m.h), lipgloss.Center, lipgloss.Center,
+		lipgloss.JoinVertical(lipgloss.Center, lines...))
+}
+
+// growHint names the dimension that is actually short. It said "Widen the
+// window." on a terminal that was wide enough and too short.
+func (m Model) growHint() string {
+	switch {
+	case m.w < 40 && m.h < 10:
+		return "Make the window bigger."
+	case m.w < 40:
+		return "Widen the window."
+	default:
+		return "Make the window taller."
+	}
 }
 
 // changeStyle is how a staged state reads on a row: a colour, and a glyph that

@@ -1026,3 +1026,174 @@ func TestOnboardingSaysWhatHappensNext(t *testing.T) {
 		t.Errorf("the first source needs a next step, got %q", m.setStatus)
 	}
 }
+
+// Two sibling folders with the same name are two folders. The tree used to key
+// itself by path, so they collapsed into one row where the last one silently won
+// every operation aimed at either — and a merge produces this shape routinely.
+func TestSiblingFoldersWithTheSameName(t *testing.T) {
+	path := t.TempDir() + "/same.kdbx"
+	vaulttest.Write(t, path, vaulttest.Shape(func(db *gokeepasslib.Database) []gokeepasslib.Group {
+		mk := func(title string) gokeepasslib.Entry {
+			e := gokeepasslib.NewEntry()
+			e.Values = append(e.Values, vaulttest.Val("Title", title), vaulttest.PVal("Password", "pw"))
+			e.Times = gokeepasslib.NewTimeData()
+			return e
+		}
+		first := gokeepasslib.NewGroup()
+		first.Name = "Same"
+		first.Entries = []gokeepasslib.Entry{mk("in-first")}
+		second := gokeepasslib.NewGroup()
+		second.Name = "Same"
+		second.Entries = []gokeepasslib.Entry{mk("in-second")}
+		root := gokeepasslib.NewGroup()
+		root.Name = "Root"
+		root.Groups = []gokeepasslib.Group{first, second}
+		return []gokeepasslib.Group{root}
+	}))
+
+	h, err := vault.OpenHandle(path, "own", vault.Credentials{Password: secret.New("pw")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := h.Snapshot()
+	m := up(New(v.Entries, v.Folders, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = m.expandAll(true)
+
+	var rows []*node
+	for _, tl := range m.visible() {
+		if tl.node.name == "Same" {
+			rows = append(rows, tl.node)
+		}
+	}
+	if len(rows) != 2 {
+		t.Fatalf("two folders named Same should be two rows, got %d", len(rows))
+	}
+	if rows[0].id == rows[1].id {
+		t.Error("and they should be different folders")
+	}
+	for _, r := range rows {
+		if len(r.entries) != 1 {
+			t.Errorf("each holds its own entry, %q holds %d", r.id, len(r.entries))
+		}
+	}
+}
+
+// A folder whose name contains "/" is one folder. The tree used to split its
+// path, growing a phantom parent row with no ID — which the writer reads as
+// "the vault root", so anything created on that row went to the top of the file.
+func TestAFolderNamedWithASlash(t *testing.T) {
+	path := t.TempDir() + "/slash.kdbx"
+	vaulttest.Write(t, path, vaulttest.Shape(func(db *gokeepasslib.Database) []gokeepasslib.Group {
+		e := gokeepasslib.NewEntry()
+		e.Values = append(e.Values, vaulttest.Val("Title", "victim"), vaulttest.PVal("Password", "pw"))
+		e.Times = gokeepasslib.NewTimeData()
+		g := gokeepasslib.NewGroup()
+		g.Name = "a/b"
+		g.Entries = []gokeepasslib.Entry{e}
+		root := gokeepasslib.NewGroup()
+		root.Name = "Root"
+		root.Groups = []gokeepasslib.Group{g}
+		return []gokeepasslib.Group{root}
+	}))
+
+	h, err := vault.OpenHandle(path, "own", vault.Credentials{Password: secret.New("pw")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := h.Snapshot()
+	m := up(New(v.Entries, v.Folders, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = m.expandAll(true)
+
+	var names []string
+	for _, tl := range m.visible() {
+		names = append(names, tl.node.name)
+		if tl.node.name == "a" && tl.node.id == "" && tl.depth > 0 {
+			t.Error("a row that belongs to no folder — anything created here goes to the vault root")
+		}
+	}
+	if !slices.Contains(names, "a/b") {
+		t.Errorf("the folder should appear under its own name: %v", names)
+	}
+}
+
+// A save swallows every key while it runs and takes two Argon2 derivations per
+// source. The screen used to be identical to the moment before it, so the only
+// signal that anything was happening was that the program had stopped answering.
+func TestASaveSaysItIsHappening(t *testing.T) {
+	m, _ := walkModel(t)
+	m = onEntry(t, m, "db", "db-prod")
+	m = up(m, key2("e"))
+	m = typeStr(m, "-x")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	c := m.switchTab(tabChanges)
+	before := ansi.Strip(c.View())
+	c, _ = c.askToSave()
+	c, cmd := c.updateSaveConfirm("y")
+	if cmd == nil {
+		t.Fatal("expected the write to start")
+	}
+	if !c.saving {
+		t.Fatal("the model should know it is saving")
+	}
+
+	during := ansi.Strip(c.View())
+	if during == before {
+		t.Error("the screen is identical while the write runs")
+	}
+	if !strings.Contains(during, "Writing") {
+		t.Errorf("it should say what is happening:\n%s", during)
+	}
+	// And it goes away when the write lands.
+	c = c.onSaveDone(cmd().(saveDoneMsg))
+	if c.saving || strings.Contains(ansi.Strip(c.View()), "Writing…") {
+		t.Error("and stop saying it afterwards")
+	}
+}
+
+// One backup per file per run, not one per save. The interface reopens the
+// handle after every successful save, and the flag that says "already backed up"
+// lived on the handle — so every save left another full copy of the vault beside
+// it, forever, and nothing prunes them.
+func TestOneBackupPerRunAcrossSaves(t *testing.T) {
+	m, path := walkModel(t)
+	dir := filepath.Dir(path)
+
+	save := func(m Model, title string) Model {
+		t.Helper()
+		m = onRow(t, m, "db") // whatever is in there — the titles grow as we go
+		m.focus, m.esel = 1, 0
+		m = up(m, key2("e"))
+		m = typeStr(m, title)
+		m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+		c := m.switchTab(tabChanges)
+		c, _ = c.askToSave()
+		c, cmd := c.updateSaveConfirm("y")
+		if cmd == nil {
+			t.Fatal("expected the write to start")
+		}
+		c = c.onSaveDone(cmd().(saveDoneMsg))
+		if c.flash != "saved" {
+			t.Fatalf("save: %q", c.flash)
+		}
+		return c.switchTab(tabVault)
+	}
+
+	backups := func() []string {
+		got, err := filepath.Glob(filepath.Join(dir, "*.harmos-backup-*.kdbx"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	m = save(m, "-one")
+	if n := len(backups()); n != 1 {
+		t.Fatalf("the first save takes the backup, found %d", n)
+	}
+	m = save(m, "-two")
+	_ = save(m, "-three")
+	if n := len(backups()); n != 1 {
+		t.Errorf("later saves in the same run add %d more", n-1)
+	}
+}

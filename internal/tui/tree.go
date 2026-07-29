@@ -33,9 +33,17 @@ type treeLine struct {
 	depth int
 }
 
-// buildTree groups entries into a per-source folder tree: the top level is the
-// set of sources, then the folder Path segments, and entries hang off their
-// folder. Source roots start expanded so their folders are visible at a glance.
+// buildTree assembles the per-source folder tree: a root node per source, then
+// the folders as the file relates them, with entries hanging off the folder they
+// live in.
+//
+// It is built from identities, not from path strings. Splitting Path on "/" was
+// shorter and wrong twice over: two sibling folders with the same name collapsed
+// into one row — legal in KeePass, and produced by any merge — where the last
+// one silently won every operation aimed at either; and a folder whose name
+// contains a "/" grew a phantom parent row that belonged to no folder at all,
+// whose ID was empty, which the writer reads as "the vault root". Creating
+// something on that row put it at the top of the vault.
 //
 // Folders come in as their own list rather than being inferred from entry paths.
 // Inference cannot see a folder with nothing in it — so an empty one was
@@ -43,48 +51,74 @@ type treeLine struct {
 // something was put in it.
 func buildTree(entries []vault.Entry, folders []vault.Folder) []*node {
 	var roots []*node
-	index := map[string]*node{} // full path key → node
+	rootOf := map[string]*node{}
+	byID := map[string]*node{}
 
-	child := func(parent *node, key, name string) *node {
-		if n, ok := index[key]; ok {
+	sourceRoot := func(source string) *node {
+		if n, ok := rootOf[source]; ok {
 			return n
 		}
-		n := &node{name: name}
-		index[key] = n
-		if parent == nil {
-			n.expanded = true
-			roots = append(roots, n)
-		} else {
-			parent.children = append(parent.children, n)
-		}
+		n := &node{name: source, source: source, expanded: true}
+		rootOf[source] = n
+		roots = append(roots, n)
 		return n
 	}
 
-	// Materialise every folder first, so the empty ones exist too.
+	byPath := map[string]*node{} // source\x00path — for entries no folder claims
+
 	for _, f := range folders {
-		key := f.Source
-		cur := child(nil, key, f.Source)
-		cur.source = f.Source
-		for _, seg := range strings.Split(f.Path, "/") {
-			key += "/" + seg
-			cur = child(cur, key, seg)
-			cur.source = f.Source
+		sourceRoot(f.Source)
+		n := &node{name: f.Name, id: f.ID, source: f.Source}
+		byID[f.ID] = n
+		byPath[f.Source+"\x00"+f.Path] = n
+	}
+	for _, f := range folders {
+		n := byID[f.ID]
+		// A parent that is not itself a browsable folder is the file's root
+		// container, and the source stands in for it.
+		if p, ok := byID[f.ParentID]; ok && f.ParentID != f.ID {
+			p.children = append(p.children, n)
+			continue
 		}
-		cur.id = f.ID
+		sourceRoot(f.Source).children = append(sourceRoot(f.Source).children, n)
 	}
 
 	for _, e := range entries {
-		key := e.Source
-		cur := child(nil, key, e.Source)
-		cur.source = e.Source
+		sourceRoot(e.Source)
+		if n, ok := byID[e.GroupID]; ok {
+			n.entries = append(n.entries, e)
+			continue
+		}
+		// No folder claims it. It may sit in the file's root container, or the
+		// caller may have passed entries without folders at all — the empty
+		// vault does, and so does anything that has only a search index. Fall
+		// back to the path, which is the only structure left.
+		home := sourceRoot(e.Source)
 		if e.Path != "" {
-			for _, seg := range strings.Split(e.Path, "/") {
-				key += "/" + seg
-				cur = child(cur, key, seg)
-				cur.source = e.Source
+			if n, ok := byPath[e.Source+"\x00"+e.Path]; ok {
+				home = n
+			} else {
+				// The same key shape the folders registered, so a synthesised
+				// node and a real one never split a branch in two.
+				cur, prefix := home, ""
+				for _, seg := range strings.Split(e.Path, "/") {
+					if prefix != "" {
+						prefix += "/"
+					}
+					prefix += seg
+					key := e.Source + "\x00" + prefix
+					n, ok := byPath[key]
+					if !ok {
+						n = &node{name: seg, source: e.Source}
+						byPath[key] = n
+						cur.children = append(cur.children, n)
+					}
+					cur = n
+				}
+				home = cur
 			}
 		}
-		cur.entries = append(cur.entries, e)
+		home.entries = append(home.entries, e)
 	}
 
 	sortNodes(roots)
