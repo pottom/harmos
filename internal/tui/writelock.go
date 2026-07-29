@@ -213,12 +213,34 @@ func (m Model) changesPlaceholder() []string {
 }
 
 // changesView is the Changes tab.
+//
+// The frame is the other tabs' frame, to the row: header, panel, a context line,
+// then the footer — panelsH is m.h-3 like everywhere else, so the bottom border
+// does not jump when switching tabs. The tab indicator belongs to the footer
+// alone; the header's right-hand slot carries a note about this tab, the way
+// Generate's carries "crypto/rand".
 func (m Model) changesView() string {
+	panelsH := max(3, m.h-3)
 	body := m.changesBody(m.w - 4)
-	panelsH := max(3, m.h-2)
-	header := spread(m.brandVersion()+theme.Faded.Render("  ·  changes"), m.tabIndicator(), m.w)
+
+	note := ""
+	if m.dirtyCount() > 0 {
+		note = theme.Noted.Render("unsaved")
+	}
+	header := spread(m.brandVersion()+theme.Faded.Render("  ·  changes"), note, m.w)
+
+	// The context line is present whether or not it has anything to say, so the
+	// geometry never depends on the content.
+	ctx := ""
+	if m.remaining > 0 {
+		ctx = m.countdown()
+	} else if n := m.dirtyCount(); n > 0 {
+		ctx = theme.Faded.Render(trunc("^s writes "+m.chg.Summary(), m.w))
+	}
+
 	return header + "\n" +
 		box("Changes", m.chg.Summary(), body, m.w, panelsH, true) + "\n" +
+		ctx + "\n" +
 		m.footer(theme.Faded.Render("↑↓ pick · x revert · ↵ go to it · ^s save · 1 back to the vault"))
 }
 

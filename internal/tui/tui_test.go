@@ -47,7 +47,7 @@ func TestSettingsThemePicker(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := up(New(nil, nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 16})
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	m = up(m, tabKey(tabSettings))
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}}) // jump into the Theme pane
 	if m.setCat != catTheme || m.focus != 1 {
 		t.Fatalf("t should open the Theme pane (cat=%d focus=%d)", m.setCat, m.focus)
@@ -75,7 +75,7 @@ func TestSettingsSavePassword(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := up(New(nil, nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 18})
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	m = up(m, tabKey(tabSettings))
 	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the Sources pane
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
 	if m.setMode != setPrompt {
@@ -100,7 +100,7 @@ func TestSettingsSyncNeedsCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := up(New(nil, nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 18})
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	m = up(m, tabKey(tabSettings))
 	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the Sources pane
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	if m.setMode == setSyncing {
@@ -115,7 +115,7 @@ func TestSettingsAddForm(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
 	m := up(New(nil, nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 20})
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}) // Settings
+	m = up(m, tabKey(tabSettings))                                // Settings
 	m = up(m, tea.KeyMsg{Type: tea.KeyTab})                       // into the Sources pane
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}) // add form
 	if m.setMode != setForm {
@@ -146,8 +146,8 @@ func TestPreferencesPersist(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := up(New(nil, nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 18})
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}) // Settings
-	for range 3 {                                                 // Sources → … → Preferences
+	m = up(m, tabKey(tabSettings)) // Settings
+	for range 3 {                  // Sources → … → Preferences
 		m = up(m, tea.KeyMsg{Type: tea.KeyDown})
 	}
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter}) // into the pane
@@ -195,7 +195,7 @@ func TestSettingsSourceStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := up(New(nil, nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 120, Height: 16})
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}) // Settings / Sources
+	m = up(m, tabKey(tabSettings)) // Settings / Sources
 	out := ansi.Strip(m.View())
 	for _, want := range []string{"STATUS", "own password", "cache just now"} {
 		if !strings.Contains(out, want) {
@@ -227,7 +227,7 @@ func TestSettingsTabToggles(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := up(New(nil, nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 90, Height: 20})
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}) // Settings
+	m = up(m, tabKey(tabSettings)) // Settings
 	if m.focus != 0 {
 		t.Fatalf("Settings should start on the category pane, focus=%d", m.focus)
 	}
@@ -252,7 +252,7 @@ func TestSettingsRemove(t *testing.T) {
 	}
 
 	m := up(New(nil, nil, cfgPath, 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}}) // Settings
+	m = up(m, tabKey(tabSettings))                                // Settings
 	m = up(m, tea.KeyMsg{Type: tea.KeyTab})                       // into the Sources pane
 	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}) // remove the selected (a)
 	if m.setMode != setRemove {
@@ -979,22 +979,36 @@ func TestQuitAndSearchQ(t *testing.T) {
 	}
 }
 
-// 1/2/3 switch tabs (Vault/Generate/Settings), but digits type while searching.
+// The number keys follow the tabs left to right, and the order is the one the
+// header, the help and the README all claim.
 func TestTabsSwitch(t *testing.T) {
 	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
 	if m.tab != 0 {
 		t.Fatal("default tab should be Vault")
 	}
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
-	if m.tab != 2 || !strings.Contains(m.View(), "Password") {
-		t.Error("2 should switch to the Generate tab")
+
+	var order []string
+	for i, spec := range tabOrder() {
+		order = append(order, spec.label)
+		if want := string(rune('1' + i)); spec.key != want {
+			t.Errorf("tab %d (%s) is on key %q, want %q — the keys must follow the order",
+				i, spec.label, spec.key, want)
+		}
 	}
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
-	if m.tab != 1 || !strings.Contains(m.View(), "Sources") {
-		t.Error("3 should switch to the Settings tab")
+	if got := strings.Join(order, " "); got != "Vault Changes Generate Settings" {
+		t.Errorf("tab order = %q, want %q", got, "Vault Changes Generate Settings")
 	}
-	m = up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
-	if m.tab != 0 {
+
+	m = up(m, tabKey(tabGenerate))
+	if m.tab != tabGenerate || !strings.Contains(m.View(), "Password") {
+		t.Error("the Generate key should switch to the Generate tab")
+	}
+	m = up(m, tabKey(tabSettings))
+	if m.tab != tabSettings || !strings.Contains(m.View(), "Sources") {
+		t.Error("the Settings key should switch to the Settings tab")
+	}
+	m = up(m, tabKey(tabVault))
+	if m.tab != tabVault {
 		t.Error("1 should switch back to Vault")
 	}
 	// while searching, digits are typed, not tab switches
@@ -1056,6 +1070,17 @@ func nodeCount(ns []*node) int {
 		n += 1 + nodeCount(c.children)
 	}
 	return n
+}
+
+// tabKey is the number key that reaches a tab, looked up rather than spelled
+// out, so reordering the tabs cannot silently retarget a test.
+func tabKey(idx int) tea.KeyMsg {
+	for _, t := range tabOrder() {
+		if t.idx == idx {
+			return key(rune(t.key[0]))
+		}
+	}
+	panic("no tab with that index")
 }
 
 // selectNode parks the cursor on the named row of the visible tree.
@@ -1203,5 +1228,43 @@ func TestOneLevelAfterFold(t *testing.T) {
 	}
 	if slices.Contains(names, "db") || slices.Contains(names, "prod") {
 		t.Errorf("→ should not restore the deep expansion: %v", names)
+	}
+}
+
+// frameBottom is the row the panel's bottom border sits on, counted from the top
+// of the screen. Every tab should put it in the same place: switching tabs must
+// not make the frame jump.
+func frameBottom(t *testing.T, view string) int {
+	t.Helper()
+	lines := strings.Split(ansi.Strip(view), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.Contains(lines[i], "╰") {
+			return i
+		}
+	}
+	t.Fatalf("no panel border in:\n%s", view)
+	return -1
+}
+
+// Every tab draws the same frame, and the tab indicator appears once.
+func TestTabFrameIsUniform(t *testing.T) {
+	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	want := -1
+	for _, spec := range tabOrder() {
+		tm := up(m, tabKey(spec.idx))
+		view := tm.View()
+
+		if got := frameBottom(t, view); want == -1 {
+			want = got
+		} else if got != want {
+			t.Errorf("%s: panel bottom on row %d, but Vault puts it on %d", spec.label, got, want)
+		}
+
+		// The indicator is the footer's job. It used to be drawn in the Changes
+		// header as well, which read as two different navigations.
+		if n := strings.Count(ansi.Strip(view), "Generate"); n != 1 {
+			t.Errorf("%s: %q appears %d times, want 1 (one tab indicator)", spec.label, "Generate", n)
+		}
 	}
 }

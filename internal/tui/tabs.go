@@ -25,15 +25,17 @@ type tabSpec struct {
 // tabOrder is the display order, left to right, and therefore also the order the
 // number keys follow.
 //
-// Changes goes last, on 4, rather than taking 3 from Settings. v0.2.1 had just
-// corrected the help overlay and the README to 1/2/3 for Vault/Generate/Settings;
-// moving Settings now would break the muscle memory of anyone who read either.
+// Ordered by how close a tab is to the work: Changes is the other half of
+// editing the vault, so it sits next to it, and Settings — visited to configure
+// something and then left — goes last. An earlier version put Changes last to
+// keep 3 on Settings; the tabs are read left to right far more often than that
+// one key is pressed from memory.
 func tabOrder() []tabSpec {
 	return []tabSpec{
 		{"Vault", "1", tabVault},
-		{"Generate", "2", tabGenerate},
-		{"Settings", "3", tabSettings},
-		{"Changes", "4", tabChanges},
+		{"Changes", "2", tabChanges},
+		{"Generate", "3", tabGenerate},
+		{"Settings", "4", tabSettings},
 	}
 }
 

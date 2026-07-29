@@ -192,21 +192,21 @@ func TestLockBadgeFitsInThePane(t *testing.T) {
 // The Changes tab is always there, and says what to do when empty.
 func TestChangesTabExplainsItself(t *testing.T) {
 	m := lockModel(t)
-	m = up(m, key2("4"))
+	m = up(m, tabKey(tabChanges))
 
 	if m.tab != tabChanges {
-		t.Fatalf("4 should open the Changes tab, got %d", m.tab)
+		t.Fatalf("the Changes key should open the Changes tab, got %d", m.tab)
 	}
 	out := ansi.Strip(m.View())
 	if !strings.Contains(out, "nothing pending") && !strings.Contains(out, "cannot be edited") {
 		t.Errorf("the empty Changes tab should explain itself:\n%s", out)
 	}
 
-	// And 1/2/3 still mean what they meant before it existed.
-	for key, want := range map[string]int{"1": tabVault, "2": tabGenerate, "3": tabSettings} {
-		m = up(m, key2(key))
-		if m.tab != want {
-			t.Errorf("key %q → tab %d, want %d", key, m.tab, want)
+	// Every number key lands on the tab the indicator shows in that position.
+	for i, spec := range tabOrder() {
+		m = up(m, key2(spec.key))
+		if m.tab != spec.idx {
+			t.Errorf("key %q (position %d, %s) → tab %d, want %d", spec.key, i+1, spec.label, m.tab, spec.idx)
 		}
 	}
 }

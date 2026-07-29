@@ -114,7 +114,7 @@ func TestEditInteractionContract(t *testing.T) {
 	send(key('e'))                       // → the editor
 	send(key('!'))                       // type into the title
 	send(tea.KeyMsg{Type: tea.KeyEnter}) // stage it
-	send(key('4'))                       // → the Changes tab
+	send(tabKey(tabChanges))             // → the Changes tab
 	send(tea.KeyMsg{Type: tea.KeyCtrlS}) // → the save confirmation
 	send(key('n'))                       // decline
 

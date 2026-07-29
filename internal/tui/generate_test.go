@@ -30,7 +30,7 @@ func TestGeneratorOptsPersist(t *testing.T) {
 func genTab() Model {
 	m := New(nil, nil, "", 30*time.Second)
 	m = up(m, tea.WindowSizeMsg{Width: 100, Height: 22})
-	return up(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}}) // Generate tab
+	return up(m, tabKey(tabGenerate))
 }
 
 func space(m Model) Model {

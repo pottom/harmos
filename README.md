@@ -156,7 +156,7 @@ Press `?` for the full key map. The staples:
 | `s` | Save attachments (entry detail) |
 | `z` / `Z` | Fold the selected branch / every folder, all the way down (`shift+←`/`shift+→` too, where the terminal sends them) |
 | `ctrl+b` | Hide / show the folder tree pane |
-| `1` / `2` / `3` / `4` | Switch Vault / Generate / Settings / Changes tab |
+| `1` / `2` / `3` / `4` | Switch Vault / Changes / Generate / Settings tab |
 | `ctrl+w` | Unlock this source for editing (or lock it again) |
 | `e` · `n` / `N` · `d` / `D` · `m` / `r` | Edit · new entry / folder · delete to bin / permanently · move / rename |
 | `ctrl+s` | Review the staged changes and write them |
