@@ -6,9 +6,13 @@ package edit
 // One source of truth, two surfaces: this map and Diff are both derived from the
 // same reduced log, so the colour on a row and the line in the Changes tab can
 // never disagree about what is staged.
-func (s Set) State() map[string]State {
+func (s Set) State() map[string]State { return statesOf(s.Effective()) }
+
+// statesOf is State over an already-reduced set, so a caller that has one does
+// not pay for the reduction again.
+func statesOf(effective []Op) map[string]State {
 	out := map[string]State{}
-	for _, op := range s.Effective() {
+	for _, op := range effective {
 		switch op.Kind {
 		case CreateEntry, CreateGroup:
 			out[op.Target] = New
@@ -38,8 +42,11 @@ func (s Set) StateOf(target string) State { return s.State()[target] }
 // Deletion wins over creation wins over modification: a folder containing both a
 // deleted and an edited entry reads as the more consequential of the two.
 func (s Set) Parents() map[string]State {
+	effective := s.Effective()
+	states := statesOf(effective)
+
 	out := map[string]State{}
-	for _, op := range s.Effective() {
+	for _, op := range effective {
 		parent := op.Parent
 		if parent == "" && op.Before != nil {
 			parent = op.Before.GroupID
@@ -50,7 +57,7 @@ func (s Set) Parents() map[string]State {
 		if parent == "" {
 			continue
 		}
-		st := s.StateOf(op.Target)
+		st := states[op.Target]
 		if st > out[parent] {
 			out[parent] = st
 		}

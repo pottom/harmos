@@ -63,19 +63,29 @@ func (o LineOp) Marker() string {
 const masked = "•••••••"
 
 // Diff renders the staged changes for review, newest last.
+//
+// The reduction and the state map are computed once for the whole set. They used
+// to be computed per operation — changeOf asked StateOf, which asked State,
+// which reduced the entire log again — so the review was quadratic in the number
+// of staged changes, and the interface calls this several times per frame. At
+// 600 staged changes that was 1.5 seconds to draw one, and 600 is a bulk
+// password rotation, not an exotic session.
 func (s Set) Diff() []Change {
-	var out []Change
-	for _, op := range s.Effective() {
-		out = append(out, changeOf(s, op))
+	effective := s.Effective()
+	states := statesOf(effective)
+
+	out := make([]Change, 0, len(effective))
+	for _, op := range effective {
+		out = append(out, changeOf(states, op))
 	}
 	return out
 }
 
-func changeOf(s Set, op Op) Change {
+func changeOf(states map[string]State, op Op) Change {
 	c := Change{
 		Seq:    op.Seq,
 		Kind:   op.Kind,
-		State:  s.StateOf(op.Target),
+		State:  states[op.Target],
 		Source: op.Source,
 		Target: op.Target,
 		Parent: parentOf(op),
