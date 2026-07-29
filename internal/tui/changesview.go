@@ -1141,3 +1141,33 @@ func lastSegment(path string) string {
 	}
 	return path
 }
+
+// dropDeletionsUnder takes back deletions staged against things inside a folder
+// that is now being deleted as a whole. They are the same decision, and staging
+// them twice made the write do two different things to one item.
+func (m Model) dropDeletionsUnder(folderID string) Model {
+	f, ok := m.folderByID(folderID)
+	if !ok {
+		return m
+	}
+	source := ""
+	for _, mf := range m.viewFolders {
+		if mf.ID == folderID {
+			source = mf.Source
+			break
+		}
+	}
+	for _, op := range m.chg.Effective() {
+		if op.Source != source || (op.Kind != edit.DeleteEntry && op.Kind != edit.DeleteGroup) {
+			continue
+		}
+		src, path, found := m.locate(op.Target)
+		if !found || src != source {
+			continue
+		}
+		if strings.HasPrefix(path, f.Path+"/") || (op.Kind == edit.DeleteEntry && path == f.Path) {
+			m.chg, _ = m.chg.Revert(op.Seq)
+		}
+	}
+	return m
+}

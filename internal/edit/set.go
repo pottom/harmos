@@ -100,8 +100,39 @@ func (s Set) Effective() []Op {
 		out = kept
 	}
 
+	// A deletion inside a folder that is also being deleted is not a second
+	// deletion — it is the same one. Applying both moved the child out of the
+	// folder it went with: on disk the bin held the child at its root and the
+	// folder beside it. Whichever order they were staged in.
+	out = subsumeInsideDeletedFolders(out)
+
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Seq < out[j].Seq })
 	return out
+}
+
+// subsumeInsideDeletedFolders drops entry deletions whose folder is going too.
+//
+// It can only see the folder an entry was in — the change set holds identities
+// and operations, not the vault's shape — so this closes the direct-child case
+// for every caller. Deeper nesting is the interface's to know, and it does.
+func subsumeInsideDeletedFolders(ops []Op) []Op {
+	doomed := map[string]bool{}
+	for _, op := range ops {
+		if op.Kind == DeleteGroup {
+			doomed[op.Target] = true
+		}
+	}
+	if len(doomed) == 0 {
+		return ops
+	}
+	var kept []Op
+	for _, op := range ops {
+		if op.Kind == DeleteEntry && op.Before != nil && doomed[op.Before.GroupID] {
+			continue
+		}
+		kept = append(kept, op)
+	}
+	return kept
 }
 
 // cancelled is the targets that were created and then un-created by the

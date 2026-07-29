@@ -742,3 +742,133 @@ func TestEditingAfterAMoveKeepsTheMove(t *testing.T) {
 	}
 	t.Error("the entry left the projection")
 }
+
+// An otpauth:// URI is the shared seed. The editor was printing it in full, on
+// e, with no reveal keypress — while every other surface treated it as a secret.
+func TestTheEditorDoesNotPrintTheTOTPSeed(t *testing.T) {
+	const seed = "ZZTOTPCANARY222"
+	path := t.TempDir() + "/otp.kdbx"
+	vaulttest.Write(t, path, vaulttest.RecycleBin(), vaulttest.Shape(func(db *gokeepasslib.Database) []gokeepasslib.Group {
+		e := gokeepasslib.NewEntry()
+		e.Values = append(e.Values,
+			vaulttest.Val("Title", "with-otp"),
+			vaulttest.PVal("Password", "pw"),
+			vaulttest.PVal("otp", "otpauth://totp/x?secret="+seed+"&digits=6&period=30"))
+		e.Times = gokeepasslib.NewTimeData()
+		g := gokeepasslib.NewGroup()
+		g.Name = "Infra"
+		g.Entries = []gokeepasslib.Entry{e}
+		root := gokeepasslib.NewGroup()
+		root.Name = "Root"
+		root.Groups = []gokeepasslib.Group{g}
+		return []gokeepasslib.Group{root}
+	}))
+
+	h, err := vault.OpenHandle(path, "own", vault.Credentials{Password: secret.New("pw")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := h.Snapshot()
+	m := up(New(v.Entries, v.Folders, "", 30*time.Second), tea.WindowSizeMsg{Width: 110, Height: 34})
+	m.handles = map[string]*vault.Handle{"own": h}
+	m.writeOK = map[string]bool{"own": true}
+
+	m = onEntry(t, m, "Infra", "with-otp")
+	m = up(m, key2("e"))
+	if m.edit != editEntry {
+		t.Fatalf("e should open the editor, got %d (%q)", m.edit, m.flash)
+	}
+	if out := ansi.Strip(m.View()); strings.Contains(out, seed) {
+		t.Errorf("the TOTP seed is on screen unasked:\n%s", out)
+	}
+	// And it is still there to be revealed and edited.
+	if !strings.Contains(m.editForm.Raw("totp"), seed) {
+		t.Error("the field should still hold the URI")
+	}
+}
+
+// Deleting a child and then its folder is one deletion, not two. Applying both
+// pulled the child out of the folder it went with: on disk the bin held the
+// child at its root and the folder beside it.
+func TestDeletingAChildThenItsFolderIsOneDeletion(t *testing.T) {
+	m, path := walkModel(t)
+
+	m = onEntry(t, m, "db", "db-prod")
+	m = up(m, key2("d")) // the child first
+	if m.dirtyCount() != 1 {
+		t.Fatalf("expected the entry staged, got %d", m.dirtyCount())
+	}
+	m = onRow(t, m, "db")
+	m = up(m, key2("d")) // then the folder around it
+
+	if n := m.dirtyCount(); n != 1 {
+		t.Errorf("the folder subsumes the entry: %d changes staged", n)
+	}
+	for _, op := range m.chg.Effective() {
+		if op.Kind == edit.DeleteEntry {
+			t.Errorf("the entry's own deletion should be gone: %+v", op)
+		}
+	}
+
+	c := m.switchTab(tabChanges)
+	c, _ = c.askToSave()
+	c, cmd := c.updateSaveConfirm("y")
+	if cmd == nil {
+		t.Fatal("expected the write to start")
+	}
+	c = c.onSaveDone(cmd().(saveDoneMsg))
+	if c.flash != "saved" {
+		t.Fatalf("save: %q", c.flash)
+	}
+
+	h, err := vault.OpenHandle(path, "own", vault.Credentials{Password: secret.New("pw")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, e := range h.Snapshot().Entries {
+		got = append(got, e.Path+"/"+e.Title)
+	}
+	sort.Strings(got)
+	want := []string{"Infra/jump-host", "Net/router", "Recycle Bin/db/db-prod", "Recycle Bin/db/db-stage"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("the child should have gone into the bin inside its folder:\n%v\nwant:\n%v", got, want)
+	}
+}
+
+// A save leaves the tree agreeing with the file. The projection is derived from
+// the staged set, so clearing the set without re-deriving showed everything that
+// had just been created twice — and the obvious next move is to delete one.
+func TestTheTreeMatchesTheFileAfterASave(t *testing.T) {
+	m, path := walkModel(t)
+	m = onRow(t, m, "db")
+	m = up(m, key2("n"))
+	m = typeStr(m, "made-up")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	c := m.switchTab(tabChanges)
+	c, _ = c.askToSave()
+	c, cmd := c.updateSaveConfirm("y")
+	c = c.onSaveDone(cmd().(saveDoneMsg))
+	if c.flash != "saved" {
+		t.Fatalf("save: %q", c.flash)
+	}
+
+	h, err := vault.OpenHandle(path, "own", vault.Credentials{Password: secret.New("pw")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	onDisk := len(h.Snapshot().Entries)
+	if len(c.viewEntries) != onDisk {
+		t.Errorf("the tree holds %d entries, the file %d", len(c.viewEntries), onDisk)
+	}
+	seen := 0
+	for _, e := range c.viewEntries {
+		if e.Title == "made-up" {
+			seen++
+		}
+	}
+	if seen != 1 {
+		t.Errorf("the new entry appears %d times in the tree", seen)
+	}
+}

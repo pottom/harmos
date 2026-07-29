@@ -31,7 +31,12 @@ type Key struct {
 func Parse(uri string) (Key, error) {
 	u, err := url.Parse(strings.TrimSpace(uri))
 	if err != nil {
-		return Key{}, err
+		// Never the parser's error: url.Error prints the whole input, and the
+		// whole input is the shared seed. It reached a terminal for real — the
+		// CLI wraps this error and prints it to stderr, so one malformed entry
+		// put a TOTP secret in the shell history of anybody who ran
+		// "harmos get --otp" against it.
+		return Key{}, fmt.Errorf("not a valid otpauth URI")
 	}
 	if !strings.EqualFold(u.Scheme, "otpauth") {
 		return Key{}, fmt.Errorf("not an otpauth URI")

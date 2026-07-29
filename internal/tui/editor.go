@@ -129,7 +129,12 @@ func entryForm(d edit.Draft, width int) form {
 		textField("username", "Username", "", d.Username),
 		maskedField("password", "Password", d.Password.Reveal()),
 		textField("url", "URL", "", d.URL),
-		textField("totp", "TOTP", "otpauth://…", d.TOTP),
+		// Masked, like the password: an otpauth:// URI *is* the shared seed, and
+		// every other surface treats it as a secret — the detail pane shows only
+		// the derived code, the diff masks it. The editor was printing it in
+		// full, on e, with no reveal keypress, onto a screen that is in the
+		// scrollback. ^r reveals it here, as it does the password.
+		maskedField("totp", "TOTP", d.TOTP),
 		textField("tags", "Tags", "separated by ;", d.Tags),
 		multiField("notes", "Notes", d.Notes, 4),
 		rowsField("fields", "Fields", rows),
@@ -311,6 +316,13 @@ func (m Model) stageDelete(target, name string, isFolder, permanent bool) Model 
 			m.flash = "no longer staged for deletion" + describes(name)
 			return m.restage()
 		}
+	}
+
+	if isFolder {
+		// Anything under it that was already staged for deletion goes with the
+		// folder now. Leaving both staged applied both, and the child was pulled
+		// out of the folder it was deleted with.
+		m = m.dropDeletionsUnder(target)
 	}
 
 	op := edit.Op{Kind: kind, Source: m.editSource, Target: target, Name: name, Perm: perm}

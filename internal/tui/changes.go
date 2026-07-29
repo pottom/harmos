@@ -269,10 +269,14 @@ func (m Model) onSaveDone(msg saveDoneMsg) Model {
 	// next attempt write them again — three saves, three copies of the same
 	// entry, each carrying the same kdbx UUID.
 	for _, src := range msg.written {
+		// Drop the changes first: rebuild projects the staged set over the
+		// entries, so reloading while the set still held them showed everything
+		// that had just been created twice — once from the file, once from the
+		// projection — and the obvious next move is to delete "the duplicate".
+		m.chg = m.chg.DropSource(src)
 		if v, err := m.reload(src); err == nil {
 			m = m.rebuild(v.Entries, v.Folders)
 		}
-		m.chg = m.chg.DropSource(src)
 	}
 
 	if msg.err != nil {
@@ -300,7 +304,7 @@ func (m Model) onSaveDone(msg saveDoneMsg) Model {
 	m.chgSel = 0
 	m.chgFold, m.chgScroll = nil, 0
 	m.flash = "saved"
-	return m
+	return m.restage() // the tree is derived from the set; the set is now empty
 }
 
 // discardHandleState throws away a half-applied in-memory database by reopening
