@@ -102,9 +102,10 @@ func TestMockChangesReview(t *testing.T) {
 		t.Errorf("a move should say what moved and where to:\n%s", out)
 	}
 
-	// The tally distinguishes its states. Modified and Moved both printed "~".
+	// The tally distinguishes its states. Modified and Moved both printed "~",
+	// and both deletions printed "-".
 	tally := ansi.Strip(m.impactTally())
-	for _, want := range []string{"+", "~", "→", "-"} {
+	for _, want := range []string{"+", "~", "→", "-", "✕"} {
 		if !strings.Contains(tally, want) {
 			t.Errorf("the tally should carry %q: %q", want, tally)
 		}
@@ -118,10 +119,12 @@ func TestMockChangesReview(t *testing.T) {
 			t.Errorf("the confirmation should say %q:\n%s", want, confirm)
 		}
 	}
-	// All of a source's removals being permanent reads as "permanently", not
-	// "1 of them permanently".
-	if !strings.Contains(confirm, "removed, permanently") {
-		t.Errorf("grammar: when everything goes permanently, say so plainly:\n%s", confirm)
+	// The two deletions get a sentence each, so the irreversible half is never a
+	// subordinate clause the reader has to subtract their way to.
+	for _, want := range []string{"to the recycle bin", "gone for good"} {
+		if !strings.Contains(confirm, want) {
+			t.Errorf("the confirmation should say %q:\n%s", want, confirm)
+		}
 	}
 	// The focused button is the bracketed one — brackets read as "this one".
 	if !strings.Contains(confirm, "[ Cancel ]") || strings.Contains(confirm, "[ Write ]") {

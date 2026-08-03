@@ -623,23 +623,25 @@ func TestWriteConfirmationCountsThings(t *testing.T) {
 	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "own", Target: "g1", Name: "doomed", Perm: true})
 
 	im := m.impactOf("own")
-	if im.folders != 2 {
-		t.Errorf("the folder and its sub-folder go: counted %d", im.folders)
+	if im.folders() != 2 {
+		t.Errorf("the folder and its sub-folder go: counted %d", im.folders())
 	}
-	if im.entries != 12 {
-		t.Errorf("every entry inside goes: counted %d", im.entries)
+	if im.entries() != 12 {
+		t.Errorf("every entry inside goes: counted %d", im.entries())
 	}
-	if im.permanent != 14 {
-		t.Errorf("all of it permanently: counted %d", im.permanent)
+	if im.permanent() != 14 {
+		t.Errorf("all of it permanently: counted %d", im.permanent())
 	}
 
 	m, _ = m.switchTab(tabChanges).askToSave()
 	out := ansi.Strip(m.View())
-	if !strings.Contains(out, "14 things deleted permanently") {
-		t.Errorf("the confirmation should count the things, not the operations:\n%s", out)
+	// Counted in what a vault is made of, not in operations and not in "things":
+	// one keystroke on a folder staged all fourteen.
+	if !strings.Contains(out, "2 folders and 12 entries deleted permanently") {
+		t.Errorf("the confirmation should count the folders and entries:\n%s", out)
 	}
-	if !strings.Contains(out, "12 entries") {
-		t.Errorf("and say what they are:\n%s", out)
+	if strings.Contains(out, "things") {
+		t.Errorf("a vault is made of folders and entries, not things:\n%s", out)
 	}
 	if m.confirmSel != 1 {
 		t.Error("a permanent deletion should leave the cursor on Cancel")
@@ -660,8 +662,8 @@ func TestImpactDoesNotDoubleCount(t *testing.T) {
 	m.chg, _ = m.chg.Add(edit.Op{Kind: edit.DeleteGroup, Source: "s", Target: "g2", Name: "sub"})
 
 	im := m.impactOf("s")
-	if im.folders != 2 || im.entries != 1 {
-		t.Errorf("counted %d folders and %d entries, want 2 and 1", im.folders, im.entries)
+	if im.folders() != 2 || im.entries() != 1 {
+		t.Errorf("counted %d folders and %d entries, want 2 and 1", im.folders(), im.entries())
 	}
 }
 
@@ -837,5 +839,92 @@ func TestOneFieldSummaryMasksSecrets(t *testing.T) {
 	}
 	if !strings.Contains(out, "Password") {
 		t.Errorf("it should still name the field:\n%s", out)
+	}
+}
+
+// The two deletions are different acts — one leaves the thing in the bin, the
+// other leaves nothing — so no surface may render them the same. Every surface,
+// because the one that does not is the one the reader happens to be looking at.
+func TestPermanentAndSoftDeleteLookDifferent(t *testing.T) {
+	t.Setenv("HARMOS_NERDFONT", "0")
+	m, _ := walkModel(t)
+	m = m.expandAll(true)
+
+	m = onEntry(t, m, "db", "db-prod") // to the recycle bin
+	m = up(m, key2("d"))
+	m = onEntry(t, m, "db", "db-stage") // gone for good
+	m = up(m, key2("D"))
+
+	_, soft := changeStyle(edit.Deleted)
+	_, hard := changeStyle(edit.Purged)
+	if soft == hard {
+		t.Fatal("the two deletions must not share a glyph: colour is not the signal")
+	}
+
+	// 1. the entry table, where they were staged
+	table := ansi.Strip(m.View())
+	if !strings.Contains(table, strings.TrimSpace(soft)+" db-prod") {
+		t.Errorf("the binned entry should carry the bin marker:\n%s", table)
+	}
+	if !strings.Contains(table, strings.TrimSpace(hard)+" db-stage") {
+		t.Errorf("the purged entry should carry its own:\n%s", table)
+	}
+
+	// 2. the review
+	review := ansi.Strip(m.switchTab(tabChanges).View())
+	for _, want := range []string{"moved to the recycle bin", "deleted permanently"} {
+		if !strings.Contains(review, want) {
+			t.Errorf("the review should say %q:\n%s", want, review)
+		}
+	}
+
+	// 3. the confirmation: a sentence each, and the irreversible one warned about
+	c, _ := m.switchTab(tabChanges).askToSave()
+	confirm := ansi.Strip(c.View())
+	for _, want := range []string{"1 entry to the recycle bin", "gone for good", "deleted permanently"} {
+		if !strings.Contains(confirm, want) {
+			t.Errorf("the confirmation should say %q:\n%s", want, confirm)
+		}
+	}
+}
+
+// Everything inside a permanently deleted folder is going permanently too. It
+// used to inherit a generic "deleted", which promised a recycle bin that would
+// not have it — the one lie in this interface that cannot be corrected after
+// the write.
+func TestContentsOfAPurgedFolderAreAlsoPurged(t *testing.T) {
+	t.Setenv("HARMOS_NERDFONT", "0")
+	m, _ := walkModel(t)
+	m = m.expandAll(true)
+
+	m = onRow(t, m, "Infra") // a folder with entries under it, permanently
+	m = up(m, key2("D"))
+
+	_, hard := changeStyle(edit.Purged)
+	_, soft := changeStyle(edit.Deleted)
+
+	// In the tree, the rows below it.
+	states := m.changeStates()
+	var checked int
+	for n, c := range states {
+		if c.doomed == 0 {
+			continue
+		}
+		checked++
+		if c.doomed != edit.Purged {
+			t.Errorf("%q inherits %v, want Purged", n.name, c.doomed)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("nothing inherited the deletion; the fixture cannot prove anything")
+	}
+
+	// And in the review's list of what goes with it.
+	review := ansi.Strip(m.switchTab(tabChanges).View())
+	if strings.Contains(review, strings.TrimSpace(soft)+" ") {
+		t.Errorf("nothing in a purged folder may wear the recycle-bin marker:\n%s", review)
+	}
+	if !strings.Contains(review, strings.TrimSpace(hard)) {
+		t.Errorf("the contents should carry the permanent marker:\n%s", review)
 	}
 }

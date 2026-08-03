@@ -17,7 +17,14 @@ func statesOf(effective []Op) map[string]State {
 		case CreateEntry, CreateGroup:
 			out[op.Target] = New
 		case DeleteEntry, DeleteGroup:
-			out[op.Target] = Deleted
+			// Which of the two deletions this is travels with the state, so every
+			// surface that decorates a row gets the distinction for free rather
+			// than each one going back to the op log to ask.
+			if op.Perm {
+				out[op.Target] = Purged
+			} else {
+				out[op.Target] = Deleted
+			}
 		case MoveEntry, MoveGroup:
 			// A move is only a move if nothing stronger already applies: an entry
 			// that was created this session and then moved is still just new.

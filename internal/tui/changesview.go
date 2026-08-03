@@ -291,7 +291,7 @@ func (m Model) sourceHeading(source string, w int) []rowSeg {
 // border, and nowhere does it appear as a number without its marker.
 func statBar(counts map[edit.State]int) []rowSeg {
 	var out []rowSeg
-	for _, st := range []edit.State{edit.New, edit.Modified, edit.Moved, edit.Deleted} {
+	for _, st := range []edit.State{edit.New, edit.Modified, edit.Moved, edit.Deleted, edit.Purged} {
 		n := counts[st]
 		if n == 0 {
 			continue
@@ -345,6 +345,8 @@ func statMarker(st edit.State) string {
 		return "+"
 	case edit.Deleted:
 		return "-"
+	case edit.Purged:
+		return "✕" // not another "-": the bin is recoverable, this is not
 	case edit.Moved:
 		return "→" // not "~": a move and an edit are different things
 	default:
@@ -648,9 +650,10 @@ func (m Model) impactTally() string {
 		total.changedEntries += im.changedEntries
 		total.movedFolders += im.movedFolders
 		total.movedEntries += im.movedEntries
-		total.folders += im.folders
-		total.entries += im.entries
-		total.permanent += im.permanent
+		total.binFolders += im.binFolders
+		total.binEntries += im.binEntries
+		total.gonFolders += im.gonFolders
+		total.gonEntries += im.gonEntries
 	}
 
 	i := ic()
@@ -668,16 +671,23 @@ func (m Model) impactTally() string {
 	if n := total.movedFolders + total.movedEntries; n > 0 {
 		count(edit.Moved, itoa(n))
 	}
-	if total.folders > 0 || total.entries > 0 {
+	// The two deletions get their own group. Summed, the tally said how much was
+	// going and hid which of it was coming back.
+	removed := func(st edit.State, folders, entries int) {
+		if folders == 0 && entries == 0 {
+			return
+		}
 		var what []string
-		if total.folders > 0 {
-			what = append(what, itoa(total.folders)+i.folder)
+		if folders > 0 {
+			what = append(what, itoa(folders)+i.folder)
 		}
-		if total.entries > 0 {
-			what = append(what, itoa(total.entries)+i.entry)
+		if entries > 0 {
+			what = append(what, itoa(entries)+i.entry)
 		}
-		count(edit.Deleted, what...)
+		count(st, what...)
 	}
+	removed(edit.Deleted, total.binFolders, total.binEntries)
+	removed(edit.Purged, total.gonFolders, total.gonEntries)
 	return strings.Join(parts, theme.Faded.Render(" "))
 }
 
@@ -762,15 +772,21 @@ func isFolderKind(k edit.Kind) bool {
 	return k == edit.CreateGroup || k == edit.DeleteGroup || k == edit.RenameGroup || k == edit.MoveGroup
 }
 
-// doomedFolders is the set of folder IDs staged for deletion.
-func (m Model) doomedFolders() map[string]bool {
+// doomedFolders maps every folder staged for deletion to which deletion it is.
+//
+// The state travels rather than a bool, because everything inside such a folder
+// is going the same way it is: showing the contents of a permanently deleted
+// folder as bin-bound would understate the one act in the program that cannot
+// be undone. A missing key is edit.Unchanged, which is falsy in the only way
+// these callers use it.
+func (m Model) doomedFolders() map[string]edit.State {
 	if m.chg.Empty() {
 		return nil
 	}
-	out := map[string]bool{}
+	out := map[string]edit.State{}
 	for _, c := range m.chg.Diff() {
-		if c.State == edit.Deleted && isFolderKind(c.Kind) {
-			out[c.Target] = true
+		if c.State.Deleting() && isFolderKind(c.Kind) {
+			out[c.Target] = c.State
 		}
 	}
 	return out
@@ -812,7 +828,7 @@ func (m Model) ancestorDoomed(folderID string) (string, bool) {
 	seen := map[string]bool{}
 	for id := parents[folderID]; id != "" && !seen[id]; id = parents[id] {
 		seen[id] = true
-		if doomed[id] {
+		if doomed[id] != 0 {
 			return m.nameOfTarget(id, true), true
 		}
 	}
@@ -834,7 +850,7 @@ func (m Model) inDoomedFolder(id string) (string, bool) {
 	// An entry hangs off its group; a folder hangs off its parent.
 	for _, e := range m.viewEntries {
 		if e.ID == id {
-			if m.doomedFolders()[e.GroupID] {
+			if m.doomedFolders()[e.GroupID] != 0 {
 				return m.nameOfTarget(e.GroupID, true), true
 			}
 			return m.ancestorDoomed(e.GroupID)
@@ -891,7 +907,7 @@ func (m Model) goesWithIt(folderID string) (entries, folders int) {
 
 // alsoGoing is the phrase appended to a folder deletion's summary.
 func (m Model) alsoGoing(c edit.Change) string {
-	if c.State != edit.Deleted || !isFolderKind(c.Kind) {
+	if !c.State.Deleting() || !isFolderKind(c.Kind) {
 		return ""
 	}
 	entries, folders := m.goesWithIt(c.Target)
@@ -932,7 +948,7 @@ func (m Model) pathOfNode(n *node) string {
 // consequences of one staged decision, not decisions of their own, and there is
 // nothing here to revert separately.
 func (m Model) contentsGoing(c edit.Change, w int) [][]rowSeg {
-	if c.State != edit.Deleted || !isFolderKind(c.Kind) {
+	if !c.State.Deleting() || !isFolderKind(c.Kind) {
 		return nil
 	}
 	f, ok := m.folderByID(c.Target)
@@ -941,7 +957,9 @@ func (m Model) contentsGoing(c edit.Change, w int) [][]rowSeg {
 	}
 
 	const indent = "       "
-	del, mark := changeStyle(edit.Deleted)
+	// The contents wear the parent's deletion, not a generic one: everything
+	// under a permanently deleted folder goes permanently too.
+	del, mark := changeStyle(c.State)
 	i := ic()
 
 	var out [][]rowSeg
@@ -1111,9 +1129,16 @@ type writeImpact struct {
 	newFolders, newEntries         int
 	changedFolders, changedEntries int
 	movedFolders, movedEntries     int
-	folders, entries               int // removed
-	permanent                      int // of the removed, those skipping the recycle bin
+	binFolders, binEntries         int // removed to the recycle bin
+	gonFolders, gonEntries         int // removed permanently: no bin, no undo
 }
+
+// folders and entries are everything removed, either way. The two deletions are
+// counted apart because they are different promises, and summed here because
+// "how much of my vault is going" is one question.
+func (im writeImpact) folders() int   { return im.binFolders + im.gonFolders }
+func (im writeImpact) entries() int   { return im.binEntries + im.gonEntries }
+func (im writeImpact) permanent() int { return im.gonFolders + im.gonEntries }
 
 func (m Model) impactOf(source string) writeImpact {
 	var im writeImpact
@@ -1121,7 +1146,7 @@ func (m Model) impactOf(source string) writeImpact {
 	// A folder inside another staged folder is already counted by it.
 	var deleted []string
 	for _, c := range m.chg.Diff() {
-		if c.Source == source && c.State == edit.Deleted && isFolderKind(c.Kind) {
+		if c.Source == source && c.State.Deleting() && isFolderKind(c.Kind) {
 			if f, ok := m.folderByID(c.Target); ok {
 				deleted = append(deleted, f.Path)
 			}
@@ -1159,11 +1184,15 @@ func (m Model) impactOf(source string) writeImpact {
 			} else {
 				im.movedEntries++
 			}
-		case edit.Deleted:
+		case edit.Deleted, edit.Purged:
+			// Which deletion it is now rides on the state, so the tally does not
+			// go back to the op log to ask a question the reduction answered.
+			gone := c.State == edit.Purged
 			if !isFolderKind(c.Kind) {
-				im.entries++
-				if isPermanent(m.chg, c.Target) {
-					im.permanent++
+				if gone {
+					im.gonEntries++
+				} else {
+					im.binEntries++
 				}
 				continue
 			}
@@ -1172,33 +1201,28 @@ func (m Model) impactOf(source string) writeImpact {
 				continue
 			}
 			entries, folders := m.goesWithIt(c.Target)
-			im.folders += 1 + folders
-			im.entries += entries
-			if isPermanent(m.chg, c.Target) {
-				im.permanent += 1 + folders + entries
+			if gone {
+				im.gonFolders += 1 + folders
+				im.gonEntries += entries
+			} else {
+				im.binFolders += 1 + folders
+				im.binEntries += entries
 			}
 		}
 	}
 	return im
 }
 
-func isPermanent(set edit.Set, target string) bool {
-	for _, op := range set.Effective() {
-		if op.Target == target {
-			return op.Perm
-		}
-	}
-	return false
-}
-
-// permanentlyRemoved is how many things, across every source, will stop
-// existing with no recycle bin to fish them out of.
-func (m Model) permanentlyRemoved() int {
-	n := 0
+// permanentlyRemoved is how much, across every source, will stop existing with
+// no recycle bin to fish it out of — in folders and entries, because that is
+// what a vault is made of and what the reader is agreeing to.
+func (m Model) permanentlyRemoved() (folders, entries int) {
 	for _, src := range m.chg.Sources() {
-		n += m.impactOf(src).permanent
+		im := m.impactOf(src)
+		folders += im.gonFolders
+		entries += im.gonEntries
 	}
-	return n
+	return folders, entries
 }
 
 // lines renders the impact as the sentences a reader has to agree with.
@@ -1217,15 +1241,14 @@ func (im writeImpact) lines() []string {
 	if im.movedFolders+im.movedEntries > 0 {
 		add(edit.Moved, countOf(im.movedFolders, im.movedEntries)+" moved")
 	}
-	if total := im.folders + im.entries; total > 0 {
-		text := countOf(im.folders, im.entries) + " removed"
-		switch {
-		case im.permanent == total:
-			text += ", permanently"
-		case im.permanent > 0:
-			text += ", " + itoa(im.permanent) + " of them permanently"
-		}
-		add(edit.Deleted, text)
+	// Two sentences, not one with a clause. "6 removed, 2 of them permanently"
+	// asks the reader to do the subtraction and puts the irreversible half in a
+	// subordinate clause — which is the half they are here to weigh.
+	if im.binFolders+im.binEntries > 0 {
+		add(edit.Deleted, countOf(im.binFolders, im.binEntries)+" to the recycle bin")
+	}
+	if im.gonFolders+im.gonEntries > 0 {
+		add(edit.Purged, countOf(im.gonFolders, im.gonEntries)+" gone for good — no recycle bin, no undo")
 	}
 	return out
 }
@@ -1249,7 +1272,7 @@ func (m Model) doomedParent(folderID string) (string, bool) {
 	if folderID == "" {
 		return "", false
 	}
-	if m.chg.StateOf(folderID) == edit.Deleted {
+	if m.chg.StateOf(folderID).Deleting() {
 		if f, ok := m.folderByID(folderID); ok {
 			return f.Name, true
 		}

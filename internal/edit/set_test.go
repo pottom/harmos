@@ -88,7 +88,7 @@ func TestComposition(t *testing.T) {
 				Op{Kind: DeleteEntry, Target: "e1", Perm: true},
 			),
 			want:  []Kind{DeleteEntry},
-			state: Deleted,
+			state: Purged,
 			why:   "a history record for an entry about to cease existing is pointless",
 		},
 		{

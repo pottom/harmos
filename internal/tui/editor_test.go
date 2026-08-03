@@ -517,7 +517,7 @@ func TestSubfoldersOfADeletedFolderAreMarkedButNotStaged(t *testing.T) {
 	if states[top].own != edit.Deleted {
 		t.Errorf("the folder itself is staged: %v", states[top])
 	}
-	if !states[inner].doomed {
+	if states[inner].doomed == 0 {
 		t.Errorf("the sub-folder is going with it: %v", states[inner])
 	}
 	if states[inner].own != 0 {
