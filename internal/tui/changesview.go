@@ -420,7 +420,7 @@ func (m Model) detailOf(c edit.Change) string {
 	if c.Kind == edit.MoveEntry || c.Kind == edit.MoveGroup {
 		if f, ok := m.folderByID(c.Parent); ok {
 			to := readable(f.Path)
-			if from := readable(c.Was); from != "" {
+			if from := m.readablePath(c.Was); from != "" {
 				return from + " → " + to
 			}
 			return "moved to " + to

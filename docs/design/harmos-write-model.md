@@ -359,9 +359,20 @@ per-change revert removes. The *effective* state per target is derived:
 | `edit`* | one `edit`; `Before` = earliest, `After` = latest → **exactly one** history record (KeePassXC-consistent: one save, one history entry) |
 | `edit`* → `delete(bin)` | the edit, then the move to the bin — what you saw is what got binned |
 | `edit`* → `delete(perm)` | the delete only; the edit is skipped (no pointless history) |
-| `move` → `move` | one `move` to the final parent |
+| `move` → `move` | one `move` to the final parent; `Was` stays the **first** origin, which is where the file has it |
+| `rename` → `rename` | one `rename`; `Was` stays the **first** name, for the same reason |
+| back to where it started | **nothing** — a rename to the name the file has, a move to the folder it is already in, an edit that restores every value. The staging guards cannot see this: they compare against the row, which shows the interim state. Only the reduction knows where the round trip began. |
 | `rename group` + `move group` | both, order-independent (disjoint fields) |
 | `deleteGroup` | **one op**, not exploded into child ops (that would flood the tab). Rendered as `Infra/Legacy (3 entries, 1 folder)`; apply moves or deletes the whole subtree. |
+
+"Restores every value" is `diffDrafts` returning no lines — the same comparison
+the review renders. The two have to be one answer, or a session sits there
+looking dirty with an empty diff under it.
+
+`Set.Add` clones `Before` and `After`. They are pointers into the caller's
+world, and a caller carrying one draft forward through a sequence of edits would
+otherwise rewrite history that has already been staged — which the round-trip
+comparison would then read as a no-op.
 
 Staging a target underneath an already-deleted group is rejected with a flash message.
 

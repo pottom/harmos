@@ -211,3 +211,81 @@ func TestEditKeyDoesNotDuplicateRename(t *testing.T) {
 		t.Fatalf("r should open the inline field, got mode %d (%q)", m.edit, m.flash)
 	}
 }
+
+// Renaming a folder and then renaming it back leaves nothing staged. The user's
+// report: the review showed "Ibasa copy → Ibasa copy" and the tree kept its
+// amber pencil, so the session looked dirty when nothing about the file would
+// change.
+//
+// The inline field's own "unchanged" guard cannot catch this — it compares
+// against the name on the row, which is the interim one. Only the reduction
+// knows where the round trip started.
+func TestRenamingBackLeavesNothingStaged(t *testing.T) {
+	m := intoFolder(t, editModel(t))
+	id, original := m.currentFolderID()
+
+	rename := func(m Model, to string) Model {
+		t.Helper()
+		m = up(m, key2("r"))
+		if m.edit != editInline {
+			t.Fatalf("r should open the inline field, got mode %d (%q)", m.edit, m.flash)
+		}
+		m.inlineInput.SetValue("")
+		m = typeStr(m, to)
+		return up(m, key2("enter"))
+	}
+
+	m = rename(m, "something else")
+	if m.dirtyCount() == 0 {
+		t.Fatal("the first rename should stage something")
+	}
+
+	m = rename(m, original)
+	if n := m.dirtyCount(); n != 0 {
+		t.Errorf("renaming back to %q left %d change(s) staged: %v", original, n, m.chg.Effective())
+	}
+	if st := m.chg.StateOf(id); st != edit.Unchanged {
+		t.Errorf("the row still reads as %v", st)
+	}
+	if out := ansi.Strip(m.switchTab(tabChanges).View()); !strings.Contains(out, "nothing pending") {
+		t.Errorf("the review should be empty:\n%s", out)
+	}
+}
+
+// And the same for a move: back where it came from is not a move.
+func TestMovingBackLeavesNothingStaged(t *testing.T) {
+	// The richer fixture: editModel has one folder with entries in it, so there
+	// is nowhere to move to and nothing to prove.
+	m, _ := walkModel(t)
+	m = onEntry(t, m.expandAll(true), "db", "db-prod")
+	e := m.selEntry()
+	if e == nil {
+		t.Fatal("no entry under the cursor")
+	}
+	home := e.GroupID
+
+	m = up(m, key2("m"))
+	if m.edit != editMove || len(m.moveDests) == 0 {
+		t.Fatalf("m should open the picker with somewhere to go, got mode %d (%q)", m.edit, m.flash)
+	}
+	m = up(m, key2("enter"))
+	if m.dirtyCount() == 0 {
+		t.Fatal("the first move should stage something")
+	}
+
+	// Back again: the original folder is a destination now, because it is no
+	// longer where the projection says the entry lives.
+	m = up(m, key2("m"))
+	var back int
+	for i, d := range m.moveDests {
+		if d.id == home {
+			back = i
+		}
+	}
+	m.moveSel = back
+	m = up(m, key2("enter"))
+
+	if n := m.dirtyCount(); n != 0 {
+		t.Errorf("moving back to where it started left %d change(s): %v", n, m.chg.Effective())
+	}
+}
