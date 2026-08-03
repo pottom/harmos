@@ -159,7 +159,9 @@ Press `?` for the full key map. The staples:
 | `ctrl+b` | Hide / show the folder tree pane |
 | `1` / `2` / `3` / `4` | Switch Vault / Changes / Generate / Settings tab |
 | `ctrl+w` | Unlock this source for editing (or lock it again) |
-| `e` · `r` · `n` / `N` · `d` / `D` · `m` | Edit an entry · rename in place · new entry / folder · delete to bin / permanently (press again to undo) · move |
+| `e` · `r` · `n` / `N` | Edit an entry · rename in place · new entry / new folder |
+| `d` / `D` | Delete to the recycle bin / permanently — press again to undo |
+| `m` | Pick the row up: walk the tree to the folder you want, `↵` drops it, `esc` puts it back |
 | `ctrl+s` | Review the staged changes and write them |
 | `?` / `q` | Help · quit (clears the clipboard) |
 

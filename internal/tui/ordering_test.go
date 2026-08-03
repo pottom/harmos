@@ -313,3 +313,34 @@ func currentNetName(m Model) string {
 	}
 	return "Net"
 }
+
+// A source that once conflicted must not refuse every later save. The mark
+// exists to stop a set built against gone content being written; once that set
+// is written there is no set left to stop.
+func TestAConflictMarkDoesNotOutliveItsChanges(t *testing.T) {
+	m := stageAnEdit(t, editModel(t))
+	m = m.onSaveDone(saveDoneMsg{source: "own", err: vaultErrChangedUnderneath()})
+	if !m.stale["own"] {
+		t.Fatal("the conflict should be remembered")
+	}
+
+	m = m.onSaveDone(saveDoneMsg{source: "own"}) // and then it went through
+	if m.stale["own"] {
+		t.Error("a written source is not stale")
+	}
+	if m.saveConflict != "" {
+		t.Error("and no conflict is pending")
+	}
+
+	// And the next set of work is asked about normally rather than refused for a
+	// conflict that is over.
+	next := stageAnEdit(t, editModel(t))
+	next.stale = m.stale
+	next, _ = next.askToSave()
+	if next.saveConflict != "" {
+		t.Errorf("a later save was refused for a conflict that is over: %q", next.saveConflict)
+	}
+	if !next.saveConfirm {
+		t.Error("it should have raised the confirmation")
+	}
+}

@@ -464,7 +464,7 @@ func (m Model) settingsView() string {
 	// Same vertical frame as the Vault tab so nothing jumps when switching:
 	// header line, panels, a context line, then the hints footer.
 	panelsH := max(3, m.h-3)
-	leftW := settingsLeftW
+	leftW := m.settingsLeftW()
 	rightW := m.w - leftW - 1
 
 	left := box("Settings", "", m.catLines(leftW-2), leftW, panelsH, m.focus == 0)

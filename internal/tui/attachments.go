@@ -56,7 +56,9 @@ func (m Model) targetFiles(e *vault.Entry) []vault.Attachment {
 func (m Model) enterDest() Model {
 	ti := textinput.New()
 	ti.Prompt = ""
-	ti.Width = 48
+	// From the pane, not a constant: a path is long and the field it is typed
+	// into should use whatever the window has.
+	ti.Width = max(20, m.w-12)
 	ti.SetValue(defaultSaveDir())
 	ti.CursorEnd()
 	ti.Focus()

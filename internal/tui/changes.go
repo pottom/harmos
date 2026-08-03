@@ -293,6 +293,7 @@ func (m Model) onSaveDone(msg saveDoneMsg) Model {
 		// that had just been created twice — once from the file, once from the
 		// projection — and the obvious next move is to delete "the duplicate".
 		m.chg = m.chg.DropSource(src)
+		delete(m.stale, src) // its work is written; the file is ours again
 		if v, err := m.reload(src); err == nil {
 			m = m.rebuild(v.Entries, v.Folders)
 		}
@@ -329,7 +330,11 @@ func (m Model) onSaveDone(msg saveDoneMsg) Model {
 		return m
 	}
 
+	// Nothing is staged any more, so nothing is stale: the marks exist to stop a
+	// set built against gone content being written, and there is no set left.
+	// Without this a source that once conflicted refused every later save.
 	m.chg = edit.Set{}
+	m.stale, m.saveConflict = nil, ""
 	m.chgSel = 0
 	m.chgFold, m.chgScroll = nil, 0
 	m.flash = "saved"

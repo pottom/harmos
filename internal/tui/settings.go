@@ -386,7 +386,11 @@ func (m Model) removeConfirmView() string {
 
 // settingsLeftW is the width of the category pane. Shared by the layout and the
 // mouse hit-test so they cannot disagree about where the panes divide.
-const settingsLeftW = 22
+//
+// A share of the window with a ceiling, like every other pane: the categories
+// are short words and never need more than this, but on a narrow terminal the
+// right pane needs the room more than they do.
+func (m Model) settingsLeftW() int { return min(22, max(12, m.w*2/5)) }
 
 // settingsRowAt maps a content row of the right pane to the cursor index it
 // belongs to.
@@ -446,7 +450,7 @@ func (m Model) handleSettingsClick(x, y int) (tea.Model, tea.Cmd) {
 	}
 	row := y - 2
 
-	if x < settingsLeftW {
+	if x < m.settingsLeftW() {
 		if row < len(settingsCats) {
 			m.focus, m.setCat, m.setStatusBad, m.setStatus = 0, row, false, ""
 		}
