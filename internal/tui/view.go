@@ -962,13 +962,26 @@ func (m Model) resultLines(w, rows int) []string {
 			snip = snippet(val, terms, max(6, matchW-dw(field)-1))
 		}
 
+		// d works from this list, so the rows have to be able to say so. Without
+		// this the only sign a result had been staged was in the tree behind it,
+		// which is not on screen while a search is.
+		state := m.chg.StateOf(e.ID)
+		if state == edit.Unchanged {
+			state = m.goingWithFolder(e.ID)
+		}
+		lead, leadSt := i.entry, theme.Faded
+		if state != edit.Unchanged {
+			st, marker := changeStyle(state)
+			lead, leadSt, titleSt = strings.TrimSpace(marker), st, st
+		}
+
 		if k == m.sel {
 			match := field
 			if snip != "" {
 				match += " " + snip
 			}
-			plain := pad(i.entry+" "+title, titleW) + " " + pad(loc, locW) + " " + match
-			out = append(out, theme.SelRow.Width(w).Render(trunc(plain, w)))
+			plain := pad(lead+" "+title, titleW) + " " + pad(loc, locW) + " " + match
+			out = append(out, selRowStyle(theme.SelRow.Width(w), state).Render(trunc(plain, w)))
 			continue
 		}
 
@@ -977,7 +990,7 @@ func (m Model) resultLines(w, rows int) []string {
 			matchCell += " " + highlightTerms(snip, terms, theme.Dimmed)
 		}
 		out = append(out,
-			theme.Faded.Render(i.entry+" ")+
+			leadSt.Render(lead+" ")+
 				highlightTerms(pad(trunc(title, titleW-2), titleW-2), terms, titleSt)+" "+
 				theme.Dimmed.Render(pad(loc, locW))+" "+matchCell)
 	}
@@ -1213,7 +1226,11 @@ func (m Model) detailPane(w, h int) string {
 	if terms := search.HighlightTerms(m.input.Value()); len(terms) > 0 { // highlight the query in the breadcrumb too
 		title = highlightTerms(title, terms, theme.Strong)
 	}
-	return boxV(title, "", lines[scroll:min(scroll+visible, len(lines))], w, h, true, len(lines), scroll, 0)
+	// What is staged against this entry, on the frame. d works from in here, and
+	// the pane the reader is looking at while they press it said nothing about
+	// what they had just done — the tree behind it did, which is the one place
+	// they were not looking.
+	return boxV(title, m.stateBadge(e.ID), lines[scroll:min(scroll+visible, len(lines))], w, h, true, len(lines), scroll, 0)
 }
 
 // detailViewport is the width and visible-line count of the detail pane, matching
@@ -1445,4 +1462,60 @@ func (m Model) iconStyleFor(n *node) lipgloss.Style {
 		return theme.Editable
 	}
 	return theme.Acc
+}
+
+// stateBadge is what is staged against a target, in the few cells a panel
+// header or a list row can spare: the marker, then the word.
+//
+// The marker and the colour are what the tree and the entry table already use;
+// the word is here because a header has room for it and because a glyph on its
+// own, away from a column of its siblings, has nothing to be read against.
+// Empty when nothing is staged.
+func (m Model) stateBadge(id string) string {
+	if id == "" || m.chg.Empty() {
+		return ""
+	}
+	st := m.chg.StateOf(id)
+	if st == edit.Unchanged {
+		// Not staged itself, but a folder above it may be taking it.
+		if with := m.goingWithFolder(id); with != edit.Unchanged {
+			style, marker := changeStyle(with)
+			return theme.Faded.Render(strings.TrimSpace(marker)+" ") + style.Render(with.String())
+		}
+		return ""
+	}
+	style, marker := changeStyle(st)
+	return style.Render(strings.TrimSpace(marker) + " " + st.String())
+}
+
+// goingWithFolder is the deletion an entry inherits from a folder above it, if
+// any — the same question entryLines asks, so a row and the pane showing that
+// row cannot disagree about whether it is going.
+func (m Model) goingWithFolder(id string) edit.State {
+	doomed := m.doomedFolders()
+	if len(doomed) == 0 {
+		return edit.Unchanged
+	}
+	group := ""
+	for _, e := range m.viewEntries {
+		if e.ID == id {
+			group = e.GroupID
+			break
+		}
+	}
+	if group == "" {
+		return edit.Unchanged
+	}
+	if st := doomed[group]; st != edit.Unchanged {
+		return st
+	}
+	parents := m.folderParents()
+	seen := map[string]bool{}
+	for p := parents[group]; p != "" && !seen[p]; p = parents[p] {
+		seen[p] = true
+		if st := doomed[p]; st != edit.Unchanged {
+			return st
+		}
+	}
+	return edit.Unchanged
 }
