@@ -197,6 +197,8 @@ func New(entries []vault.Entry, folders []vault.Folder, configPath string, timeo
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
+	// The same cleaning rebuild does, at the other door in: see sanitised.
+	entries, folders = sanitised(entries, folders)
 	roots := buildTree(entries, folders)
 	themeName := "charm"
 	srcType := map[string]config.Type{}
@@ -336,6 +338,14 @@ func (m Model) rebuild(entries []vault.Entry, folders []vault.Folder) Model {
 	// The tree is built from the vault as it will be — see project — while the
 	// merged fields keep what the file actually says, which is what a reload and
 	// a save compare against.
+	// Cleaned once, here, where vault text enters the interface. The reader that
+	// builds these already strips control runes, and this is the belt: an
+	// escape sequence in a title or a folder name is not a rendering quirk, it
+	// is the vault driving the terminal — clearing the screen on every frame,
+	// rewriting the window title, or leaving the alt-screen buffer. A newline
+	// is quieter and just as bad: ansi.StringWidth counts it as nothing, so the
+	// frame grows a row and every width check still passes.
+	entries, folders = sanitised(entries, folders)
 	m.mergedEntries, m.mergedFolders = entries, folders
 	m.viewEntries, m.viewFolders = project(entries, folders, m.chg)
 	m.matcher = search.New(m.viewEntries)

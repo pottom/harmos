@@ -256,8 +256,13 @@ func (h *Handle) Snapshot() *Vault {
 				ID:       id,
 				ParentID: parentID,
 				Source:   h.source,
-				Path:     path,
-				Name:     oneline(g.Name),
+				// The path is built from group names, so it carries whatever
+				// they carry: a name with a newline in it puts one in every
+				// path below it, and a path is rendered in breadcrumbs, panel
+				// titles and the "where" column. The name was already cleaned
+				// here and the path was not.
+				Path: oneline(path),
+				Name: oneline(g.Name),
 			})
 		},
 		func(e *gokeepasslib.Entry, id, gid, path string) {

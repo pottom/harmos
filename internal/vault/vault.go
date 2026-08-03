@@ -182,7 +182,7 @@ func entryFrom(db *gokeepasslib.Database, e *gokeepasslib.Entry, source, id, gro
 		ID:       id,
 		GroupID:  groupID,
 		Source:   source,
-		Path:     path,
+		Path:     oneline(path),
 		Title:    oneline(e.GetTitle()),
 		Username: oneline(e.GetContent("UserName")),
 		URL:      oneline(e.GetContent("URL")),
@@ -201,6 +201,10 @@ func entryFrom(db *gokeepasslib.Database, e *gokeepasslib.Entry, source, id, gro
 // oneline flattens a display string to a single line: control characters
 // (newlines/tabs, e.g. a Pleasant folder name that embeds a newline) become
 // spaces, so a value can never break the TUI layout.
+// CustomLabel is customLabel for callers that build the same rows from a draft:
+// the name a reader knows a custom field by, with the storage prefix taken off.
+func CustomLabel(key string) string { return customLabel(key) }
+
 // OneLine is oneline for callers outside this package that render the same rows.
 func OneLine(s string) string { return oneline(s) }
 

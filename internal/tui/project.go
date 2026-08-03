@@ -83,9 +83,19 @@ func project(entries []vault.Entry, folders []vault.Folder, set edit.Set) ([]vau
 					// group because it was loaded with one, and if that load
 					// predates a staged move, taking it here would quietly undo
 					// the move.
-					where, group := outE[i].Path, outE[i].GroupID
-					outE[i] = entryFromDraft(op.Source, where, *op.After)
-					outE[i].GroupID = group
+					// An edit changes the fields it was given. Everything
+					// else the row carries — its attachments, its times — is
+					// not the draft's to forget: the reader is looking at this
+					// row to decide whether to approve the write, and a row
+					// that lost its attachments the moment anything was staged
+					// made the save key that reaches them dead at exactly that
+					// moment.
+					was := outE[i]
+					outE[i] = entryFromDraft(op.Source, was.Path, *op.After)
+					outE[i].GroupID = was.GroupID
+					outE[i].Files = was.Files
+					outE[i].Created, outE[i].Modified = was.Created, was.Modified
+					outE[i].Expiry = was.Expiry
 				}
 			}
 		case edit.RenameGroup:
@@ -156,7 +166,15 @@ func entryFromDraft(source, path string, d edit.Draft) vault.Entry {
 		}
 	}
 	for _, f := range d.Fields {
-		e.Custom = append(e.Custom, vault.Field{Name: f.Key, Value: f.Value, Protected: f.Protected})
+		// The label the reader knows it by, not the raw kdbx key: a draft holds
+		// "pps.cuf.Env" because that prefix is part of the data, and the detail
+		// pane shows "Env". Staging an edit used to rename every custom field
+		// in the row to its storage key.
+		e.Custom = append(e.Custom, vault.Field{
+			Name:      vault.OneLine(vault.CustomLabel(f.Key)),
+			Value:     vault.OneLine(f.Value),
+			Protected: f.Protected,
+		})
 	}
 	return e
 }
@@ -198,4 +216,56 @@ func reparent(entries []vault.Entry, folders []vault.Folder, source, from, to, i
 		}
 	}
 	return entries, folders
+}
+
+// sanitised is vault text with nothing in it that can move a cursor.
+//
+// The vault reader already does this to what it takes off a file, and the
+// staged projection does it to a draft — this is the interface's own boundary,
+// so the property holds however a caller got hold of an Entry. It is cheap:
+// strings.Map returns the original when nothing changes, which is every string
+// in every real vault.
+func sanitised(entries []vault.Entry, folders []vault.Folder) ([]vault.Entry, []vault.Folder) {
+	es := make([]vault.Entry, len(entries))
+	for i, e := range entries {
+		e.Title, e.Username = vault.OneLine(e.Title), vault.OneLine(e.Username)
+		e.URL, e.TOTP = vault.OneLine(e.URL), vault.OneLine(e.TOTP)
+		e.Path, e.Source = vault.OneLine(e.Path), vault.OneLine(e.Source)
+		e.Notes = vault.MultiLine(e.Notes)
+		e.Tags = cleanAll(e.Tags)
+		if e.Files != nil {
+			files := make([]vault.Attachment, len(e.Files))
+			for j, f := range e.Files {
+				f.Name = vault.OneLine(f.Name)
+				files[j] = f
+			}
+			e.Files = files
+		}
+		if e.Custom != nil {
+			fields := make([]vault.Field, len(e.Custom))
+			for j, f := range e.Custom {
+				f.Name, f.Value = vault.OneLine(f.Name), vault.OneLine(f.Value)
+				fields[j] = f
+			}
+			e.Custom = fields
+		}
+		es[i] = e
+	}
+	fs := make([]vault.Folder, len(folders))
+	for i, f := range folders {
+		f.Name, f.Path, f.Source = vault.OneLine(f.Name), vault.OneLine(f.Path), vault.OneLine(f.Source)
+		fs[i] = f
+	}
+	return es, fs
+}
+
+func cleanAll(in []string) []string {
+	if in == nil {
+		return nil
+	}
+	out := make([]string, len(in))
+	for i, s := range in {
+		out[i] = vault.OneLine(s)
+	}
+	return out
 }

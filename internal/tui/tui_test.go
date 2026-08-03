@@ -420,10 +420,12 @@ func TestTreeCollapse(t *testing.T) {
 }
 
 func testModel() Model {
+	// With identities, as a real vault has: the interface navigates by them, and
+	// a fixture without them exercises a shape that cannot occur.
 	return New([]vault.Entry{
-		{Source: "work", Path: "Infra", Title: "db-prod", Username: "svc_admin", Password: secret.New("p1")},
-		{Source: "work", Path: "Infra", Title: "db-staging", Username: "svc", Password: secret.New("p2")},
-		{Source: "personal", Path: "Net", Title: "router", Username: "admin", Password: secret.New("p3"), URL: "https://10.0.0.1"},
+		{ID: "work:1", GroupID: "work:g:1", Source: "work", Path: "Infra", Title: "db-prod", Username: "svc_admin", Password: secret.New("p1")},
+		{ID: "work:2", GroupID: "work:g:1", Source: "work", Path: "Infra", Title: "db-staging", Username: "svc", Password: secret.New("p2")},
+		{ID: "personal:1", GroupID: "personal:g:1", Source: "personal", Path: "Net", Title: "router", Username: "admin", Password: secret.New("p3"), URL: "https://10.0.0.1"},
 	}, nil, "", 30*time.Second)
 }
 
