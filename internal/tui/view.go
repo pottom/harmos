@@ -799,18 +799,20 @@ func (m Model) entryLines(w, rows int) []string {
 	states := m.chg.State()
 	doomedFolder := m.doomedFolders()
 	parents := m.folderParents()
-	goingWith := func(groupID string) bool {
-		if doomedFolder[groupID] {
-			return true
+	// Which deletion is taking this entry's folder, so a row inside a folder
+	// staged for permanent deletion does not read as bin-bound.
+	goingWith := func(groupID string) edit.State {
+		if st := doomedFolder[groupID]; st != 0 {
+			return st
 		}
 		seen := map[string]bool{}
 		for p := parents[groupID]; p != "" && !seen[p]; p = parents[p] {
 			seen[p] = true
-			if doomedFolder[p] {
-				return true
+			if st := doomedFolder[p]; st != 0 {
+				return st
 			}
 		}
-		return false
+		return edit.Unchanged
 	}
 	avail := max(1, rows-1)
 	start := windowStart(m.esel, avail, len(f.entries))
@@ -820,8 +822,8 @@ func (m Model) entryLines(w, rows int) []string {
 		// An entry in a folder staged for deletion is going too, and says so —
 		// without a marker, since nothing was staged against the entry itself.
 		state, staged := states[e.ID], true
-		if state == 0 && goingWith(e.GroupID) {
-			state, staged = edit.Deleted, false
+		if with := goingWith(e.GroupID); state == 0 && with != 0 {
+			state, staged = with, false
 		}
 		if m.renamingRow(e.ID, false) {
 			// The username and URL stay where they are, so the row still reads
@@ -856,7 +858,7 @@ func (m Model) entryLines(w, rows int) []string {
 		// Striking the title alone read as "this title is going", which is not
 		// what is about to happen, and left the row looking half-marked.
 		rest := theme.Dimmed
-		if state == edit.Deleted {
+		if state.Deleting() {
 			rest = titleStyle
 		}
 		line := markerStyle.Render(marker+" ") +
@@ -1346,6 +1348,11 @@ func changeStyle(st edit.State) (lipgloss.Style, string) {
 		return theme.Noted, i.moved
 	case edit.Deleted:
 		return theme.Bad, i.trash
+	case edit.Purged:
+		// Same rust — both are deletions, and inventing a second red would say
+		// they are unrelated. What separates them is the glyph and the weight,
+		// which survive NO_COLOR and a mono terminal, where a colour would not.
+		return theme.Bad.Bold(true), i.purge
 	}
 	return theme.Strong, i.entry
 }

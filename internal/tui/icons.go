@@ -33,7 +33,7 @@ type iconSet struct {
 	clock, note         string
 	locked, unlocked    string
 	plus, pencil, trash string
-	moved               string
+	purge, moved        string
 }
 
 // Nerd Font glyphs (private-use codepoints) — render as boxes without a Nerd
@@ -63,7 +63,9 @@ var nerdIcons = iconSet{
 	plus:   "\uf067",
 	pencil: "\uf040",
 	trash:  "\uf1f8",
-	moved:  "\uf061",
+	// A permanent delete is not a fuller wastebasket, it is a different act.
+	purge: "\uf057", // times-circle
+	moved: "\uf061",
 }
 
 var plainIcons = iconSet{
@@ -88,6 +90,7 @@ var plainIcons = iconSet{
 	plus:     "+",
 	pencil:   "~",
 	trash:    "-",
+	purge:    "✕", // multiplication x — one cell, and unmistakably not a dash
 	moved:    "→",
 }
 

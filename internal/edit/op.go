@@ -68,12 +68,17 @@ type Op struct {
 // State is what has happened to one target, as far as the UI is concerned.
 type State uint8
 
+// The order is a precedence: Parents keeps the highest state of anything inside
+// a folder, so a folder holding an edit and a deletion reads as the more
+// consequential of the two. Purged is last because a deletion nothing can undo
+// is the most consequential thing a session can be holding.
 const (
 	Unchanged State = iota
 	New
 	Modified
 	Moved
-	Deleted
+	Deleted // to the recycle bin: recoverable afterwards
+	Purged  // gone: no bin, no undo once written
 )
 
 func (s State) String() string {
@@ -86,9 +91,19 @@ func (s State) String() string {
 		return "moved"
 	case Deleted:
 		return "del"
+	case Purged:
+		return "gone"
 	}
 	return ""
 }
+
+// Deleting is "this is on its way out", either way.
+//
+// A predicate rather than an equality test at every call site: the two deletions
+// differ in what they leave behind, not in whether the thing is going, and a
+// surface that answered "is this being deleted" with == Deleted would quietly
+// say no about the deletion that cannot be undone.
+func (s State) Deleting() bool { return s == Deleted || s == Purged }
 
 // Marker is the non-colour cue for a state.
 //
@@ -103,6 +118,11 @@ func (s State) Marker() string {
 		return "~"
 	case Deleted:
 		return "-"
+	case Purged:
+		// Not another "-". The two deletions are different acts — one leaves the
+		// thing in the bin, the other leaves nothing — and a reader who cannot
+		// see colour has only this column to tell them apart.
+		return "✕"
 	}
 	return " "
 }

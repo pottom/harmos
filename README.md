@@ -258,12 +258,16 @@ Editing is deliberately several steps, and reversible until the last:
    points you at `r`. `ctrl+g` rolls a password in the editor using your
    Generate-tab settings.
 3. **Look at it.** Staged rows are coloured where they are — teal for new, amber
-   for changed, rust with a marker for deleted — every state carries a glyph as
-   well as a colour — and the Changes tab shows your vault's own tree with a
-   git-style diff under each item,
-   with `x` to revert one. No password ever appears there.
-4. **Write** with `ctrl+s`, which names the file, the number of changes, and the
-   backup it will take before asking.
+   for changed, rust for deleted — and every state carries a glyph as well as a
+   colour. The two deletions are separate signals throughout: `-` for the
+   recycle bin, `✕` in bold for a permanent one, on the row, in the review, in
+   the tally and in the confirmation. Everything inside a permanently deleted
+   folder wears `✕` too, because that is where it is going. The Changes tab
+   shows your vault's own tree with a git-style diff under each item, and `x`
+   reverts one. No password ever appears there.
+4. **Write** with `ctrl+s`, which names the file, the backup it will take, and
+   what the changes come to — counted in folders and entries, with anything
+   going permanently on a line of its own.
 
 Nothing reaches your file until that last confirmation. Quitting with unsaved
 changes asks first.

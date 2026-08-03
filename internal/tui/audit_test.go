@@ -112,14 +112,20 @@ func auditSurfacesAt(width, height int) []surface {
 			m := up(staged(t), tabKey(tabChanges))
 			return up(m, key2("Z")).View()
 		}},
+		{"changes/folder-purged", func(t *testing.T) string {
+			m := intoFolder(t, sized(editModel(t)))
+			return up(up(m, key2("D")), tabKey(tabChanges)).View()
+		}},
+		{"confirm/save-purge", func(t *testing.T) string {
+			m := intoTable(t, sized(editModel(t)))
+			m = up(m, key2("D"))
+			c, _ := m.switchTab(tabChanges).askToSave()
+			return c.View()
+		}},
 		{"changes/folder-deleted", func(t *testing.T) string {
-			m := sized(editModel(t))
-			for i, tl := range m.visible() { // onto a folder row, not an entry
-				if tl.node.id != "" {
-					m.tsel, m.focus = i, 0
-					break
-				}
-			}
+			// Onto a folder row, not an entry — and the tree arrives closed, so
+			// this fixture used to find no folder at all and stage nothing.
+			m := intoFolder(t, sized(editModel(t)))
 			return up(up(m, key2("d")), tabKey(tabChanges)).View()
 		}},
 		{"changes/everything", func(t *testing.T) string { return mockChanges(t, auditW, auditH).View() }},

@@ -405,14 +405,14 @@ permanently" is a number about their vault.
 ### 5.4 One source of truth, two surfaces
 
 ```go
-func (s Set) State() map[string]State  // ID → New | Modified | Moved | Deleted
+func (s Set) State() map[string]State  // ID → New | Modified | Moved | Deleted | Purged
 func (s Set) Diff() []Change           // git-style lines
 func (s Set) Counts() map[string]int   // source → effective change count
 ```
 
 `State()` has the same shape as the existing `matchCounts() map[*node]int`
 (`tree.go`), which `treeLines` already consumes — the in-place decoration reuses that
-wiring. Folder precedence: `Deleted > New > Modified > ContainsChanges > None`, where
+wiring. Folder precedence: `Purged > Deleted > New > Modified > ContainsChanges > None`, where
 `ContainsChanges` only applies when the node has no state of its own.
 
 > **Secret rule, enforced by test:** a `secret.Secret` never enters a diff line. The
@@ -438,7 +438,15 @@ existing `kind → (glyph, style)` shape to copy.
 |---|---|---|---|
 | New | `theme.Ok` (teal) | `+` | `new` |
 | Modified | `theme.Note` (**new token**, amber) | `~` | `mod` |
-| Deleted | `theme.Bad` (rust) + strikethrough | `-` | `del` |
+| Deleted | `theme.Bad` (rust) | `-` | `del` |
+| Purged | `theme.Bad` **bold** | `✕` | `gone` |
+
+`Deleted` and `Purged` share the rust: both are deletions, and a second red
+would read as an unrelated kind of change. What separates them is the glyph and
+the weight, which survive `NO_COLOR` and a mono terminal. `State.Deleting()` is
+the predicate for "is this going", so no surface can answer that question with
+`== Deleted` and quietly say no about the deletion nothing can undo. Everything
+inside a purged folder inherits `Purged`, not a generic deletion.
 
 **`theme.Note` is a new token.** The palette has **no yellow** today: `Warn`/`Bad` is
 red in all ten built-ins, which is exactly why `view.go` hardcodes an amber

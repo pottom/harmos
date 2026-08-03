@@ -394,7 +394,10 @@ func (m Model) folderCrumb(flat []treeLine, sel int) string {
 type nodeChange struct {
 	own    edit.State
 	inside edit.State
-	doomed bool // going because a folder above it is
+	// doomed is which deletion is taking this row with it, from a folder above —
+	// Unchanged when nothing is. Not a bool: the two deletions leave different
+	// things behind, and a row inheriting one has to say which.
+	doomed edit.State
 }
 
 // changeStates maps each node to how it and its contents have been staged, so a
@@ -411,15 +414,18 @@ func (m Model) changeStates() map[*node]nodeChange {
 	byTarget := m.chg.State()   // what a target itself is
 	doomed := m.doomedFolders()
 	parents := m.folderParents()
-	goingWith := func(id string) bool {
+	// Which deletion the nearest doomed ancestor is, so a row going with a
+	// permanently deleted folder says so rather than promising a recycle bin
+	// that will not have it.
+	goingWith := func(id string) edit.State {
 		seen := map[string]bool{}
 		for p := parents[id]; p != "" && !seen[p]; p = parents[p] {
 			seen[p] = true
-			if doomed[p] {
-				return true
+			if st := doomed[p]; st != 0 {
+				return st
 			}
 		}
-		return false
+		return edit.Unchanged
 	}
 	out := map[*node]nodeChange{}
 
@@ -430,12 +436,14 @@ func (m Model) changeStates() map[*node]nodeChange {
 			c := nodeChange{
 				own:    byTarget[n.id],
 				inside: byFolder[n.id],
-				doomed: n.id != "" && goingWith(n.id),
+			}
+			if n.id != "" {
+				c.doomed = goingWith(n.id)
 			}
 			if below := walk(n.children); below > c.inside {
 				c.inside = below
 			}
-			if c.own != 0 || c.inside != 0 || c.doomed {
+			if c.own != 0 || c.inside != 0 || c.doomed != 0 {
 				out[n] = c
 			}
 			// A deleted folder takes its contents with it, so it reads upward as
@@ -460,12 +468,12 @@ func (m Model) changeStates() map[*node]nodeChange {
 // there is no terminal — lipgloss renders every style as plain text, so a colour
 // can only be tested by comparing the style, not the output.
 func (m Model) treeRowStyle(n *node, c nodeChange) (name, icon, markerStyle lipgloss.Style, marker string) {
-	if c.own == 0 && c.doomed {
+	if c.own == 0 && c.doomed != 0 {
 		// Going because a folder above it is going. It wears the deletion — that
 		// is true — and carries a faded marker: something has to say so without
 		// relying on colour, but the fading says this is a consequence of a
 		// decision made elsewhere, not one to be undone here.
-		st, mk := changeStyle(edit.Deleted)
+		st, mk := changeStyle(c.doomed)
 		return st, st, theme.Faded, mk
 	}
 	if c.own != 0 {

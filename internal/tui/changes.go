@@ -408,12 +408,15 @@ func (m Model) saveConfirmView() string {
 	counts := m.chg.Counts()
 	lines := []string{"", "  " + theme.Strong.Render("Write these changes?"), ""}
 
-	// What cannot be undone comes first, and counted in things rather than in
-	// operations: one keystroke on a folder can remove forty entries, and this
-	// is the number the reader is agreeing to.
-	if n := m.permanentlyRemoved(); n > 0 {
+	// What cannot be undone comes first, counted in the things a vault is made
+	// of rather than in operations: one keystroke on a folder can remove forty
+	// entries, and this is the number the reader is agreeing to. It wears the
+	// same glyph the rows do, so the warning and the list are visibly about the
+	// same act.
+	if folders, entries := m.permanentlyRemoved(); folders+entries > 0 {
+		_, mark := changeStyle(edit.Purged)
 		lines = append(lines,
-			"  "+theme.Bad.Render(plural(n, "thing", "things")+" deleted permanently")+
+			"  "+theme.Bad.Bold(true).Render(strings.TrimSpace(mark)+" "+countOf(folders, entries)+" deleted permanently")+
 				theme.Dimmed.Render(" — not into the recycle bin"),
 			"  "+theme.Faded.Render("the backup below still holds them; the vault will not"),
 			"")
