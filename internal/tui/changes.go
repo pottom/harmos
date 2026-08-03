@@ -437,11 +437,14 @@ func (m Model) saveConfirmView() string {
 		// The operation count is a number about the program; this is the one the
 		// reader is actually agreeing to.
 		lines = append(lines, m.impactOf(src).lines()...)
+		// Head-truncated: a path identifies a file by its tail, and cutting the
+		// tail off leaves the reader agreeing to write "/var/folders/3s/pdy…".
+		// Every deep path in a temp directory or a synced folder lands there.
 		lines = append(lines,
-			"  "+theme.Dimmed.Render(trunc(path, max(10, m.w-8))),
+			"  "+theme.Dimmed.Render(truncLeft(path, max(10, m.w-8))),
 		)
 		if backup != "" {
-			lines = append(lines, "  "+theme.Faded.Render("backup: "+trunc(backup, max(10, m.w-16))))
+			lines = append(lines, "  "+theme.Faded.Render("backup: "+truncLeft(backup, max(10, m.w-16))))
 		}
 		lines = append(lines, "")
 	}
@@ -489,10 +492,14 @@ func (m Model) updateQuitGuard(key string) (Model, tea.Cmd) {
 	}
 	switch key {
 	case "s", "S":
+		// Through the confirmation, not around it. This used to call saveCmd
+		// directly, so the one screen that names the file, the backup and what
+		// is about to stop existing never appeared — and a set holding a
+		// permanent deletion was written by an ↵ pressed out of habit on a
+		// modal that had said only "1 change(s) are staged and not written".
 		m.quitGuard = false
 		m.quitAfterSave = true
-		m.saving = true
-		return m, m.saveCmd()
+		return m.askToSave()
 	case "d", "D":
 		return m, tea.Sequence(clearClip, tea.Quit)
 	case "esc", "n", "N":

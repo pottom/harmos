@@ -133,11 +133,7 @@ func (h *Handle) backupOnce() error {
 	if h.backed {
 		return nil
 	}
-	// Sub-second, because two saves inside one second collided: the second
-	// backup overwrote the first, and the first was the only copy of the file as
-	// it stood before any of this session's edits — the one the design calls the
-	// highest-value step.
-	dst := fmt.Sprintf("%s.harmos-backup-%s.kdbx", h.path, time.Now().UTC().Format("20060102T150405.000Z"))
+	dst := h.BackupPath()
 
 	src, err := os.Open(h.path)
 	if err != nil {
@@ -155,13 +151,26 @@ func (h *Handle) backupOnce() error {
 	return nil
 }
 
-// BackupPath is the file backupOnce would create next, so the save confirmation
-// can name it before the user commits. It returns "" once a backup exists.
+// BackupPath is the file backupOnce will create, so the save confirmation can
+// name it before the user commits. It returns "" once a backup exists.
+//
+// The name is settled the first time anybody asks and then remembered, because
+// the confirmation asks on every frame: it used to re-read the clock and format
+// it a second way, so the screen promised
+// "…-20260803T140224Z.kdbx" and the disk got "…-20260803T140224.939Z.kdbx".
+//
+// Sub-second, because two saves inside one second collided: the second backup
+// overwrote the first, and the first is the only copy of the file as it stood
+// before any of this session's edits — the highest-value step in the pipeline.
 func (h *Handle) BackupPath() string {
 	if h.backed {
 		return ""
 	}
-	return fmt.Sprintf("%s.harmos-backup-%s.kdbx", h.path, time.Now().UTC().Format("20060102T150405Z"))
+	if h.backupAt == "" {
+		h.backupAt = fmt.Sprintf("%s.harmos-backup-%s.kdbx",
+			h.path, time.Now().UTC().Format("20060102T150405.000Z"))
+	}
+	return h.backupAt
 }
 
 // attachmentCensus maps each entry UUID to its attachment names, sorted.

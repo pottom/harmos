@@ -95,8 +95,11 @@ func (s Set) Effective() []Op {
 	}
 
 	// A folder created and then deleted never existed, and neither did anything
-	// staged inside it. Without this the children survive as creations pointing
-	// at a parent that is not in the set, and the save fails with "no folder".
+	// staged inside it — nor anything created inside a folder that is being
+	// deleted, which the file has never seen either. Without this the children
+	// survive as creations pointing at a parent that is not in the set, and the
+	// save either fails with "no folder" or writes the new entry into the
+	// recycle bin along with the folder it was made in.
 	if gone := cancelled(s.ops, out); len(gone) > 0 {
 		var kept []Op
 		for _, op := range out {
@@ -113,7 +116,94 @@ func (s Set) Effective() []Op {
 	// folder beside it. Whichever order they were staged in.
 	out = subsumeInsideDeletedFolders(out)
 
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Seq < out[j].Seq })
+	return applyOrder(out)
+}
+
+// applyOrder puts the operations in an order the vault can actually perform,
+// and keeps staging order for everything the rules do not constrain.
+//
+// Sorting by Seq alone was wrong twice over, because the reduction keeps the
+// *first* Seq of a collapsed chain:
+//
+//   - move an entry to Net, then create "Later", then move it into "Later":
+//     the collapsed move carries the first move's Seq and so sorted before the
+//     creation of its own destination. The save failed with "no folder".
+//   - delete a folder, then move something out of it — the way you keep one
+//     thing from a folder you are removing: the deletion had the lower Seq, so
+//     the entry was purged with the folder before the move ran.
+//
+// Two rules, and everything else stays where staging put it: a folder is
+// created before anything names it as a parent, and a move leaves a folder
+// before that folder is deleted.
+func applyOrder(ops []Op) []Op {
+	creates := map[string]int{}
+	deletes := map[string]int{}
+	for i, op := range ops {
+		switch op.Kind {
+		case CreateGroup:
+			creates[op.Target] = i
+		case DeleteGroup:
+			deletes[op.Target] = i
+		}
+	}
+
+	n := len(ops)
+	after := make([][]int, n) // after[u] = the ops u must precede
+	need := make([]int, n)    // how many must still run before this one
+	link := func(u, v int) {
+		if u == v || u < 0 || v < 0 {
+			return
+		}
+		after[u] = append(after[u], v)
+		need[v]++
+	}
+	for i, op := range ops {
+		if op.Parent != "" {
+			if c, ok := creates[op.Parent]; ok {
+				link(c, i) // the destination has to exist first
+			}
+		}
+		if op.Kind == MoveEntry || op.Kind == MoveGroup {
+			if d, ok := deletes[op.Was]; ok {
+				link(i, d) // out of the folder before the folder goes
+			}
+		}
+	}
+
+	// Kahn's, taking the earliest-staged of whatever is ready, so an order the
+	// rules leave open is the order the reader built it in.
+	ready := make([]int, 0, n)
+	for i := range ops {
+		if need[i] == 0 {
+			ready = append(ready, i)
+		}
+	}
+	out := make([]Op, 0, n)
+	for len(ready) > 0 {
+		pick := 0
+		for k, i := range ready {
+			if ops[i].Seq < ops[ready[pick]].Seq {
+				pick = k
+			}
+		}
+		i := ready[pick]
+		ready = append(ready[:pick], ready[pick+1:]...)
+		out = append(out, ops[i])
+		for _, v := range after[i] {
+			if need[v]--; need[v] == 0 {
+				ready = append(ready, v)
+			}
+		}
+	}
+	if len(out) != n {
+		// A cycle — no order satisfies the rules. Nothing in the interface can
+		// stage one (a folder cannot be moved into itself or into something it
+		// is deleting), so this is a bug rather than a user's doing; fall back
+		// to staging order and let the save refuse with a real reason.
+		sorted := append([]Op(nil), ops...)
+		sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Seq < sorted[j].Seq })
+		return sorted
+	}
 	return out
 }
 
@@ -153,6 +243,26 @@ func cancelled(ops, effective []Op) map[string]bool {
 	for _, op := range ops {
 		if (op.Kind == CreateEntry || op.Kind == CreateGroup) && !survives[op.Target] {
 			gone[op.Target] = true
+		}
+	}
+	// And anything made inside a folder that is on its way out. The file has
+	// never seen it either, so there is nothing to delete and nothing to put in
+	// a recycle bin — it was written into the bin along with its folder, and
+	// the confirmation counted it as both added and removed.
+	doomed := map[string]bool{}
+	for _, op := range effective {
+		if op.Kind == DeleteGroup {
+			doomed[op.Target] = true
+		}
+	}
+	if len(doomed) > 0 {
+		for _, op := range ops {
+			if op.Kind != CreateEntry && op.Kind != CreateGroup {
+				continue
+			}
+			if doomed[op.Parent] {
+				gone[op.Target] = true
+			}
 		}
 	}
 	if len(gone) > 0 {

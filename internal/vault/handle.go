@@ -35,6 +35,9 @@ type Handle struct {
 	fp     fingerprint
 	why    string // cheap refusal computed at open; "" if none
 	backed bool   // a backup has been taken for this file, this run
+	// backupAt is the name the next backup will have, settled the first time it
+	// is asked for so the confirmation and the disk cannot disagree.
+	backupAt string
 
 	// The round-trip proof is expensive — an encode plus a decode, so two KDF
 	// derivations — and its answer is only needed when somebody actually wants
@@ -292,6 +295,7 @@ func Reopen(h *Handle) (*Handle, error) {
 	// here meant a full copy of the vault beside it on every save, forever —
 	// and nothing prunes them.
 	fresh.backed = h.backed
+	fresh.backupAt = h.backupAt
 	return fresh, nil
 }
 

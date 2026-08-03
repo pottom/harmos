@@ -603,3 +603,34 @@ func TestATruncatedFileIsAnErrorNotAPanic(t *testing.T) {
 		}
 	}
 }
+
+// The confirmation names the backup before the user commits, so the name it
+// gives has to be the name that appears. BackupPath formatted the clock one way
+// and re-read it on every frame while backupOnce formatted it another, so the
+// screen promised "…T140224Z.kdbx" and the disk got "…T140224.939Z.kdbx".
+func TestTheBackupIsWhereTheConfirmationSaidItWouldBe(t *testing.T) {
+	h, path := openFixture(t)
+
+	promised := h.BackupPath()
+	if promised == "" {
+		t.Fatal("a fresh handle should name the backup it would take")
+	}
+	if again := h.BackupPath(); again != promised {
+		t.Errorf("the name moved between frames:\n  %s\n  %s", promised, again)
+	}
+
+	if err := h.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(promised); err != nil {
+		dir, _ := os.ReadDir(filepath.Dir(path))
+		var found []string
+		for _, e := range dir {
+			found = append(found, e.Name())
+		}
+		t.Errorf("promised %s, directory holds %v", filepath.Base(promised), found)
+	}
+	if after := h.BackupPath(); after != "" {
+		t.Errorf("one backup per run; it offered another: %s", after)
+	}
+}
