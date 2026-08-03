@@ -163,6 +163,18 @@ func (m Model) askToSave() (Model, tea.Cmd) {
 		m.flash = "nothing to save"
 		return m, nil
 	}
+	// A source whose file moved under us stays refused until the reader says
+	// otherwise. Reopening the handle to discard a half-applied database gave it
+	// a fresh fingerprint, so the vault's own guard cannot fire a second time —
+	// this is what remembers, and it is the difference between a conflict you
+	// have to answer and one you can walk past with esc.
+	for _, src := range m.chg.Sources() {
+		if m.stale[src] {
+			m.saveConflict = src
+			m.confirmSel = 1
+			return m, nil
+		}
+	}
 	// A source that has been locked again is not written, and saying so before
 	// the confirmation is better than a failure after it.
 	if locked := m.lockedWithChanges(); len(locked) > 0 {
@@ -292,8 +304,18 @@ func (m Model) onSaveDone(msg saveDoneMsg) Model {
 			// keep the staged set intact — the decision is the user's, and
 			// throwing their work away to make the error simpler would be the
 			// wrong trade.
+			//
+			// Remembered, because discardHandleState just reopened the file to
+			// throw away a half-applied database and that gave the handle a
+			// fresh fingerprint. Without this the guard was one-shot: esc, then
+			// ^s again, and the write went through with nothing said. The staged
+			// set was built against content that is gone either way.
+			if m.stale == nil {
+				m.stale = map[string]bool{}
+			}
+			m.stale[msg.source] = true
 			m.saveConflict = msg.source
-			m.confirmSel = 0 // Reload leads: it is the answer that loses nothing
+			m.confirmSel = 1 // leave it alone; overwriting is the dangerous half
 			return m
 		}
 		m.flash = "save failed: " + msg.err.Error()
@@ -377,20 +399,26 @@ func (m Model) updateConflict(key string) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if key == "enter" {
-		if m.confirmSel == 0 {
-			key = "r"
-		} else {
-			key = "esc"
-		}
+		key = []string{"r", "esc", "o"}[m.confirmSel]
 	}
 	switch key {
 	case "r", "R":
 		// Re-read and keep the staged changes, so they can be reviewed against
-		// what the file now says before being applied again.
+		// what the file now says before being applied again. The source stays
+		// marked stale: reloading shows what the other writer did, it does not
+		// merge it, and saving on top would still overwrite whatever of theirs
+		// a staged change happens to cover.
 		if v, err := m.reload(m.saveConflict); err == nil {
 			m = m.rebuild(v.Entries, v.Folders)
-			m.flash = "reloaded — your changes are still staged"
+			m.flash = "reloaded — review your changes against what the file now says"
 		}
+		m.saveConflict = ""
+	case "o", "O":
+		// The second confirmation. Saying it out loud is the whole of it: from
+		// here the write goes ahead and whatever the other writer put in the
+		// fields a staged change covers is replaced.
+		m.stale[m.saveConflict] = false
+		m.flash = "overwriting " + m.saveConflict + " — ^s writes over the other change"
 		m.saveConflict = ""
 	case "esc", "n", "N":
 		m.saveConflict = ""
@@ -463,6 +491,9 @@ func (m Model) conflictView() string {
 		"  " + theme.Dimmed.Render(m.saveConflict+" while harmos had it open."),
 		"",
 		"  " + theme.Faded.Render("Nothing was written. Your changes are still staged."),
+		"",
+		"  " + theme.Dimmed.Render("Reload shows you what they did — it does not merge it."),
+		"  " + theme.Bad.Render("Overwrite replaces whatever of theirs your changes cover."),
 		"",
 	}
 	lines = append(lines, confirmButtons(conflictChoices(), m.confirmSel, "←/→ choose · ↵ confirm · esc leave it")...)

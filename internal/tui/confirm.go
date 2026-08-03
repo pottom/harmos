@@ -75,8 +75,15 @@ func quitChoices() []confirmChoice {
 	return []confirmChoice{{label: "Save and quit"}, {label: "Discard and quit", danger: true}, {label: "Stay"}}
 }
 
-// conflictChoices: reloading keeps the staged changes and shows what the file
-// now says, which is the only answer that loses nothing.
+// conflictChoices are the three honest answers to "the file moved under us".
+//
+// Reload shows what the other writer did; it does not merge, and it used to be
+// called "the only answer that loses nothing", which was not true. Overwrite is
+// the one that loses theirs, so it is marked as danger and is not the default.
 func conflictChoices() []confirmChoice {
-	return []confirmChoice{{label: "Reload"}, {label: "Leave it"}}
+	return []confirmChoice{
+		{label: "Reload"},
+		{label: "Leave it"},
+		{label: "Overwrite", danger: true},
+	}
 }

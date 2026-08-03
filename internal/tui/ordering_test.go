@@ -188,3 +188,64 @@ func TestQuitAndSaveStillAsks(t *testing.T) {
 		t.Errorf("confirmSel = %d, want Cancel", m.confirmSel)
 	}
 }
+
+// The conflict guard is not one-shot, and reloading does not licence a silent
+// overwrite.
+//
+// onSaveDone reopens the handle to throw away a half-applied database, which
+// gives it a fresh fingerprint — so the vault's own guard could not fire twice.
+// Conflict → esc → ^s wrote the file with nothing said, and Reload → ^s wrote
+// the staged drafts over whatever the other writer had put there.
+func TestAConflictHasToBeAnswered(t *testing.T) {
+	m := stageAnEdit(t, editModel(t))
+
+	m = m.onSaveDone(saveDoneMsg{source: "own", err: vaultErrChangedUnderneath()})
+	if m.saveConflict != "own" {
+		t.Fatalf("a conflict should be reported, got %q", m.saveConflict)
+	}
+	if m.confirmSel != 1 {
+		t.Error("the dangerous half is overwriting, so it must not be the default")
+	}
+	out := ansi.Strip(m.View())
+	for _, want := range []string{"Overwrite", "does not merge"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the screen should say %q:\n%s", want, out)
+		}
+	}
+
+	// Walking away and trying again asks again.
+	m = up(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.saveConflict != "" {
+		t.Fatal("esc should dismiss the screen")
+	}
+	m, cmd := m.askToSave()
+	if cmd != nil || m.saveConfirm {
+		t.Error("^s on a source that moved under us must not go straight to the write")
+	}
+	if m.saveConflict != "own" {
+		t.Errorf("it should ask again, got %q", m.saveConflict)
+	}
+
+	// So does reloading: it shows what they did, it does not merge it.
+	m = up(m, key2("r"))
+	if m.dirtyCount() != 1 {
+		t.Error("reloading keeps the staged work")
+	}
+	m, _ = m.askToSave()
+	if m.saveConflict != "own" {
+		t.Error("after a reload the write still has to be agreed to")
+	}
+
+	// Only saying overwrite out loud lets it through.
+	m = up(m, key2("o"))
+	if m.saveConflict != "" {
+		t.Fatal("choosing overwrite should close the screen")
+	}
+	if !strings.Contains(m.flash, "overwriting") {
+		t.Errorf("and say what was chosen: %q", m.flash)
+	}
+	m, _ = m.askToSave()
+	if !m.saveConfirm {
+		t.Error("now the save confirmation should come up")
+	}
+}

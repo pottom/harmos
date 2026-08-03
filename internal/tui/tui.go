@@ -139,14 +139,19 @@ type Model struct {
 	inlineNewSeq int
 
 	// The Changes tab and the save.
-	chgSel        int             // selected row, counting only selectable ones
-	chgFold       map[string]bool // folded hunks and folder groups (z)
-	chgScroll     int             // first visible row of the Changes tab
-	saveConfirm   bool            // the write confirmation is up
-	saving        bool            // a save is running off the update loop
-	saveConflict  string          // a source whose file moved under us ("" = none)
-	quitGuard     bool            // quitting with staged changes
-	quitAfterSave bool            // quit once the save lands
+	chgSel       int             // selected row, counting only selectable ones
+	chgFold      map[string]bool // folded hunks and folder groups (z)
+	chgScroll    int             // first visible row of the Changes tab
+	saveConfirm  bool            // the write confirmation is up
+	saving       bool            // a save is running off the update loop
+	saveConflict string          // a source whose file moved under us ("" = none)
+	// stale is the sources whose file changed under us since the staged set was
+	// built. It survives the conflict screen: reopening the handle refreshes the
+	// fingerprint, so without this the guard fires once and every save after it
+	// goes through silently.
+	stale         map[string]bool
+	quitGuard     bool // quitting with staged changes
+	quitAfterSave bool // quit once the save lands
 
 	// The full, merged view, so one source can be reloaded without losing the
 	// others.

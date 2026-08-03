@@ -619,7 +619,13 @@ nothing.
 takes ~0.5–1 s, the same reason `openCmd` exists.
 
 On `ErrChangedUnderneath` the save is refused and the staged set is left **intact**;
-the overlay offers "quit without saving" or "overwrite — their changes will be lost",
+the overlay offers **Reload**, **Leave it**, or **Overwrite** — and Overwrite is
+marked as danger and is not the default. Reload re-reads the file and keeps the
+staged set for review; it does **not** merge, so saying so is part of the screen.
+The source stays marked stale until the reader chooses Overwrite: reopening the
+handle to discard a half-applied database gives it a fresh fingerprint, so the
+vault's own guard cannot fire twice and the interface is what remembers.
+The overlay used to offer "quit without saving" or "overwrite — their changes will be lost",
 the latter behind a second confirmation.
 
 **Quit guard**: when dirty, both `q` *and* `ctrl+c` raise an overlay. `ctrl+c`
