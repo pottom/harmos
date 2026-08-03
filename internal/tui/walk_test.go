@@ -168,6 +168,7 @@ func TestWalkEveryOperation(t *testing.T) {
 			t.Error("the folder something is already in is not a destination")
 		}
 	}
+	m = pickDestination(t, m, "Infra")
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if strings.Contains(m.flash, "  ") {
 		t.Errorf("the message should name the destination plainly: %q", m.flash)

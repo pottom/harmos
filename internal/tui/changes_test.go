@@ -794,9 +794,12 @@ func TestReviewSaysFromWhatToWhat(t *testing.T) {
 	m = typeStr(m, "s")
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
 
-	// A move, which has an origin as well as a destination.
+	// A move, which has an origin as well as a destination. Named rather than
+	// taken from the top of the list: what sits there is the picker's business,
+	// not this test's.
 	m = onEntry(t, m, "db", "db-stage")
 	m = up(m, key2("m"))
+	m = pickDestination(t, m, "Infra")
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
 
 	// A single-field edit, whose one-line summary is all a folded row shows.
@@ -981,4 +984,21 @@ func TestChangesClicksIgnoredUnderAModal(t *testing.T) {
 	if m.chgSel != 0 {
 		t.Error("a click through the save confirmation reached the list")
 	}
+}
+
+// pickDestination puts the move picker's cursor on a named folder.
+func pickDestination(t *testing.T, m Model, name string) Model {
+	t.Helper()
+	for i, d := range m.moveDests {
+		if strings.TrimSpace(d.label) == name {
+			m.moveSel = i
+			return m
+		}
+	}
+	var have []string
+	for _, d := range m.moveDests {
+		have = append(have, strings.TrimSpace(d.label))
+	}
+	t.Fatalf("no destination %q; offered: %v", name, have)
+	return m
 }

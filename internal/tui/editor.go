@@ -522,6 +522,21 @@ func (m Model) moveDestinations() []vaultFolderRef {
 	}
 
 	var out []vaultFolderRef
+	// The source's own root group. The tree draws a source there and gives the
+	// row no identity, so the walk below skips it — which meant nothing could
+	// ever be moved to the top of a source, a place the vault has no trouble
+	// with at all.
+	if h := m.handles[m.editSource]; h != nil {
+		if root := h.RootGroupID(); root != "" && root != home && root != m.editTarget {
+			out = append(out, vaultFolderRef{
+				// Named, not just indented: at depth zero beside the folders
+				// under it, the source's own row reads as a heading rather
+				// than as somewhere you can put a thing.
+				id: root, label: m.editSource + " · top level", path: m.editSource + " (top level)",
+			})
+		}
+	}
+
 	var walk func(ns []*node, depth int)
 	walk = func(ns []*node, depth int) {
 		for _, n := range ns {
@@ -572,7 +587,10 @@ type vaultFolderRef struct {
 
 func (m Model) updateMovePicker(key string) Model {
 	switch key {
-	case "esc", "n":
+	// esc alone. "n" used to cancel too — the "no" of a confirmation this
+	// stopped being — and it is the new-entry key everywhere else, so pressing
+	// it here shut the picker without a word about why.
+	case "esc":
 		m.edit = editNone
 	case "up", "ctrl+p":
 		if m.moveSel > 0 {
@@ -619,6 +637,18 @@ func (m Model) movePickerView() string {
 		lines = append(lines, "  "+theme.Strong.Render(d.label))
 	}
 	lines = append(lines, "")
+
+	// What is moving, and where it is now. The picker used to name only the
+	// source, so a reader who had pressed m on the wrong row had nothing on
+	// screen to tell them.
+	what := m.nameOfTarget(m.editTarget, m.editFolderTarget)
+	from := m.readablePath(m.homeOf(m.editTarget))
+	if from == "" {
+		from = m.editSource
+	}
+	head := theme.Strong.Render(what) + theme.Faded.Render("  now in ") + theme.Dimmed.Render(from)
+	lines = append([]string{"  " + head}, lines...)
+
 	return m.modal("Move to", m.editSource, lines, "↑↓ pick · ↵ stage · esc cancel")
 }
 
