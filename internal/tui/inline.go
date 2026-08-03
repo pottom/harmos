@@ -91,6 +91,14 @@ func (m Model) updateInlineRename(key string, msg tea.KeyMsg) (Model, tea.Cmd) {
 	switch key {
 	case "esc":
 		m.edit = editNone
+		if m.inlineNewSeq != 0 {
+			// The row only existed to be typed on. Leaving it behind, named
+			// whatever the placeholder said, is not what esc means anywhere else.
+			m.chg, _ = m.chg.Revert(m.inlineNewSeq)
+			m.inlineNewSeq = 0
+			m.flash = "the new folder was not made"
+			return m.restage(), nil
+		}
 		m.flash = "rename cancelled"
 		return m, nil
 	case "enter":
@@ -104,6 +112,12 @@ func (m Model) updateInlineRename(key string, msg tea.KeyMsg) (Model, tea.Cmd) {
 // stageInlineRename records the new name and closes the field.
 func (m Model) stageInlineRename() Model {
 	name := strings.TrimSpace(m.inlineInput.Value())
+	if name == "" && m.inlineNewSeq != 0 {
+		// A new folder committed without a name keeps the stand-in, the way
+		// every file manager does. Refusing here would be refusing the most
+		// ordinary thing somebody can do with this key.
+		name = m.inlineBefore
+	}
 	switch name {
 	case "":
 		// Not an error worth a modal, but not something to accept either: an
@@ -111,15 +125,34 @@ func (m Model) stageInlineRename() Model {
 		m.flash = "a name cannot be empty — esc cancels"
 		return m
 	case m.inlineBefore:
-		m.edit = editNone
-		m.flash = "unchanged"
-		return m
+		// Nothing changed — unless this row was made to be typed on, in which
+		// case something did: the folder. Calling that "unchanged" would be
+		// describing the field rather than the vault.
+		if m.inlineNewSeq == 0 {
+			m.edit = editNone
+			m.flash = "unchanged"
+			return m
+		}
 	}
 
 	target, isFolder := m.editTarget, m.editFolderTarget
-	m.edit = editNone
+	newSeq := m.inlineNewSeq
+	m.edit, m.inlineNewSeq = editNone, 0
 
 	if isFolder {
+		// A creation being named rather than an existing folder being renamed.
+		// The reduction folds create-then-rename into one create carrying the
+		// final name, so the only thing that differs here is what is said.
+		if newSeq != 0 {
+			if name != m.inlineBefore {
+				m.chg, _ = m.chg.Add(edit.Op{
+					Kind: edit.RenameGroup, Source: m.editSource, Target: target,
+					Name: name, Was: m.inlineBefore,
+				})
+			}
+			m.flash = "staged: new folder " + name + " · nothing is written until you save"
+			return m.restage()
+		}
 		m.chg, _ = m.chg.Add(edit.Op{
 			Kind: edit.RenameGroup, Source: m.editSource, Target: target,
 			Name: name, Was: m.inlineBefore,

@@ -115,8 +115,8 @@ func TestWalkEveryOperation(t *testing.T) {
 	// under the cursor afterwards, or the next key acts on the old selection.
 	m = onRow(t, m, "Infra")
 	m = up(m, key2("N"))
-	if m.edit != editFolder {
-		t.Fatalf("N should open the folder editor, got mode %d", m.edit)
+	if m.edit != editInline {
+		t.Fatalf("N should open the name field, got mode %d", m.edit)
 	}
 	m = typeStr(m, "Fresh")
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -257,8 +257,8 @@ func TestCreateAtTheTopOfASource(t *testing.T) {
 	m = onRow(t, m, "own")
 
 	m = up(m, key2("N"))
-	if m.edit != editFolder {
-		t.Fatalf("N on a source root should open the folder editor, got %d", m.edit)
+	if m.edit != editInline {
+		t.Fatalf("N on a source root should open the name field, got %d", m.edit)
 	}
 	m = typeStr(m, "TopLevel")
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -718,8 +718,8 @@ func TestCreatingFromTheResultsListUsesTheResultsFolder(t *testing.T) {
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter}) // leave the box, keep the results
 
 	m = up(m, key2("N"))
-	if m.edit != editFolder {
-		t.Fatalf("N should open the folder editor, got mode %d (%q)", m.edit, m.flash)
+	if m.edit != editInline {
+		t.Fatalf("N should open the name field, got mode %d (%q)", m.edit, m.flash)
 	}
 	m = typeStr(m, "FromResults")
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
