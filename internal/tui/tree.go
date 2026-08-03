@@ -314,52 +314,21 @@ func (m Model) gotoResultFolder() Model {
 	m.results = nil
 	m.sel = 0
 
-	var cur *node
-	for _, r := range m.roots {
-		if r.name == e.Source {
-			cur = r
-			break
-		}
-	}
-	if cur == nil {
+	// By identity, the way revealTarget does. This used to walk the tree
+	// splitting the path on "/" and matching children by name, and then pick the
+	// entry by Title and Username — the exact technique buildTree documents as
+	// wrong a hundred lines above, and for the same reasons. Two sibling folders
+	// with one name are legal in KeePass and any merge makes them: g landed in
+	// the first, on its first entry, and the ↵ that follows copied a password
+	// the reader had not asked for while the screen said otherwise. A folder
+	// with a "/" in its own name was simply unreachable.
+	if e.ID == "" {
+		// Nothing to navigate by. Guessing from the path and the title is what
+		// this used to do and what it got wrong; saying so is the honest end.
+		m.flash = "that result has no identity to jump to"
 		return m
 	}
-	cur.expanded = true
-	for _, seg := range strings.Split(e.Path, "/") {
-		if seg == "" {
-			continue
-		}
-		var next *node
-		for _, c := range cur.children {
-			if c.name == seg {
-				next = c
-				break
-			}
-		}
-		if next == nil {
-			break
-		}
-		next.expanded = true
-		cur = next
-	}
-
-	for i, tl := range visibleTree(m.roots) {
-		if tl.node == cur {
-			m.tsel = i
-			break
-		}
-	}
-	m.esel = 0
-	for i := range cur.entries {
-		if cur.entries[i].Title == e.Title && cur.entries[i].Username == e.Username {
-			m.esel = i
-			break
-		}
-	}
-	if len(cur.entries) > 0 {
-		m.focus = 1 // land on the entry in the table
-	}
-	return m
+	return m.revealTarget(e.ID, false)
 }
 
 // folderCrumb builds the "source › … › folder" trail for the row at sel by

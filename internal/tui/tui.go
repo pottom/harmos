@@ -62,13 +62,17 @@ type Model struct {
 	setKeyring map[string]bool        // source name → has a saved keyring password
 	setMode    int                    // setList / setRemove / …
 	setCat     int                    // selected Settings category (left pane): catSources / catTheme
-	setStatus  string                 // last action result, shown in the Settings footer
-	onboarding bool                   // launched with no config — first-run add-a-source flow
-	prefSel    int                    // selected row in the Preferences pane
-	staleAfter time.Duration          // Pleasant cache stale threshold (config-backed)
-	rmToggle   int                    // remove overlay: 0 delete-file, 1 forget-pw, 2 confirm
-	rmFile     bool                   // remove overlay: also delete the local file
-	rmPw       bool                   // remove overlay: also forget the keyring password
+	// setStatusBad marks the line as a failure. Without it every outcome — a
+	// sync that could not connect, a config that could not be written — was
+	// rendered in the "it worked" green.
+	setStatusBad bool
+	setStatus    string        // last action result, shown in the Settings footer
+	onboarding   bool          // launched with no config — first-run add-a-source flow
+	prefSel      int           // selected row in the Preferences pane
+	staleAfter   time.Duration // Pleasant cache stale threshold (config-backed)
+	rmToggle     int           // remove overlay: 0 delete-file, 1 forget-pw, 2 confirm
+	rmFile       bool          // remove overlay: also delete the local file
+	rmPw         bool          // remove overlay: also forget the keyring password
 
 	form        form   // the add/edit form (see formkit.go)
 	formEditing bool   // editing an existing source vs adding
@@ -91,16 +95,17 @@ type Model struct {
 
 	// Unlock phase (locked == true until every source is opened).
 	locked   bool
-	cfg      *config.Config  // the config being unlocked (nil once browsing)
-	ulInput  textinput.Model // masked credential input
-	ulSteps  []ulStep        // remaining credentials to collect
-	ulIdx    int             // current step
-	ulMaster secret.Secret   // the shared master, once resolved
-	ulHasM   bool            // master resolved (env/keyring/typed)
-	ulStats  []srcStat       // per-source status rows for the unlock table
-	ulErr    string          // inline error (wrong password)
-	ulBusy   bool            // an open attempt (Argon2) is running
-	ulSkip   map[string]bool // sources the user chose to skip (esc)
+	cfg      *config.Config           // the config being unlocked (nil once browsing)
+	ulInput  textinput.Model          // masked credential input
+	ulSteps  []ulStep                 // remaining credentials to collect
+	ulIdx    int                      // current step
+	ulGot    map[string]secret.Secret // per-source passwords answered this run
+	ulMaster secret.Secret            // the shared master, once resolved
+	ulHasM   bool                     // master resolved (env/keyring/typed)
+	ulStats  []srcStat                // per-source status rows for the unlock table
+	ulErr    string                   // inline error (wrong password)
+	ulBusy   bool                     // an open attempt (Argon2) is running
+	ulSkip   map[string]bool          // sources the user chose to skip (esc)
 
 	excluded []session.Excluded // sources that could not be opened, shown while browsing
 
@@ -139,14 +144,19 @@ type Model struct {
 	inlineNewSeq int
 
 	// The Changes tab and the save.
-	chgSel        int             // selected row, counting only selectable ones
-	chgFold       map[string]bool // folded hunks and folder groups (z)
-	chgScroll     int             // first visible row of the Changes tab
-	saveConfirm   bool            // the write confirmation is up
-	saving        bool            // a save is running off the update loop
-	saveConflict  string          // a source whose file moved under us ("" = none)
-	quitGuard     bool            // quitting with staged changes
-	quitAfterSave bool            // quit once the save lands
+	chgSel       int             // selected row, counting only selectable ones
+	chgFold      map[string]bool // folded hunks and folder groups (z)
+	chgScroll    int             // first visible row of the Changes tab
+	saveConfirm  bool            // the write confirmation is up
+	saving       bool            // a save is running off the update loop
+	saveConflict string          // a source whose file moved under us ("" = none)
+	// stale is the sources whose file changed under us since the staged set was
+	// built. It survives the conflict screen: reopening the handle refreshes the
+	// fingerprint, so without this the guard fires once and every save after it
+	// goes through silently.
+	stale         map[string]bool
+	quitGuard     bool // quitting with staged changes
+	quitAfterSave bool // quit once the save lands
 
 	// The full, merged view, so one source can be reloaded without losing the
 	// others.
@@ -197,6 +207,8 @@ func New(entries []vault.Entry, folders []vault.Folder, configPath string, timeo
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
+	// The same cleaning rebuild does, at the other door in: see sanitised.
+	entries, folders = sanitised(entries, folders)
 	roots := buildTree(entries, folders)
 	themeName := "charm"
 	srcType := map[string]config.Type{}
@@ -336,6 +348,14 @@ func (m Model) rebuild(entries []vault.Entry, folders []vault.Folder) Model {
 	// The tree is built from the vault as it will be — see project — while the
 	// merged fields keep what the file actually says, which is what a reload and
 	// a save compare against.
+	// Cleaned once, here, where vault text enters the interface. The reader that
+	// builds these already strips control runes, and this is the belt: an
+	// escape sequence in a title or a folder name is not a rendering quirk, it
+	// is the vault driving the terminal — clearing the screen on every frame,
+	// rewriting the window title, or leaving the alt-screen buffer. A newline
+	// is quieter and just as bad: ansi.StringWidth counts it as nothing, so the
+	// frame grows a row and every width check still passes.
+	entries, folders = sanitised(entries, folders)
 	m.mergedEntries, m.mergedFolders = entries, folders
 	m.viewEntries, m.viewFolders = project(entries, folders, m.chg)
 	m.matcher = search.New(m.viewEntries)
@@ -525,10 +545,16 @@ func (m *Model) copySel(what string) tea.Cmd {
 // clear countdown. what labels it in the countdown line, provenance says where it
 // came from. Shared by the vault copy and the generator.
 func (m *Model) copyString(val, what, provenance string) tea.Cmd {
+	// A copy that did nothing and a copy that worked were indistinguishable:
+	// no countdown, no message, nothing. ^u on an entry with no username is a
+	// perfectly ordinary keystroke, and silence let a reader paste whatever the
+	// clipboard held before.
 	if val == "" {
+		m.flash = "no " + what + " on this entry"
 		return nil
 	}
 	if err := clip.Copy([]byte(val)); err != nil {
+		m.flash = "could not reach the clipboard: " + err.Error()
 		return nil
 	}
 	m.copied = provenance
@@ -550,6 +576,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
+		// The panes clamp at draw time, so the screen was always right — but the
+		// stored offsets were not, and they are what the keys move. Scroll to the
+		// bottom of a long note, grow the window, and the next seventy presses
+		// of ↑ changed nothing.
+		_, vis := m.detailViewport()
+		m.detailScroll = clampScroll(m.detailScroll, len(m.detailLinesForScroll()), vis)
+		m.helpScroll = clampScroll(m.helpScroll, m.helpTotal(), max(1, max(3, m.h-3)-2))
+		m.chgScroll = clampScroll(m.chgScroll, len(m.changeRows(m.contentW())), m.changesVisibleRows())
 		return m, nil
 
 	case tickMsg:
@@ -592,9 +626,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case syncDoneMsg:
 		if msg.err != nil {
-			m.setStatus = "sync failed: " + msg.err.Error()
+			m.setStatusBad, m.setStatus = true, "sync failed: "+msg.err.Error()
 		} else {
-			m.setStatus = msg.summary
+			m.setStatusBad, m.setStatus = false, msg.summary
 		}
 		m.setMode = setList
 		m.syncCh = nil
@@ -650,7 +684,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key == "ctrl+c" {
 			// Quitting with staged changes throws them away, and ctrl+c is the
 			// most reflexive way to leave — so it asks too, not just q.
-			if m.dirtyCount() > 0 && !m.quitGuard && !m.saving {
+			// While a save is running, ctrl+c used to quit — abandoning the
+			// goroutine mid-write. The atomic rename keeps the vault safe, but
+			// the staged set goes with the process and a temp file can be left
+			// behind. Keys are ignored during a save; this is one of them.
+			if m.saving {
+				return m, nil
+			}
+			if m.dirtyCount() > 0 && !m.quitGuard {
 				m.quitGuard = true
 				m.confirmSel = 0 // Save and quit leads; discarding is the danger
 				return m, nil

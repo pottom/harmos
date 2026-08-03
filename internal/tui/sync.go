@@ -31,17 +31,17 @@ type syncDoneMsg struct {
 // sets a status telling the user to save them first (press p).
 func (m Model) startSync(p config.Source) (Model, tea.Cmd) {
 	if p.Type != config.Pleasant {
-		m.setStatus = p.Name + " is a kdbx source — nothing to sync"
+		m.setStatusBad, m.setStatus = false, p.Name+" is a kdbx source — nothing to sync"
 		return m, nil
 	}
 	master, ok := resolveMasterForTUI()
 	if !ok {
-		m.setStatus = "no master saved — press p to save it, then sync"
+		m.setStatusBad, m.setStatus = true, "no master saved — press p to save it, then sync"
 		return m, nil
 	}
 	server, ok, _ := keyring.FetchServer(p.Name)
 	if !ok {
-		m.setStatus = "no server password saved — press p to save it, then sync"
+		m.setStatusBad, m.setStatus = false, "no server password saved — press p to save it, then sync"
 		return m, nil
 	}
 
@@ -51,7 +51,7 @@ func (m Model) startSync(p config.Source) (Model, tea.Cmd) {
 	m.syncPhase = "starting"
 	m.syncDone, m.syncTotal = 0, -1
 	m.setMode = setSyncing
-	m.setStatus = ""
+	m.setStatusBad, m.setStatus = false, ""
 
 	run := func() tea.Msg {
 		hc, err := pleasant.NewHTTPClient(p.CABundle)

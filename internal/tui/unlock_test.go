@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/charmbracelet/bubbles/textinput"
 	"os"
 	"path/filepath"
 	"strings"
@@ -188,5 +189,43 @@ func TestUnlockAutoWhenAllSaved(t *testing.T) {
 	m = runCmd(m, m.openCmd())
 	if m.locked {
 		t.Fatalf("should auto-unlock to browsing (err=%q)", m.ulErr)
+	}
+}
+
+// A per-source password answered once survives a failed unlock.
+//
+// A wrong master rebuilds the step list from what went wrong, and a source that
+// opened on the first pass has no step in the new one — so its password, which
+// lived only inside the old step, was thrown away. The vault then came up with
+// that source missing for "no credentials", was never asked again, and only a
+// restart fixed it.
+func TestAnAnsweredSourcePasswordSurvivesAWrongMaster(t *testing.T) {
+	m := Model{ulSteps: []ulStep{
+		{label: "master password"},
+		{name: "own", label: "password for own"},
+	}}
+	m.ulInput = textinput.New()
+
+	m.ulInput.SetValue("wrong-master")
+	nm, _ := m.submitStep(false)
+	m = nm.(Model)
+	m.ulInput.SetValue("right-for-own")
+	nm, _ = m.submitStep(false)
+	m = nm.(Model)
+
+	if got := m.ulGot["own"].Reveal(); got != "right-for-own" {
+		t.Fatalf("the source password should be kept apart, got %q", got)
+	}
+
+	// The master was wrong, so the steps are rebuilt with only the master in
+	// them — the shape that used to lose the rest.
+	m.ulSteps, m.ulIdx = []ulStep{{label: "master password"}}, 0
+	m.ulHasM = false
+	m.ulInput.SetValue("right-master")
+	nm, _ = m.submitStep(false)
+	m = nm.(Model)
+
+	if got := m.ulGot["own"].Reveal(); got != "right-for-own" {
+		t.Errorf("it was thrown away by the rebuild: %q", got)
 	}
 }

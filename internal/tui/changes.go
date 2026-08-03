@@ -99,21 +99,28 @@ func (m Model) updateChanges(key string) (Model, tea.Cmd) {
 		// against it too, so say how many rather than surprising anyone.
 		switch cur.kind {
 		case rowChange:
-			if n := len(m.chg.Cascade(cur.seq)); n > 0 {
-				m.flash = fmt.Sprintf("reverted, and %d dependent change(s) with it", n)
+			// The whole row, not one operation of it. A row is what the reader
+			// is pointing at, and the Seq it carries is the *first* of a
+			// collapsed chain — so undoing "the change" left the later halves
+			// staged, the row where it was, and the diff showing a before the
+			// file never held: two edits to a username reverted to
+			// "step-one → step-two".
+			set, dropped := m.chg.RevertTarget(cur.target)
+			m.chg = set
+			if n := len(dropped); n > 0 {
+				m.flash = fmt.Sprintf("reverted, and %s with it", plural(n, "change", "changes"))
 			} else {
 				m.flash = "reverted"
 			}
-			m.chg, _ = m.chg.Revert(cur.seq)
 		case rowFolder:
 			n := 0
 			for _, r := range rows {
 				if r.kind == rowChange && m.groupOf(rows, r) == cur.target {
-					m.chg, _ = m.chg.Revert(r.seq)
+					m.chg, _ = m.chg.RevertTarget(r.target)
 					n++
 				}
 			}
-			m.flash = fmt.Sprintf("reverted %d change(s) here", n)
+			m.flash = fmt.Sprintf("reverted %s here", plural(n, "change", "changes"))
 		}
 		m = m.restage()
 		m.chgSel = clampIndex(m.chgSel, len(selectableRows(m.changeRows(m.contentW()))))
@@ -162,6 +169,18 @@ func (m Model) askToSave() (Model, tea.Cmd) {
 	if m.chg.Empty() {
 		m.flash = "nothing to save"
 		return m, nil
+	}
+	// A source whose file moved under us stays refused until the reader says
+	// otherwise. Reopening the handle to discard a half-applied database gave it
+	// a fresh fingerprint, so the vault's own guard cannot fire a second time —
+	// this is what remembers, and it is the difference between a conflict you
+	// have to answer and one you can walk past with esc.
+	for _, src := range m.chg.Sources() {
+		if m.stale[src] {
+			m.saveConflict = src
+			m.confirmSel = 1
+			return m, nil
+		}
 	}
 	// A source that has been locked again is not written, and saying so before
 	// the confirmation is better than a failure after it.
@@ -274,6 +293,7 @@ func (m Model) onSaveDone(msg saveDoneMsg) Model {
 		// that had just been created twice — once from the file, once from the
 		// projection — and the obvious next move is to delete "the duplicate".
 		m.chg = m.chg.DropSource(src)
+		delete(m.stale, src) // its work is written; the file is ours again
 		if v, err := m.reload(src); err == nil {
 			m = m.rebuild(v.Entries, v.Folders)
 		}
@@ -292,15 +312,29 @@ func (m Model) onSaveDone(msg saveDoneMsg) Model {
 			// keep the staged set intact — the decision is the user's, and
 			// throwing their work away to make the error simpler would be the
 			// wrong trade.
+			//
+			// Remembered, because discardHandleState just reopened the file to
+			// throw away a half-applied database and that gave the handle a
+			// fresh fingerprint. Without this the guard was one-shot: esc, then
+			// ^s again, and the write went through with nothing said. The staged
+			// set was built against content that is gone either way.
+			if m.stale == nil {
+				m.stale = map[string]bool{}
+			}
+			m.stale[msg.source] = true
 			m.saveConflict = msg.source
-			m.confirmSel = 0 // Reload leads: it is the answer that loses nothing
+			m.confirmSel = 1 // leave it alone; overwriting is the dangerous half
 			return m
 		}
 		m.flash = "save failed: " + msg.err.Error()
 		return m
 	}
 
+	// Nothing is staged any more, so nothing is stale: the marks exist to stop a
+	// set built against gone content being written, and there is no set left.
+	// Without this a source that once conflicted refused every later save.
 	m.chg = edit.Set{}
+	m.stale, m.saveConflict = nil, ""
 	m.chgSel = 0
 	m.chgFold, m.chgScroll = nil, 0
 	m.flash = "saved"
@@ -377,20 +411,26 @@ func (m Model) updateConflict(key string) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if key == "enter" {
-		if m.confirmSel == 0 {
-			key = "r"
-		} else {
-			key = "esc"
-		}
+		key = []string{"r", "esc", "o"}[m.confirmSel]
 	}
 	switch key {
 	case "r", "R":
 		// Re-read and keep the staged changes, so they can be reviewed against
-		// what the file now says before being applied again.
+		// what the file now says before being applied again. The source stays
+		// marked stale: reloading shows what the other writer did, it does not
+		// merge it, and saving on top would still overwrite whatever of theirs
+		// a staged change happens to cover.
 		if v, err := m.reload(m.saveConflict); err == nil {
 			m = m.rebuild(v.Entries, v.Folders)
-			m.flash = "reloaded — your changes are still staged"
+			m.flash = "reloaded — review your changes against what the file now says"
 		}
+		m.saveConflict = ""
+	case "o", "O":
+		// The second confirmation. Saying it out loud is the whole of it: from
+		// here the write goes ahead and whatever the other writer put in the
+		// fields a staged change covers is replaced.
+		m.stale[m.saveConflict] = false
+		m.flash = "overwriting " + m.saveConflict + " — ^s writes over the other change"
 		m.saveConflict = ""
 	case "esc", "n", "N":
 		m.saveConflict = ""
@@ -437,11 +477,14 @@ func (m Model) saveConfirmView() string {
 		// The operation count is a number about the program; this is the one the
 		// reader is actually agreeing to.
 		lines = append(lines, m.impactOf(src).lines()...)
+		// Head-truncated: a path identifies a file by its tail, and cutting the
+		// tail off leaves the reader agreeing to write "/var/folders/3s/pdy…".
+		// Every deep path in a temp directory or a synced folder lands there.
 		lines = append(lines,
-			"  "+theme.Dimmed.Render(trunc(path, max(10, m.w-8))),
+			"  "+theme.Dimmed.Render(truncLeft(path, max(10, m.w-8))),
 		)
 		if backup != "" {
-			lines = append(lines, "  "+theme.Faded.Render("backup: "+trunc(backup, max(10, m.w-16))))
+			lines = append(lines, "  "+theme.Faded.Render("backup: "+truncLeft(backup, max(10, m.w-16))))
 		}
 		lines = append(lines, "")
 	}
@@ -460,6 +503,9 @@ func (m Model) conflictView() string {
 		"  " + theme.Dimmed.Render(m.saveConflict+" while harmos had it open."),
 		"",
 		"  " + theme.Faded.Render("Nothing was written. Your changes are still staged."),
+		"",
+		"  " + theme.Dimmed.Render("Reload shows you what they did — it does not merge it."),
+		"  " + theme.Bad.Render("Overwrite replaces whatever of theirs your changes cover."),
 		"",
 	}
 	lines = append(lines, confirmButtons(conflictChoices(), m.confirmSel, "←/→ choose · ↵ confirm · esc leave it")...)
@@ -489,10 +535,14 @@ func (m Model) updateQuitGuard(key string) (Model, tea.Cmd) {
 	}
 	switch key {
 	case "s", "S":
+		// Through the confirmation, not around it. This used to call saveCmd
+		// directly, so the one screen that names the file, the backup and what
+		// is about to stop existing never appeared — and a set holding a
+		// permanent deletion was written by an ↵ pressed out of habit on a
+		// modal that had said only "1 change(s) are staged and not written".
 		m.quitGuard = false
 		m.quitAfterSave = true
-		m.saving = true
-		return m, m.saveCmd()
+		return m.askToSave()
 	case "d", "D":
 		return m, tea.Sequence(clearClip, tea.Quit)
 	case "esc", "n", "N":

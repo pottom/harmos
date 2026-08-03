@@ -200,7 +200,10 @@ func (m Model) View() string {
 func (m Model) tabIndicator() string {
 	var parts []string
 	for _, t := range tabOrder() {
-		label := t.label
+		// With the key that reaches it. The strip named four tabs and said
+		// nothing about how to get to one; the digits were in the help, below
+		// the fold.
+		label := theme.Faded.Render(t.key) + " " + t.label
 		// The Changes tab carries the pending count, so a dirty session is
 		// visible without switching to it.
 		if t.idx == tabChanges {
@@ -208,11 +211,11 @@ func (m Model) tabIndicator() string {
 				label += theme.Noted.Render(" " + itoa(n))
 			}
 		}
+		plain := theme.Faded.Render(t.key+" ") + theme.Faded.Render(t.label)
 		if m.tab == t.idx {
-			parts = append(parts, theme.Acc.Render(t.label)+strings.TrimPrefix(label, t.label))
-		} else {
-			parts = append(parts, theme.Faded.Render(t.label)+strings.TrimPrefix(label, t.label))
+			plain = theme.Faded.Render(t.key+" ") + theme.Acc.Render(t.label)
 		}
+		parts = append(parts, plain+strings.TrimPrefix(label, theme.Faded.Render(t.key)+" "+t.label))
 	}
 	return strings.Join(parts, theme.Faded.Render(" · "))
 }
@@ -309,9 +312,10 @@ func spread(left, right string, w int) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-// modal renders a centered, content-sized panel with a hint beneath it — the
-// shared superfile-style frame for the save-password and sync screens (echoing
-// the unlock screen's look).
+// modal centres a content-sized panel with a hint beneath it. The hint is
+// truncated like everything else: it used to be joined and placed untouched, so
+// the attachment picker's 51-cell line made every row 52 columns on the 41-wide
+// terminal the program declares as its minimum.
 func (m Model) modal(title, info string, lines []string, hint string) string {
 	inner := 0
 	for _, ln := range lines {
@@ -345,7 +349,8 @@ func (m Model) modal(title, info string, lines []string, hint string) string {
 	panel := box(title, info, lines, boxW, len(lines)+2, true)
 	block := panel
 	if hint != "" {
-		block = lipgloss.JoinVertical(lipgloss.Center, panel, "", theme.Faded.Render(hint))
+		block = lipgloss.JoinVertical(lipgloss.Center, panel, "",
+			theme.Faded.Render(trunc(hint, max(4, m.w-2))))
 	}
 	return lipgloss.Place(max(1, m.w), max(1, m.h), lipgloss.Center, lipgloss.Center, block)
 }
@@ -377,7 +382,11 @@ func (m Model) vaultBody() string {
 				parts = append(parts, "↑↓ scroll")
 			}
 			parts = append(parts, "↵ copy password")
-			if e.TOTP != "" {
+			// Only when it can actually be read. The footer promised the key
+			// for any non-empty otp field, while the detail drew no row and the
+			// key did nothing — so a malformed seed looked like harmos losing
+			// the TOTP rather than declining to guess at it.
+			if _, err := otp.Parse(e.TOTP); err == nil {
 				parts = append(parts, "ctrl+t copy totp")
 			}
 			if len(e.Files) > 0 {
@@ -455,7 +464,7 @@ func (m Model) settingsView() string {
 	// Same vertical frame as the Vault tab so nothing jumps when switching:
 	// header line, panels, a context line, then the hints footer.
 	panelsH := max(3, m.h-3)
-	leftW := settingsLeftW
+	leftW := m.settingsLeftW()
 	rightW := m.w - leftW - 1
 
 	left := box("Settings", "", m.catLines(leftW-2), leftW, panelsH, m.focus == 0)
@@ -490,7 +499,11 @@ func (m Model) settingsHeader() string {
 // current selection points at.
 func (m Model) settingsContext() string {
 	if m.setStatus != "" {
-		return theme.Ok.Render(trunc("  "+m.setStatus, m.w))
+		st := theme.Ok
+		if m.setStatusBad {
+			st = theme.Bad
+		}
+		return st.Render(trunc("  "+m.setStatus, m.w))
 	}
 	if m.setCat == catTheme {
 		return theme.Faded.Render(trunc("  active theme · "+m.themeName, m.w))
@@ -693,7 +706,10 @@ func (m Model) searchLine() string {
 	if m.showResults() {
 		right = theme.Dimmed.Render(plural(len(m.results), "match", "matches"))
 	}
-	if n := len(m.excluded); n > 0 && !m.showResults() {
+	// Shown while searching too. It used to be replaced by the match count —
+	// exactly when "nothing found" is the wrong conclusion to draw, because a
+	// whole source is missing from what was searched.
+	if n := len(m.excluded); n > 0 {
 		right += theme.Bad.Render(fmt.Sprintf("  ⚠ %d unavailable", n))
 	}
 	// The search box takes whatever the brand and the badge leave. It used to
@@ -1388,15 +1404,15 @@ func (m Model) hints() string {
 		return theme.Noted.Render(mode) + "  " +
 			theme.Faded.Render(trunc(keys, max(4, m.w-dw(mode)-2)))
 	case m.searchMode:
-		full = "type to filter · ↑↓ pick · ↵ apply · esc cancel · field: | - \"…\" · ? syntax"
+		full = "type to filter · ↵ keeps the results · esc cancel · title: user: url: · - excludes · | ors"
 	case m.showResults():
 		full = "↑↓ results · ↵ copy pw · → details · c get-cmd · g folder · / edit · esc clear"
 	case m.editableHere():
 		// The editing keys, on the surface where they work.
 		if m.focus == 1 {
-			full = "e edit · n new · d delete · m move · ^s write · ↵ copy pw · → details · ?"
+			full = "e edit · r rename · n new · d/D delete/forever · m move · ^s write · ?"
 		} else {
-			full = "r rename · N folder · d delete · m move · ^s write · →/⇥ into · / search · ?"
+			full = "r rename · N folder · d/D delete/forever · m move · ^s write · / search · ?"
 		}
 	case m.focus == 1:
 		full = "↑↓ move · ↵ copy pw · → details · c get-cmd · ^b tree · / search · ?"
@@ -1589,21 +1605,41 @@ func (m Model) goingWithFolder(id string) edit.State {
 func paintRow(segs []rowSeg, tail string, w int, back lipgloss.TerminalColor) string {
 	var b strings.Builder
 	used := 0
+	_, selected := back.(lipgloss.AdaptiveColor)
 	for _, s := range segs {
 		t := trunc(s.text, max(0, w-used))
 		if t == "" {
 			continue
 		}
 		used += dw(t)
-		b.WriteString(s.style.Background(back).Render(t))
+		st := s.style
+		if selected {
+			st = theme.OnSelection(st)
+		}
+		b.WriteString(st.Background(back).Render(t))
 	}
 	if tail != "" && used < w {
 		t := trunc(tail, w-used)
 		used += dw(t)
-		b.WriteString(theme.Dimmed.Background(back).Render(t))
+		st := theme.Dimmed
+		if selected {
+			st = theme.OnSelection(st)
+		}
+		b.WriteString(st.Background(back).Render(t))
 	}
 	if used < w {
 		b.WriteString(lipgloss.NewStyle().Background(back).Render(strings.Repeat(" ", w-used)))
 	}
 	return b.String()
+}
+
+// detailLinesForScroll is the current entry's detail height, for clamping the
+// scroll offset when the terminal changes size.
+func (m Model) detailLinesForScroll() []string {
+	e := m.selEntry()
+	if e == nil {
+		return nil
+	}
+	w, _ := m.detailViewport()
+	return m.detailLines(e, w)
 }

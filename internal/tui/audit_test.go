@@ -137,6 +137,15 @@ func auditSurfacesAt(width, height int) []surface {
 			return m.View()
 		}},
 		{"help", func(t *testing.T) string { return up(base(t), key2("?")).View() }},
+		// Not audited before, which is how its hint came to be wider than the
+		// terminal the program declares as its minimum.
+		{"attachments/pick", func(t *testing.T) string {
+			m := sized(editModel(t))
+			m = intoTable(t, m)
+			m.attach = attachPick
+			m.attachCheck = []bool{true, false}
+			return m.View()
+		}},
 		{"editor/entry", func(t *testing.T) string {
 			return intoEditor(t, sized(editModel(t))).View()
 		}},

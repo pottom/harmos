@@ -5,6 +5,24 @@ copy; the view is recomputed from the last `tea.WindowSizeMsg` — never hardcod
 a width or column, and measure display width with `charmbracelet/x/ansi`
 (`dw`/`trunc`/`pad`), never `len()`.
 
+**Vault text is data, never instructions.** Everything that comes out of a file
+— a title, a username, a URL, a tag, a custom field, a note, an attachment name,
+a folder name, and the paths built from folder names — goes through `sanitised`
+at the two doors into the model (`New` and `rebuild`). Without it an entry drives
+the terminal: `\x1b[2J` clears the screen on every frame, an OSC rewrites the
+window title, `\x1b[?1049l` leaves the alt-screen buffer, and a `\n` grows the
+frame by a row. `ansi.StringWidth` counts all of those as no cells, so the width
+contract holds and nothing in the layout notices — the screen audit renders every
+surface at four sizes and saw none of it. `hostile_test.go` is the pin.
+
+**Colour is never the only signal, and the cursor never removes one.** Every
+state carries a glyph and a word as well. Anything painted on `theme.SelBg` goes
+through `theme.OnSelection`, which lifts the two faint tokens to the ordinary
+text colour: measured across the ten built-ins, `Faint` on `SelBg` ranges from
+1.00 (dracula, where they are the same colour) to 1.65, so the cursor was erasing
+the information it was there to highlight. `TestNoBuiltinCollidesTwoMeanings`
+holds the palette to one meaning per token.
+
 ## Unlock phase
 
 A model built with `NewLocked(cfg, …)` starts **locked** (`m.locked`): the whole

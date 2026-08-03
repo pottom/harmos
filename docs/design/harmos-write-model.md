@@ -279,9 +279,14 @@ model — the 4.1 fields — is covered by the format gate.)
 
 1. **Fingerprint re-check** (size + mtime + sha256). Mismatch → `ErrChangedUnderneath`,
    and **nothing is written**.
-2. **Session backup, once per source**: `<path>.harmos-backup-<RFC3339>.kdbx`, mode
+2. **Session backup, once per source**: `<path>.harmos-backup-<stamp>.kdbx`, mode
    0600, in the same directory. It is an encrypted kdbx, not a plaintext leak. Not
-   pruned automatically — we never delete a user's backup.
+   pruned automatically — we never delete a user's backup. The stamp is sub-second
+   (`20060102T150405.000Z`), because two saves inside one second collided and the
+   second copy overwrote the first — which is the one holding the file as it stood
+   before any of the session's edits. **The name is settled the first time anything
+   asks for it and then remembered**: the confirmation asks on every frame, so a name
+   built from `time.Now()` at render promised a file that was never created.
 3. `Rekey(db)` — §1.1.
 4. `db.LockProtectedEntries()` — **exactly once** (`Open` left it unlocked, `Encode`
    wants it locked).
@@ -374,7 +379,17 @@ world, and a caller carrying one draft forward through a sequence of edits would
 otherwise rewrite history that has already been staged — which the round-trip
 comparison would then read as a no-op.
 
-Staging a target underneath an already-deleted group is rejected with a flash message.
+Staging a target underneath an already-deleted group is rejected with a flash message,
+and a creation *inside* a group that is later deleted is cancelled: the file never saw
+it, so there is nothing to delete and nothing to put in a bin.
+
+**Effective() orders by dependency, not by `Seq`.** The reduction keeps the *first*
+`Seq` of a collapsed chain, so sorting by it put operations before things they depend
+on — a move into a folder created after the first move, and a move out of a folder
+already staged for deletion, both failed the whole save. `applyOrder` is a topological
+sort over two rules — a folder is created before anything names it as a parent, and a
+move leaves a folder before that folder is deleted — taking the earliest-staged of
+whatever is ready, so an order the rules leave open is the order the reader built.
 
 ### 5.3 Revert
 
@@ -382,6 +397,11 @@ Staging a target underneath an already-deleted group is rejected with a flash me
 machinery, so there is no wrong-undo class of bug, and reverting from the middle of a
 chain is well defined. Reverting a `create` cascades to every op targeting it; the
 confirmation line says so.
+
+**The interface reverts a target, not a `Seq`.** `x` on the Changes tab is pointed at
+a *row*, and a row's `Seq` is the first of a collapsed chain — undoing that number left
+the later halves staged and the diff showing a "before" the file never held. `x` calls
+`Set.RevertTarget`, which drops every op against the target and cascades the same way.
 
 ### 5.3a Reviewing: the vault's shape, the diff's language
 
@@ -587,7 +607,7 @@ the existing bindings in results (`c`, `g`), tree (`/`, `c`) and detail (`s`, `c
 | `e` | edit the selected entry — the whole form; a folder has none, so `e` names `r` there |
 | `n` / `N` | new entry / new folder |
 | `d` / `D` | delete → recycle bin / **permanent** |
-| `m` | move |
+| `m` | pick the row up; the tree stays live, ↵ drops it, esc puts it back |
 | `r` | rename in place — the row itself becomes the field, folder or entry |
 | `ctrl+g` | roll a password in the editor (uses the Generate tab's saved options) |
 | `ctrl+w` | toggle the source lock |
@@ -608,7 +628,13 @@ a keystroke people learn to dismiss unread, which is what you least want at the 
 that does matter. So the write confirmation carries the whole weight: the full
 destination path, the per-source change counts, **the backup path it is about to
 create**, and — first, in its own words — the count of **permanent deletions**, the one
-thing the vault cannot get back afterwards.
+thing the vault cannot get back afterwards. Both paths are head-truncated: a path is
+identified by its tail, and cutting that off left the reader agreeing to write
+`/var/folders/3s/pdy…`.
+
+**Quitting with work staged goes through this screen too.** "Save and quit" used to
+call the write directly, so the one surface that names any of the above never
+appeared — and it is the first choice on that modal.
 
 Its buttons follow the rule in `confirm.go`: the answer the user came for leads, except
 where the act is irreversible. An ordinary write leads with **Write**; a set containing
@@ -619,7 +645,13 @@ nothing.
 takes ~0.5–1 s, the same reason `openCmd` exists.
 
 On `ErrChangedUnderneath` the save is refused and the staged set is left **intact**;
-the overlay offers "quit without saving" or "overwrite — their changes will be lost",
+the overlay offers **Reload**, **Leave it**, or **Overwrite** — and Overwrite is
+marked as danger and is not the default. Reload re-reads the file and keeps the
+staged set for review; it does **not** merge, so saying so is part of the screen.
+The source stays marked stale until the reader chooses Overwrite: reopening the
+handle to discard a half-applied database gives it a fresh fingerprint, so the
+vault's own guard cannot fire twice and the interface is what remembers.
+The overlay used to offer "quit without saving" or "overwrite — their changes will be lost",
 the latter behind a second confirmation.
 
 **Quit guard**: when dirty, both `q` *and* `ctrl+c` raise an overlay. `ctrl+c`

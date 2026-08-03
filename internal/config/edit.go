@@ -395,6 +395,34 @@ func buildPleasantBlock(name, url, user, cache, caBundle string) string {
 // every other line — comments, blank lines, other sources, top-level keys —
 // exactly as it was. A block is the header line plus the contiguous run of key
 // lines under it, up to the first blank line or the next table header.
+// carryOver keeps every key the old block had that the new one does not write.
+//
+// The builders write the fields their form collects, which is not every field a
+// source can have: editing or renaming a source used to drop `writable = true`,
+// so a vault the user had unlocked for editing came back read-only at the next
+// launch with nothing having said so — and until then the interface and the
+// config disagreed about it. Anything added to the config later gets the same
+// protection without having to remember this.
+func carryOver(old []string, newBlock string) string {
+	fresh := map[string]bool{}
+	for _, ln := range strings.Split(newBlock, "\n") {
+		if k, _, ok := parseKV(strings.TrimSpace(ln)); ok {
+			fresh[k] = true
+		}
+	}
+	var kept []string
+	for _, ln := range old {
+		k, _, ok := parseKV(strings.TrimSpace(ln))
+		if ok && !fresh[k] {
+			kept = append(kept, strings.TrimRight(ln, " \t"))
+		}
+	}
+	if len(kept) == 0 {
+		return newBlock
+	}
+	return strings.TrimRight(newBlock, "\n") + "\n" + strings.Join(kept, "\n") + "\n"
+}
+
 func replaceSourceBlock(content, name, newBlock string) (string, bool) {
 	lines := strings.Split(content, "\n")
 	isTableHeader := func(s string) bool { return strings.HasPrefix(strings.TrimSpace(s), "[") }
@@ -420,7 +448,7 @@ func replaceSourceBlock(content, name, newBlock string) (string, bool) {
 		}
 		out := make([]string, 0, len(lines))
 		out = append(out, lines[:i]...)
-		out = append(out, strings.Split(newBlock, "\n")...)
+		out = append(out, strings.Split(carryOver(lines[i:j], newBlock), "\n")...)
 		out = append(out, lines[j:]...)
 		return strings.Join(out, "\n"), true
 	}

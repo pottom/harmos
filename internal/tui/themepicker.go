@@ -48,9 +48,9 @@ func (m Model) updateThemePane(key string) (tea.Model, tea.Cmd) {
 		m = m.applyThemeAt(clampIndex(m.themeSel+max(1, step), len(names)))
 	case "enter":
 		if err := config.SetTopLevelKey(m.configPath, "theme", m.themeName); err != nil {
-			m.setStatus = "could not save theme: " + err.Error()
+			m.setStatusBad, m.setStatus = true, "could not save theme: "+err.Error()
 		} else {
-			m.setStatus = "theme saved: " + m.themeName
+			m.setStatusBad, m.setStatus = false, "theme saved: "+m.themeName
 			m.themeOrig = m.themeName
 		}
 	}

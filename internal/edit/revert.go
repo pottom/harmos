@@ -79,12 +79,31 @@ func (s Set) Cascade(seq int) []Op {
 
 // RevertTarget removes every operation staged against one target, which is what
 // "undo my changes to this entry" means.
-func (s Set) RevertTarget(target string) Set {
-	var kept []Op
+func (s Set) RevertTarget(target string) (Set, []Op) {
+	if target == "" {
+		return s, nil
+	}
+	// Whether anything staged against this target creates it decides whether
+	// undoing it takes other things with it, the same as Revert.
+	gone := map[string]bool{}
 	for _, op := range s.ops {
-		if op.Target != target {
+		if op.Target == target && (op.Kind == CreateEntry || op.Kind == CreateGroup) {
+			gone[target] = true
+			grow(s.ops, gone)
+			break
+		}
+	}
+
+	var kept, dropped []Op
+	for _, op := range s.ops {
+		switch {
+		case op.Target == target:
+			continue // what the reader pointed at
+		case gone[op.Target] || gone[op.Parent]:
+			dropped = append(dropped, op)
+		default:
 			kept = append(kept, op)
 		}
 	}
-	return Set{ops: kept, seq: s.seq}
+	return Set{ops: kept, seq: s.seq}, dropped
 }

@@ -63,7 +63,7 @@ func (m *Model) saveGenOpts() {
 // honest model (what 1Password / Bitwarden do).
 
 const (
-	genLeftW   = 34 // width of the options pane; the password pane takes the rest
+	genLeftMax = 34 // the options pane never needs more than this
 	genHistMax = 10 // how many recent rolls to keep
 )
 
@@ -255,7 +255,7 @@ func (m Model) handleGenClick(x, y int, dbl bool) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	row := y - 2
-	if x <= genLeftW-1 { // options pane
+	if x <= m.genLeftW()-1 { // options pane
 		if row < len(genRowLayout) && genRowLayout[row] >= 0 {
 			field := genRowLayout[row]
 			already := m.focus == 0 && m.genRow == field
@@ -287,7 +287,7 @@ func (m Model) handleGenClick(x, y int, dbl bool) (tea.Model, tea.Cmd) {
 // entry) — a quick copy, mirroring the vault's right-click.
 func (m Model) handleGenRightClick(x, y int) (tea.Model, tea.Cmd) {
 	panelsH := max(3, m.h-3)
-	if y < 2 || y > panelsH-1 || x <= genLeftW-1 || len(m.genList) == 0 {
+	if y < 2 || y > panelsH-1 || x <= m.genLeftW()-1 || len(m.genList) == 0 {
 		return m, nil
 	}
 	m.focus = 1
@@ -300,9 +300,10 @@ func (m Model) handleGenRightClick(x, y int) (tea.Model, tea.Cmd) {
 
 func (m Model) generateView() string {
 	panelsH := max(3, m.h-3)
-	rightW := m.w - genLeftW - 1
+	leftW := m.genLeftW()
+	rightW := m.w - leftW - 1
 
-	left := box("Options", "", m.genOptionLines(genLeftW-2), genLeftW, panelsH, m.focus == 0)
+	left := box("Options", "", m.genOptionLines(leftW-2), leftW, panelsH, m.focus == 0)
 	right := box("Password", cursorInfo(m.genSel, len(m.genList)),
 		m.genPasswordLines(rightW-2, m.genVisRows()), rightW, panelsH, m.focus == 1)
 
@@ -405,11 +406,16 @@ func (m Model) genPasswordLines(w, rows int) []string {
 	bits := o.EntropyBits()
 	label, lst := strengthLabel(bits)
 
-	// The hero sits in an accent-bordered box so the eye lands on it immediately.
+	// The hero sits in an accent-bordered box so the eye lands on it immediately
+	// — wrapped to the pane rather than run past its edge. The box had no width
+	// budget, so box's own padding truncated it: a 64-character password was cut
+	// on any terminal under 107 columns, and the default 20 under 70. ↵ copied
+	// the whole thing, so the clipboard was right and the screen was not.
 	frame := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(theme.Accent).
-		Padding(0, 3).
+		Padding(0, 1).
+		Width(max(8, w-4)).
 		Render(heroPassword(m.genList[m.genSel]))
 	var inner []string
 	for _, ln := range strings.Split(frame, "\n") {
@@ -495,16 +501,22 @@ func strengthBar(bits float64, w int) string {
 }
 
 // strengthLabel maps entropy bits to a word and a colour.
+//
+// A ramp, which it was not: "fair" wore the focus colour and "very strong" wore
+// the accent highlight, so the four steps ran red, blue, green, pale — and in
+// several themes the last one rendered lighter than the one below it, or amber,
+// one step *above* green. Red, amber, green, bold green is the ramp a reader
+// arrives with, and the word beside it says the same thing without colour.
 func strengthLabel(bits float64) (string, lipgloss.Style) {
 	switch {
 	case bits < 60:
 		return "weak", theme.Bad
 	case bits < 90:
-		return "fair", theme.Acc
+		return "fair", theme.Noted
 	case bits < 120:
 		return "strong", theme.Ok
 	default:
-		return "very strong", theme.Hi
+		return "very strong", theme.Ok.Bold(true)
 	}
 }
 
@@ -547,3 +559,9 @@ func clampInt(v, lo, hi int) int {
 	}
 	return v
 }
+
+// genLeftW is the options pane's width. A share of the terminal rather than a
+// constant: at 34 columns fixed, a narrow window left the password pane five
+// columns wide — "╭───╮" over "pw…" — and the whole point of the tab is the
+// password being legible.
+func (m Model) genLeftW() int { return min(genLeftMax, max(16, m.w*2/5)) }

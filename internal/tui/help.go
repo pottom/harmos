@@ -2,6 +2,8 @@ package tui
 
 import (
 	"github.com/charmbracelet/lipgloss"
+	"github.com/pottom/harmos/internal/edit"
+	"strings"
 
 	"github.com/pottom/harmos/internal/theme"
 )
@@ -12,12 +14,19 @@ import (
 // worked examples, not a line).
 
 // helpLeftW is the width of the key-list pane; the search manual takes the rest.
-func helpLeftW(w int) int { return min(48, max(28, w*9/20)) }
+//
+// The cap used to be 48 whatever the terminal was, which left every description
+// truncated to about thirty characters at 100, 140 and 200 columns alike — so
+// "delete → bin / permanently (again undoes)" read as "delete → bin /
+// permanently (a…", and the clause that was cut is the reassurance. The manual
+// beside it wants room too, so the pane takes a share rather than a constant,
+// with a ceiling that leaves the manual at least half a wide screen.
+func helpLeftW(w int) int { return min(max(48, w/2), max(28, w*9/20)) }
 
 // helpViewport is the width and visible-line count of the (scrollable) search
 // manual pane, so scroll bounds match what is drawn.
 func (m Model) helpViewport() (w, visible int) {
-	panelsH := max(3, m.h-2) // header line + footer
+	panelsH := max(3, m.h-3) // header line + a context line + the footer
 	return m.w - helpLeftW(m.w) - 1, max(1, panelsH-2)
 }
 
@@ -52,7 +61,7 @@ func (m Model) updateHelp(key string) Model {
 }
 
 func (m Model) helpView() string {
-	panelsH := max(3, m.h-2)
+	panelsH := max(3, m.h-3)
 	leftW := helpLeftW(m.w)
 	rightW := m.w - leftW - 1
 
@@ -79,7 +88,11 @@ func (m Model) helpView() string {
 	header := trunc(brand()+theme.Dimmed.Render("  ·  help"), m.w)
 	footer := m.footer(theme.Faded.Render("↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · esc closes"))
 	panels := lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
-	return header + "\n" + panels + "\n" + footer
+	// A context line, present whether or not it has anything to say — every tab
+	// has one, and without it the help's frame sat a row lower than theirs, so
+	// pressing ? moved the whole panel down and back.
+	ctx := theme.Faded.Render(trunc("  press ? again, or esc, to go back", m.w))
+	return header + "\n" + panels + "\n" + ctx + "\n" + footer
 }
 
 // keyList is the left pane: the key bindings for the active tab, grouped.
@@ -169,6 +182,14 @@ func (m Model) keyList(w int) []string {
 			row("g", "jump to the entry's folder"),
 			row("esc", "clear the results"),
 			"",
+			head("STAGED MARKS"),
+			row(markerFor(edit.New), "new — will be created"),
+			row(markerFor(edit.Modified), "changed"),
+			row(markerFor(edit.Moved), "moved to another folder"),
+			row(markerFor(edit.Deleted), "going to the recycle bin"),
+			row(markerFor(edit.Purged), "gone for good — no bin, no undo"),
+			row("", "on a folder: something inside it, not the folder"),
+			"",
 			head("EDIT  (unlocked sources)"),
 			row("e", "edit the entry — the whole form"),
 			row("r", "rename in place: a folder, or an entry's title"),
@@ -252,4 +273,13 @@ func (m Model) searchGuide(w int) []string {
 		note("Custom fields match by name always, by value"),
 		note("only when the value is not a protected secret."),
 	}
+}
+
+// markerFor is a staged state's glyph, for the legend. The marks are the whole
+// visual language of a staged session and they were defined nowhere: a reader
+// who deleted one entry saw its folder, and its folder's folder, take the same
+// "-" and reasonably read it as "these are being deleted too".
+func markerFor(st edit.State) string {
+	_, m := changeStyle(st)
+	return strings.TrimSpace(m)
 }

@@ -560,10 +560,13 @@ func (m Model) editKey(key string) (Model, bool) {
 		return m, false
 	}
 	if !m.writeUnlocked(source) {
-		// Only claim the key if editing is possible at all here; otherwise leave
-		// it to whatever else wants it.
-		if ok, _ := m.canWrite(source); !ok {
-			return m, false
+		// A source that can never be written says why. It used to return the key
+		// unclaimed and nothing else wanted it, so e n N d D m r were dead
+		// letters on a Pleasant source or a read-only file — and this function's
+		// own comment said the opposite was intended.
+		if ok, why := m.canWrite(source); !ok {
+			m.flash = source + " cannot be written: " + why
+			return m, true
 		}
 		m.flash = "^w unlocks " + source + " for editing"
 		return m, true

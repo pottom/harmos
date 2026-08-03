@@ -420,11 +420,15 @@ func (f form) Hint() string {
 	if f.status != "" {
 		return theme.Bad.Render(f.status)
 	}
-	keys := "↑↓/tab move · ↵ save · esc cancel"
+	// "stage", not "save". Nothing here writes: ↵ puts the change on the Changes
+	// tab and ^s is what reaches the file. Calling both of them save is how a
+	// reader closes the editor believing they are done, quits, and meets the
+	// guard as the first news of it.
+	keys := "↑↓/tab move · ↵ stage · esc cancel"
 	if f.focus < len(f.fields) {
 		switch f.fields[f.focus].kind {
 		case fMasked:
-			keys = "^r reveal · ↑↓/tab move · ↵ save · esc cancel"
+			keys = "^r reveal · ^g generate · ↑↓/tab move · ↵ stage · esc cancel"
 		case fMulti:
 			keys = "tab leaves the field · ↵ new line · esc cancel"
 		case fRows:

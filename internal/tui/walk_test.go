@@ -690,7 +690,7 @@ func TestRevertingAFolderTakesItsStagedContents(t *testing.T) {
 	if c.dirtyCount() != 0 {
 		t.Errorf("undoing the folder should take the entry with it, %d left", c.dirtyCount())
 	}
-	if !strings.Contains(c.flash, "dependent") {
+	if !strings.Contains(c.flash, "with it") {
 		t.Errorf("and say how many went with it: %q", c.flash)
 	}
 }
@@ -997,7 +997,7 @@ func TestUnlockingChangesWhatTheFooterOffers(t *testing.T) {
 	if unlocked == locked {
 		t.Fatal("the footer is identical before and after unlocking")
 	}
-	for _, key := range []string{"e ", "d ", "^s"} {
+	for _, key := range []string{"rename", "d/D", "^s"} {
 		if !strings.Contains(unlocked, key) {
 			t.Errorf("an unlocked source should offer %q: %q", key, unlocked)
 		}
