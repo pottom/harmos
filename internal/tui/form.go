@@ -70,7 +70,7 @@ func (m Model) formWidth() int { return max(20, m.w-6) }
 
 func (m Model) openAddForm() Model {
 	m.setMode = setForm
-	m.setStatus = ""
+	m.setStatusBad, m.setStatus = false, ""
 	m.formEditing, m.formOrig, m.formPps = false, "", false
 	m.form = buildSourceForm(false, false, nil, m.formWidth())
 	return m
@@ -78,7 +78,7 @@ func (m Model) openAddForm() Model {
 
 func (m Model) openEditForm(p config.Source) Model {
 	m.setMode = setForm
-	m.setStatus = ""
+	m.setStatusBad, m.setStatus = false, ""
 	m.formEditing, m.formOrig = true, p.Name
 	m.formPps = p.Type == config.Pleasant
 	m.form = buildSourceForm(m.formPps, true, map[string]string{
@@ -164,13 +164,13 @@ func (m Model) submitForm() Model {
 		return m
 	}
 
-	m.setStatus = verb + " " + name
+	m.setStatusBad, m.setStatus = false, verb+" "+name
 	if m.onboarding {
 		// The first source is added and the vault is still empty, because the
 		// sources were opened before this one existed. Nothing on any screen
 		// said so, and the word "restart" appeared nowhere in the program — a
 		// first-time user concluded harmos could not read their vault.
-		m.setStatus = verb + " " + name + " — restart harmos to open it"
+		m.setStatusBad, m.setStatus = false, verb+" "+name+" — restart harmos to open it"
 		m.onboarding = false
 	}
 	m.setMode = setList

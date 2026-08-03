@@ -27,7 +27,7 @@ var Brass = Theme{
 	Faint:    token{"#948b76", "#544f41"},
 	OK:       token{"#2c7d6e", "#5fb0a0"},
 	Warn:     token{"#a8482f", "#cf6f54"},
-	Note:     token{"#9a6f22", "#e8b964"},
+	Note:     token{"#b07d00", "#e8b964"},
 	Writable: token{"#1f6f7a", "#6fc2cf"},
 	SelBg:    token{"#f0e6cf", "#2e2413"},
 }
@@ -54,7 +54,7 @@ var Dracula = Theme{
 	AccentHi: token{"#a13a8f", "#ff79c6"},
 	Steel:    token{"#282a36", "#f8f8f2"},
 	Dim:      token{"#575c7e", "#6272a4"},
-	Faint:    token{"#a3adcf", "#44475a"},
+	Faint:    token{"#a3adcf", "#5b5f77"},
 	OK:       token{"#2e9b57", "#50fa7b"},
 	Warn:     token{"#c13b52", "#ff5555"},
 	Note:     token{"#b58900", "#f1fa8c"},
@@ -66,7 +66,7 @@ var Dracula = Theme{
 var Gruvbox = Theme{
 	Name:     "gruvbox",
 	Accent:   token{"#af3a03", "#fe8019"},
-	AccentHi: token{"#9d0006", "#fabd2f"},
+	AccentHi: token{"#79740e", "#8ec07c"},
 	Steel:    token{"#3c3836", "#ebdbb2"},
 	Dim:      token{"#7c6f64", "#a89984"},
 	Faint:    token{"#a89984", "#504945"},
@@ -126,7 +126,7 @@ var Catppuccin = Theme{
 var RosePine = Theme{
 	Name:     "rosepine",
 	Accent:   token{"#907aa9", "#c4a7e7"},
-	AccentHi: token{"#c07a1e", "#f6c177"},
+	AccentHi: token{"#286983", "#9ccfd8"},
 	Steel:    token{"#575279", "#e0def4"},
 	Dim:      token{"#797593", "#908caa"},
 	Faint:    token{"#cecacd", "#403d52"},

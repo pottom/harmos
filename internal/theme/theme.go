@@ -127,3 +127,25 @@ func firstToken(ts ...token) token {
 	}
 	return token{}
 }
+
+// OnSelection is a style made readable against the selection background.
+//
+// The faint tokens are for text the eye should skip: a fold glyph, an entry
+// count, a marker on a row that is going because something above it is. Against
+// the terminal's own background that works. Against SelBg it does not — measured
+// across the ten built-ins, Faint on SelBg ranges from 1.00 (dracula, where the
+// two tokens are literally the same colour) to 1.65 in the default, and every
+// one of them is below the 3.0 a reader needs. The cursor was erasing the very
+// information it was supposed to be highlighting: move onto a folder and its
+// entry count disappeared.
+//
+// So on the selection the two faint tokens render at the ordinary text colour.
+// They stop being quiet for one row, which is the row the reader is looking at
+// and the one place quiet is not the point.
+func OnSelection(st lipgloss.Style) lipgloss.Style {
+	switch st.GetForeground() {
+	case lipgloss.TerminalColor(Faint), lipgloss.TerminalColor(Dim):
+		return st.Foreground(Steel)
+	}
+	return st
+}

@@ -62,13 +62,17 @@ type Model struct {
 	setKeyring map[string]bool        // source name → has a saved keyring password
 	setMode    int                    // setList / setRemove / …
 	setCat     int                    // selected Settings category (left pane): catSources / catTheme
-	setStatus  string                 // last action result, shown in the Settings footer
-	onboarding bool                   // launched with no config — first-run add-a-source flow
-	prefSel    int                    // selected row in the Preferences pane
-	staleAfter time.Duration          // Pleasant cache stale threshold (config-backed)
-	rmToggle   int                    // remove overlay: 0 delete-file, 1 forget-pw, 2 confirm
-	rmFile     bool                   // remove overlay: also delete the local file
-	rmPw       bool                   // remove overlay: also forget the keyring password
+	// setStatusBad marks the line as a failure. Without it every outcome — a
+	// sync that could not connect, a config that could not be written — was
+	// rendered in the "it worked" green.
+	setStatusBad bool
+	setStatus    string        // last action result, shown in the Settings footer
+	onboarding   bool          // launched with no config — first-run add-a-source flow
+	prefSel      int           // selected row in the Preferences pane
+	staleAfter   time.Duration // Pleasant cache stale threshold (config-backed)
+	rmToggle     int           // remove overlay: 0 delete-file, 1 forget-pw, 2 confirm
+	rmFile       bool          // remove overlay: also delete the local file
+	rmPw         bool          // remove overlay: also forget the keyring password
 
 	form        form   // the add/edit form (see formkit.go)
 	formEditing bool   // editing an existing source vs adding
@@ -608,9 +612,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case syncDoneMsg:
 		if msg.err != nil {
-			m.setStatus = "sync failed: " + msg.err.Error()
+			m.setStatusBad, m.setStatus = true, "sync failed: "+msg.err.Error()
 		} else {
-			m.setStatus = msg.summary
+			m.setStatusBad, m.setStatus = false, msg.summary
 		}
 		m.setMode = setList
 		m.syncCh = nil

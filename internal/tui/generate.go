@@ -495,16 +495,22 @@ func strengthBar(bits float64, w int) string {
 }
 
 // strengthLabel maps entropy bits to a word and a colour.
+//
+// A ramp, which it was not: "fair" wore the focus colour and "very strong" wore
+// the accent highlight, so the four steps ran red, blue, green, pale — and in
+// several themes the last one rendered lighter than the one below it, or amber,
+// one step *above* green. Red, amber, green, bold green is the ramp a reader
+// arrives with, and the word beside it says the same thing without colour.
 func strengthLabel(bits float64) (string, lipgloss.Style) {
 	switch {
 	case bits < 60:
 		return "weak", theme.Bad
 	case bits < 90:
-		return "fair", theme.Acc
+		return "fair", theme.Noted
 	case bits < 120:
 		return "strong", theme.Ok
 	default:
-		return "very strong", theme.Hi
+		return "very strong", theme.Ok.Bold(true)
 	}
 }
 

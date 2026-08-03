@@ -23,7 +23,7 @@ type promptStep struct {
 // password; for a kdbx source its file password.
 func (m Model) openSavePassword(p config.Source) Model {
 	m.setMode = setPrompt
-	m.setStatus = ""
+	m.setStatusBad, m.setStatus = false, ""
 	m.promptName = p.Name
 	var q []promptStep
 	if p.Type == config.Pleasant {
@@ -53,7 +53,7 @@ func (m Model) updatePrompt(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc":
 		m.setMode = setList
-		m.setStatus = "save-password cancelled"
+		m.setStatusBad, m.setStatus = false, "save-password cancelled"
 		return m, nil
 	case "enter":
 		if len(m.promptQueue) == 0 {
@@ -72,7 +72,7 @@ func (m Model) updatePrompt(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			err = keyring.Store(m.promptName, pw)
 		}
 		if err != nil {
-			m.setStatus = "could not save: " + err.Error()
+			m.setStatusBad, m.setStatus = true, "could not save: "+err.Error()
 			m.setMode = setList
 			return m, nil
 		}
@@ -80,7 +80,7 @@ func (m Model) updatePrompt(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.promptQueue) > 0 {
 			return m.startPrompt(), nil
 		}
-		m.setStatus = "saved " + m.promptName + "'s password"
+		m.setStatusBad, m.setStatus = false, "saved "+m.promptName+"'s password"
 		m.setKeyring = keyringStatus(m.sources())
 		m.setMode = setList
 		return m, nil

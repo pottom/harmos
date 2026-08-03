@@ -81,7 +81,7 @@ func (r changeRow) render(w int, selected bool) string {
 		used += dw(t)
 		st := s.style
 		if selected {
-			st = st.Background(theme.SelBg)
+			st = theme.OnSelection(st).Background(theme.SelBg)
 		}
 		b.WriteString(st.Render(t))
 	}

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"github.com/charmbracelet/lipgloss"
 	"os"
 	"time"
 
@@ -66,11 +67,11 @@ func (m Model) updateIconsPane(key string) (tea.Model, tea.Cmd) {
 	case " ", "enter":
 		nerd = !nerd
 		if err := config.SetTopLevelBool(m.configPath, "nerdfont", nerd); err != nil {
-			m.setStatus = "could not save: " + err.Error()
+			m.setStatusBad, m.setStatus = true, "could not save: "+err.Error()
 		} else if nerd {
-			m.setStatus = "Nerd Font icons on"
+			m.setStatusBad, m.setStatus = false, "Nerd Font icons on"
 		} else {
-			m.setStatus = "Nerd Font icons off"
+			m.setStatusBad, m.setStatus = false, "Nerd Font icons off"
 		}
 	}
 	return m, nil
@@ -93,12 +94,12 @@ func (m Model) updatePrefsPane(key string) (tea.Model, tea.Cmd) {
 	case "up", "ctrl+p", "k":
 		if m.prefSel > 0 {
 			m.prefSel--
-			m.setStatus = ""
+			m.setStatusBad, m.setStatus = false, ""
 		}
 	case "down", "ctrl+n", "j":
 		if m.prefSel < 1 {
 			m.prefSel++
-			m.setStatus = ""
+			m.setStatusBad, m.setStatus = false, ""
 		}
 	}
 	return m, nil
@@ -126,10 +127,10 @@ func (m *Model) savePrefs() {
 	if err := config.SetPreferences(m.configPath,
 		fmt.Sprintf("%ds", int(m.timeout.Seconds())),
 		fmt.Sprintf("%dh", int(m.staleAfter.Hours()))); err != nil {
-		m.setStatus = "could not save: " + err.Error()
+		m.setStatusBad, m.setStatus = true, "could not save: "+err.Error()
 		return
 	}
-	m.setStatus = "saved"
+	m.setStatusBad, m.setStatus = false, "saved"
 }
 
 func clampDur(d, lo, hi time.Duration) time.Duration {
@@ -148,17 +149,17 @@ func (m Model) updateSettingsNav(key string) (tea.Model, tea.Cmd) {
 	case "up", "ctrl+p":
 		if m.setCat > 0 {
 			m.setCat--
-			m.setStatus = ""
+			m.setStatusBad, m.setStatus = false, ""
 		}
 	case "down", "ctrl+n":
 		if m.setCat < len(settingsCats)-1 {
 			m.setCat++
-			m.setStatus = ""
+			m.setStatusBad, m.setStatus = false, ""
 		}
 	case "pgup": // short list: page jumps to the ends
-		m.setCat, m.setStatus = 0, ""
+		m.setCat, m.setStatusBad, m.setStatus = 0, false, ""
 	case "pgdown":
-		m.setCat, m.setStatus = len(settingsCats)-1, ""
+		m.setCat, m.setStatusBad, m.setStatus = len(settingsCats)-1, false, ""
 	case "right", "tab", "enter":
 		return m.enterCategory(), nil
 	case "t":
@@ -175,7 +176,7 @@ func (m Model) updateSettingsNav(key string) (tea.Model, tea.Cmd) {
 // so the picker can revert on cancel.
 func (m Model) enterCategory() Model {
 	m.focus = 1
-	m.setStatus = ""
+	m.setStatusBad, m.setStatus = false, ""
 	if m.setCat == catTheme {
 		m.themeOrig = m.themeName
 		m.themeSel = 0
@@ -198,19 +199,19 @@ func (m Model) updateSourcesPane(key string) (tea.Model, tea.Cmd) {
 	case "up", "ctrl+p":
 		if m.setSel > 0 {
 			m.setSel--
-			m.setStatus = ""
+			m.setStatusBad, m.setStatus = false, ""
 		}
 	case "down", "ctrl+n":
 		if m.setSel < len(profs)-1 {
 			m.setSel++
-			m.setStatus = ""
+			m.setStatusBad, m.setStatus = false, ""
 		}
 	case "pgup":
 		_, step := m.panelRows()
-		m.setSel, m.setStatus = clampIndex(m.setSel-max(1, step), len(profs)), ""
+		m.setSel, m.setStatusBad, m.setStatus = clampIndex(m.setSel-max(1, step), len(profs)), false, ""
 	case "pgdown":
 		_, step := m.panelRows()
-		m.setSel, m.setStatus = clampIndex(m.setSel+max(1, step), len(profs)), ""
+		m.setSel, m.setStatusBad, m.setStatus = clampIndex(m.setSel+max(1, step), len(profs)), false, ""
 	case "a":
 		return m.openAddForm(), nil
 	case "e":
@@ -275,10 +276,10 @@ func (m Model) clearPassword(p config.Source) Model {
 		err = keyring.Forget(p.Name)
 	}
 	if err != nil {
-		m.setStatus = "could not clear " + p.Name + ": " + err.Error()
+		m.setStatusBad, m.setStatus = true, "could not clear "+p.Name+": "+err.Error()
 		return m
 	}
-	m.setStatus = "cleared " + p.Name + "'s saved password"
+	m.setStatusBad, m.setStatus = false, "cleared "+p.Name+"'s saved password"
 	m.setKeyring = keyringStatus(m.sources())
 	return m
 }
@@ -295,10 +296,10 @@ func (m Model) doRemove(p config.Source) Model {
 	}
 
 	if _, err := config.RemoveSource(m.configPath, p.Name); err != nil {
-		m.setStatus = "remove failed: " + err.Error()
+		m.setStatusBad, m.setStatus = true, "remove failed: "+err.Error()
 		return m
 	}
-	m.setStatus = "removed " + p.Name
+	m.setStatusBad, m.setStatus = false, "removed "+p.Name
 
 	if m.rmFile {
 		f := p.Path
@@ -342,23 +343,40 @@ func (m Model) removeConfirmView() string {
 		file = p.Cache
 	}
 
-	check := func(on bool) string {
+	// An armed checkbox on this screen means "and delete their file too", so it
+	// is not the new-and-good green. Green here said "danger" and "good" about
+	// one act, directly above a red Remove button.
+	check := func(on bool) (string, lipgloss.Style) {
 		if on {
-			return theme.Ok.Render("[x] ")
+			return "[x] ", theme.Bad
 		}
-		return theme.Faded.Render("[ ] ")
+		return "[ ] ", theme.Faded
 	}
-	row := func(idx int, s string) string {
+	// Painted in pieces. SelRow was handed a string that already carried nested
+	// styles, so its background died at the first reset and the highlight
+	// covered the checkbox and nothing else — on the one dialog where knowing
+	// which toggle is armed matters most.
+	row := func(idx int, segs []rowSeg) string {
+		var back lipgloss.TerminalColor = lipgloss.NoColor{}
 		if m.rmToggle == idx {
-			return theme.SelRow.Render(" " + trunc(s, max(4, m.w-2)) + " ")
+			back = theme.SelBg
 		}
-		return "  " + s
+		return paintRow(append([]rowSeg{{" ", theme.Faded}}, segs...), "", max(4, m.w-2), back)
 	}
 
+	fileBox, fileSt := check(m.rmFile)
+	pwBox, pwSt := check(m.rmPw)
 	lines := []string{
 		"",
-		row(0, check(m.rmFile)+"also delete the file  "+theme.Dimmed.Render(trunc(file, max(4, m.w-30)))),
-		row(1, check(m.rmPw)+"also forget its saved keyring password"),
+		row(0, []rowSeg{
+			{fileBox, fileSt},
+			{"also delete the file  ", theme.Strong},
+			{trunc(file, max(4, m.w-30)), theme.Dimmed},
+		}),
+		row(1, []rowSeg{
+			{pwBox, pwSt},
+			{"also forget its saved keyring password", theme.Strong},
+		}),
 		"",
 		"  " + button("Remove", true, m.rmToggle == 2),
 	}
@@ -430,7 +448,7 @@ func (m Model) handleSettingsClick(x, y int) (tea.Model, tea.Cmd) {
 
 	if x < settingsLeftW {
 		if row < len(settingsCats) {
-			m.focus, m.setCat, m.setStatus = 0, row, ""
+			m.focus, m.setCat, m.setStatusBad, m.setStatus = 0, row, false, ""
 		}
 		return m, nil
 	}
@@ -440,7 +458,7 @@ func (m Model) handleSettingsClick(x, y int) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	m.setStatus = ""
+	m.setStatusBad, m.setStatus = false, ""
 	switch m.setCat {
 	case catSources:
 		m.setSel = idx

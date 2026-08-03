@@ -119,3 +119,47 @@ func TestMissingTokenFallsBack(t *testing.T) {
 		t.Error("with no neighbour either, it should still resolve to something")
 	}
 }
+
+// Two tokens that carry different meanings must not be the same colour.
+//
+// A theme is a set of promises: rust means removal, teal means new, amber means
+// changed, the accent means focus, and the faint tokens mean "skip this". Where
+// two of them collide the promise breaks — a revealed password rendering in the
+// "modified" colour, an unlocked source's whole subtree reading as staged for
+// deletion, or a faint marker vanishing into the selection it is drawn on.
+func TestNoBuiltinCollidesTwoMeanings(t *testing.T) {
+	// Pairs whose colours are load-bearing against each other. Deleted and
+	// Purged deliberately share Warn — they are two shapes of one act, told
+	// apart by glyph and weight — so that pair is not here.
+	pairs := []struct{ a, b string }{
+		{"AccentHi", "Note"}, // a revealed secret vs "modified"
+		{"AccentHi", "Warn"}, // a revealed secret vs danger
+		{"Writable", "Warn"}, // "you can edit here" vs "this is going"
+		{"Writable", "OK"},   // vs "new"
+		{"Note", "OK"},       // "changed" vs "new"
+		{"Note", "Warn"},     // "changed" vs "going"
+		{"Faint", "SelBg"},   // secondary text vs the row it sits on
+		{"Accent", "Note"},   // focus vs "changed"
+	}
+
+	for _, name := range Names() {
+		th, ok := Builtin(name)
+		if !ok {
+			t.Fatalf("Names() offers %q and Builtin does not have it", name)
+		}
+		by := map[string]token{
+			"Accent": th.Accent, "AccentHi": th.AccentHi, "Steel": th.Steel,
+			"Dim": th.Dim, "Faint": th.Faint, "OK": th.OK, "Warn": th.Warn,
+			"Note": th.Note, "Writable": th.Writable, "SelBg": th.SelBg,
+		}
+		for _, p := range pairs {
+			a, b := by[p.a], by[p.b]
+			if a.Light == b.Light {
+				t.Errorf("%s light: %s and %s are both %s", name, p.a, p.b, a.Light)
+			}
+			if a.Dark == b.Dark {
+				t.Errorf("%s dark: %s and %s are both %s", name, p.a, p.b, a.Dark)
+			}
+		}
+	}
+}

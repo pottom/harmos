@@ -490,7 +490,11 @@ func (m Model) settingsHeader() string {
 // current selection points at.
 func (m Model) settingsContext() string {
 	if m.setStatus != "" {
-		return theme.Ok.Render(trunc("  "+m.setStatus, m.w))
+		st := theme.Ok
+		if m.setStatusBad {
+			st = theme.Bad
+		}
+		return st.Render(trunc("  "+m.setStatus, m.w))
 	}
 	if m.setCat == catTheme {
 		return theme.Faded.Render(trunc("  active theme · "+m.themeName, m.w))
@@ -1589,18 +1593,27 @@ func (m Model) goingWithFolder(id string) edit.State {
 func paintRow(segs []rowSeg, tail string, w int, back lipgloss.TerminalColor) string {
 	var b strings.Builder
 	used := 0
+	_, selected := back.(lipgloss.AdaptiveColor)
 	for _, s := range segs {
 		t := trunc(s.text, max(0, w-used))
 		if t == "" {
 			continue
 		}
 		used += dw(t)
-		b.WriteString(s.style.Background(back).Render(t))
+		st := s.style
+		if selected {
+			st = theme.OnSelection(st)
+		}
+		b.WriteString(st.Background(back).Render(t))
 	}
 	if tail != "" && used < w {
 		t := trunc(tail, w-used)
 		used += dw(t)
-		b.WriteString(theme.Dimmed.Background(back).Render(t))
+		st := theme.Dimmed
+		if selected {
+			st = theme.OnSelection(st)
+		}
+		b.WriteString(st.Background(back).Render(t))
 	}
 	if used < w {
 		b.WriteString(lipgloss.NewStyle().Background(back).Render(strings.Repeat(" ", w-used)))
