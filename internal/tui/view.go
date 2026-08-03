@@ -200,7 +200,10 @@ func (m Model) View() string {
 func (m Model) tabIndicator() string {
 	var parts []string
 	for _, t := range tabOrder() {
-		label := t.label
+		// With the key that reaches it. The strip named four tabs and said
+		// nothing about how to get to one; the digits were in the help, below
+		// the fold.
+		label := theme.Faded.Render(t.key) + " " + t.label
 		// The Changes tab carries the pending count, so a dirty session is
 		// visible without switching to it.
 		if t.idx == tabChanges {
@@ -208,11 +211,11 @@ func (m Model) tabIndicator() string {
 				label += theme.Noted.Render(" " + itoa(n))
 			}
 		}
+		plain := theme.Faded.Render(t.key+" ") + theme.Faded.Render(t.label)
 		if m.tab == t.idx {
-			parts = append(parts, theme.Acc.Render(t.label)+strings.TrimPrefix(label, t.label))
-		} else {
-			parts = append(parts, theme.Faded.Render(t.label)+strings.TrimPrefix(label, t.label))
+			plain = theme.Faded.Render(t.key+" ") + theme.Acc.Render(t.label)
 		}
+		parts = append(parts, plain+strings.TrimPrefix(label, theme.Faded.Render(t.key)+" "+t.label))
 	}
 	return strings.Join(parts, theme.Faded.Render(" · "))
 }
@@ -1392,15 +1395,15 @@ func (m Model) hints() string {
 		return theme.Noted.Render(mode) + "  " +
 			theme.Faded.Render(trunc(keys, max(4, m.w-dw(mode)-2)))
 	case m.searchMode:
-		full = "type to filter · ↑↓ pick · ↵ apply · esc cancel · field: | - \"…\" · ? syntax"
+		full = "type to filter · ↵ keeps the results · esc cancel · title: user: url: · - excludes · | ors"
 	case m.showResults():
 		full = "↑↓ results · ↵ copy pw · → details · c get-cmd · g folder · / edit · esc clear"
 	case m.editableHere():
 		// The editing keys, on the surface where they work.
 		if m.focus == 1 {
-			full = "e edit · n new · d delete · m move · ^s write · ↵ copy pw · → details · ?"
+			full = "e edit · r rename · n new · d/D delete/forever · m move · ^s write · ?"
 		} else {
-			full = "r rename · N folder · d delete · m move · ^s write · →/⇥ into · / search · ?"
+			full = "r rename · N folder · d/D delete/forever · m move · ^s write · / search · ?"
 		}
 	case m.focus == 1:
 		full = "↑↓ move · ↵ copy pw · → details · c get-cmd · ^b tree · / search · ?"

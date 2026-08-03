@@ -997,7 +997,7 @@ func TestUnlockingChangesWhatTheFooterOffers(t *testing.T) {
 	if unlocked == locked {
 		t.Fatal("the footer is identical before and after unlocking")
 	}
-	for _, key := range []string{"e ", "d ", "^s"} {
+	for _, key := range []string{"rename", "d/D", "^s"} {
 		if !strings.Contains(unlocked, key) {
 			t.Errorf("an unlocked source should offer %q: %q", key, unlocked)
 		}

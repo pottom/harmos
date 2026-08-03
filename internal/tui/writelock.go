@@ -71,7 +71,16 @@ func (m Model) toggleWriteLock() Model {
 	}
 	if m.writeOK[source] {
 		delete(m.writeOK, source)
-		m.flash = m.persistWritable(source, false, "locked "+source)
+		locked := "locked " + source
+		// A lock with work still staged takes the write key away with it, and
+		// the rows keep their markers — so without this the session looks
+		// exactly as it did a moment ago, minus the one key that could finish
+		// it, with nothing saying why.
+		if n := m.chg.Counts()[source]; n > 0 {
+			locked += " — its " + plural(n, "staged change", "staged changes") +
+				" cannot be written until ^w unlocks it again"
+		}
+		m.flash = m.persistWritable(source, false, locked)
 		return m
 	}
 	// Two questions, in order. First the cheap one — is there a handle at all,
