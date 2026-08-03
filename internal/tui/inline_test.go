@@ -268,6 +268,7 @@ func TestMovingBackLeavesNothingStaged(t *testing.T) {
 	if m.edit != editMove || len(m.moveDests) == 0 {
 		t.Fatalf("m should open the picker with somewhere to go, got mode %d (%q)", m.edit, m.flash)
 	}
+	m = pickDestination(t, m, "Net")
 	m = up(m, key2("enter"))
 	if m.dirtyCount() == 0 {
 		t.Fatal("the first move should stage something")

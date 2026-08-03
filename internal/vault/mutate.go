@@ -407,3 +407,17 @@ func (h *Handle) MintEntryID() string {
 func (h *Handle) MintGroupID() string {
 	return groupID(h.source, gokeepasslib.NewUUID(), 0)
 }
+
+// RootGroupID is the identity of the source's root group.
+//
+// The snapshot deliberately leaves it out of Folders — nobody browses the
+// container the tree draws as the source itself — but the interface still has
+// to be able to name it: "the top" is a real destination for a move, and an
+// entry already living there must not be offered its own folder.
+func (h *Handle) RootGroupID() string {
+	if h.db == nil || h.db.Content == nil || h.db.Content.Root == nil ||
+		len(h.db.Content.Root.Groups) != 1 {
+		return ""
+	}
+	return groupID(h.source, h.db.Content.Root.Groups[0].UUID, 0)
+}
