@@ -258,14 +258,24 @@ func (f form) Update(key string, msg tea.KeyMsg) (out form, cmd tea.Cmd, submitt
 	// A multi-line field keeps enter for itself — otherwise notes could not
 	// contain a second line — so it is left with tab to move on.
 	inMulti := f.focus < len(f.fields) && f.fields[f.focus].kind == fMulti
+	// A row list keeps tab for itself, to cross from a row's key to its value.
+	// This switch used to take tab first, so the list's own handling of it was
+	// unreachable and a custom field could be given a name but never a value:
+	// tab jumped straight out of the list to the next field. The list hands the
+	// key back at its own edge, and the branch below moves on then.
+	inRows := f.focus < len(f.fields) && f.fields[f.focus].kind == fRows
 
 	switch key {
 	case "tab":
-		f.focus = (f.focus + 1) % stops
-		return f.refocus(), nil, false
+		if !inRows {
+			f.focus = (f.focus + 1) % stops
+			return f.refocus(), nil, false
+		}
 	case "shift+tab":
-		f.focus = (f.focus - 1 + stops) % stops
-		return f.refocus(), nil, false
+		if !inRows {
+			f.focus = (f.focus - 1 + stops) % stops
+			return f.refocus(), nil, false
+		}
 	case "down":
 		if !inMulti {
 			f.focus = (f.focus + 1) % stops
