@@ -444,15 +444,27 @@ func (m Model) binEnabled(source string) bool {
 }
 
 // openMovePicker chooses a destination folder.
+//
+// It opens on wherever the last move went, when that folder is still on offer.
+// Moving things is done in runs — four entries out of one folder and into
+// another — and starting from the top of the list every time made the second
+// move cost as many keystrokes as the first.
 func (m Model) openMovePicker(target string, isFolder bool) Model {
 	m.edit = editMove
 	m.editTarget = target
 	m.editFolderTarget = isFolder
-	m.moveSel = 0
 	m.moveDests = m.moveDestinations()
 	if len(m.moveDests) == 0 {
 		m.edit = editNone
 		m.flash = "nowhere to move it to"
+		return m
+	}
+	m.moveSel = 0
+	for i, d := range m.moveDests {
+		if d.id == m.lastMoveTo {
+			m.moveSel = i
+			break
+		}
 	}
 	return m
 }
@@ -549,6 +561,7 @@ func (m Model) updateMovePicker(key string) Model {
 			Parent: m.moveDests[m.moveSel].id,
 		})
 		m.flash = "staged: move to " + m.moveDests[m.moveSel].path + " · nothing is written until you save"
+		m.lastMoveTo = m.moveDests[m.moveSel].id
 		m.edit = editNone
 		m = m.restage()
 	}

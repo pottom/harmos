@@ -928,3 +928,57 @@ func TestContentsOfAPurgedFolderAreAlsoPurged(t *testing.T) {
 		t.Errorf("the contents should carry the permanent marker:\n%s", review)
 	}
 }
+
+// The Changes tab answers the mouse. The wheel already scrolled it; clicking a
+// row did nothing, which is a list that only half-answers.
+func TestChangesTabTakesClicks(t *testing.T) {
+	m := stageAnEdit(t, editModel(t))
+	m = m.switchTab(tabChanges)
+	m = up(m, tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	rows := m.changeRows(m.contentW())
+	sel := selectableRows(rows)
+	if len(sel) < 3 {
+		t.Fatalf("need a few selectable rows to click between, got %d", len(sel))
+	}
+
+	// Row index 2 of the rendered list, which is content row 2 → y = 4.
+	want := 2
+	m = up(m, click(10, 2+sel[want]))
+	if m.chgSel != want {
+		t.Errorf("clicking row %d selected %d", want, m.chgSel)
+	}
+
+	// Above the content, on the header and the border: nothing moves.
+	before := m.chgSel
+	m = up(m, click(10, 0))
+	m = up(m, click(10, 1))
+	if m.chgSel != before {
+		t.Error("a click on the header or the frame moved the cursor")
+	}
+
+	// Double-clicking folds, the way it expands a folder in the Vault tab.
+	cur := m.contextRow(m.changeRows(m.contentW()))
+	if cur.target == "" {
+		t.Skip("the row under the cursor has nothing to fold")
+	}
+	was := m.folded(cur)
+	m = up(m, click(10, 2+sel[want]))
+	m = up(m, click(10, 2+sel[want]))
+	if m.folded(m.contextRow(m.changeRows(m.contentW()))) == was {
+		t.Error("a double-click should fold what it lands on")
+	}
+}
+
+// A modal on this tab owns the screen, so the rows behind it are not live.
+func TestChangesClicksIgnoredUnderAModal(t *testing.T) {
+	m := stageAnEdit(t, editModel(t))
+	m = up(m.switchTab(tabChanges), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m.chgSel = 0
+	m.saveConfirm = true
+
+	m = up(m, click(10, 6))
+	if m.chgSel != 0 {
+		t.Error("a click through the save confirmation reached the list")
+	}
+}
