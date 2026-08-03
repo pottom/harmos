@@ -23,6 +23,49 @@ text colour: measured across the ten built-ins, `Faint` on `SelBg` ranges from
 the information it was there to highlight. `TestNoBuiltinCollidesTwoMeanings`
 holds the palette to one meaning per token.
 
+## Before you build a surface
+
+Run this list **before writing the view**, not after somebody reports it. Every
+item is here because it was shipped wrong once.
+
+1. **Does this screen already exist?** A new panel, modal or confirmation copies
+   an existing one or it does not ship. Two dialogs that ask the same kind of
+   question and look different is a bug, whichever one is prettier.
+2. **Chrome once.** The tab indicator lives in the footer. The title lives in the
+   top border. Nothing that appears on every screen gets a second copy on yours.
+3. **Same frame, to the row.** Header, panels of `m.h-3`, context line, footer.
+   Draw the context line even when it is empty — geometry must not depend on
+   content, or the frame jumps when the content changes.
+4. **What does this key actually cost?** Confirm what cannot be undone. Do not
+   confirm what can: staging writes nothing, and a prompt in front of a
+   reversible act only teaches people to dismiss prompts unread — which is
+   precisely the habit that makes the one real prompt useless. **One
+   confirmation per irreversible act, at the moment it becomes irreversible.**
+5. **Which button leads?** The answer the user came for, except where the act is
+   irreversible; there the safe answer leads and the screen says why
+   (`confirm.go` states the rule, `saveChoices` shows it deciding).
+6. **Say it in words, not only in colour.** Every state needs a word or a glyph
+   beside its colour: `NO_COLOR`, mono terminals and a good share of readers.
+7. **Where does the cursor end up?** After anything that changes what is on
+   screen — a fold, a save, a reload — name the row it lands on and why. "The
+   index it had" is not an answer.
+8. **Would a stranger know what to press?** The footer hint is part of the
+   design, and it has to name the keys this surface actually binds.
+9. **Every key on every terminal.** Letters and `shift`+letter always arrive.
+   `ctrl`+arrow is a Mission Control shortcut on macOS and never reaches the
+   process; some terminals strip the modifier from `shift`+arrow. Do not put a
+   feature behind a key the help promises and the OS eats.
+10. **Ask `tabOrder()`, not a digit.** In code and in tests.
+11. **Add the surface to `audit_test.go`.** It renders every screen at four
+    terminal sizes and checks the frame, the widths and the confirmations
+    against each other. A screen nobody audits is where the next inconsistency
+    lives — the attachment picker was outside it, and that is why its hint was
+    wider than the terminal the program declares as its minimum.
+12. **Look at it under the cursor, and with the colours off.** `theme.SelBg`
+    behind a faint token is how a marker becomes invisible on the one row being
+    read; `HARMOS_NERDFONT=0` and a stripped render are what a mono terminal
+    sees. Both have shipped wrong.
+
 ## Unlock phase
 
 A model built with `NewLocked(cfg, …)` starts **locked** (`m.locked`): the whole
