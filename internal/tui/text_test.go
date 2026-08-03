@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
+	"github.com/pottom/harmos/internal/edit"
 	"github.com/pottom/harmos/internal/secret"
 	"github.com/pottom/harmos/internal/theme"
 	"github.com/pottom/harmos/internal/vault"
@@ -104,5 +105,22 @@ func TestADeepFolderStillHasAName(t *testing.T) {
 	}
 	if named < 13 {
 		t.Errorf("only %d of 13 rows carry a name", named)
+	}
+}
+
+// The selection is a background, not a recolouring. A row that turned accent
+// under the cursor read as a different kind of row among its neighbours; the
+// state colour of something staged still wins, because that is about the row
+// rather than about where the cursor happens to be.
+func TestSelectionKeepsTheRowsColour(t *testing.T) {
+	if got, want := theme.SelRow.GetForeground(), theme.Strong.GetForeground(); got != want {
+		t.Errorf("a selected row renders %v, ordinary text %v — they should match", got, want)
+	}
+	if theme.SelRow.GetBackground() == theme.Strong.GetBackground() {
+		t.Error("and the selection needs a background of its own to be visible at all")
+	}
+	del, _ := changeStyle(edit.Deleted)
+	if got := selRowStyle(theme.SelRow, edit.Deleted).GetForeground(); got != del.GetForeground() {
+		t.Error("a row staged for deletion keeps its state colour under the cursor")
 	}
 }

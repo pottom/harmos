@@ -360,10 +360,20 @@ func (f form) Update(key string, msg tea.KeyMsg) (out form, cmd tea.Cmd, submitt
 }
 
 // View renders the form's rows. The caller frames them.
-func (f form) View() []string {
-	var lines []string
+// View renders the form, and reports which line the focused field starts on.
+//
+// The caller needs that to scroll: an entry with a long note and a dozen custom
+// fields is taller than the panel, and without it the cursor tabs on down past
+// the bottom of the screen. What that looks like from the outside is a field
+// you cannot leave — the ▸ vanishes, nothing else moves, and every key seems to
+// do nothing.
+func (f form) View() (lines []string, focusAt int) {
+	focusAt = -1
 	for i, fl := range f.fields {
 		selected := i == f.focus
+		if selected {
+			focusAt = len(lines)
+		}
 
 		label := theme.Dimmed.Render(pad(fl.label, labelWidth))
 		if selected {
@@ -397,8 +407,11 @@ func (f form) View() []string {
 			lines = append(lines, cursor+label+"  "+fl.input.View())
 		}
 	}
+	if f.OnButton() {
+		focusAt = len(lines) + 1
+	}
 	lines = append(lines, "", "  "+button(f.button, false, f.OnButton()))
-	return lines
+	return lines, focusAt
 }
 
 // Hint is the footer text: the validation message when there is one, else the

@@ -685,7 +685,20 @@ func (m Model) editorView() string {
 	// The amber border and the mode line are the same statement twice: being in
 	// edit mode is a mode, and losing track of which one you are in is how a
 	// password ends up typed into a search box.
-	body := boxState(title, info, m.editForm.View(), m.w, max(3, m.h-1), panelEditing)
+	// Scroll to keep the focused field on screen. A big entry — a long note and
+	// a dozen custom fields — is taller than the panel, and the cursor used to
+	// tab on past the bottom of it: from the reader's side, a field they could
+	// not leave.
+	h := max(3, m.h-1)
+	lines, at := m.editForm.View()
+	visible := max(1, h-2)
+	// Stateless: the focus is the only thing that scrolls a form, so the
+	// offset is derived from it rather than remembered. Computing from the top
+	// each frame keeps the focused field on screen with the least scrolling
+	// that achieves it.
+	scroll := scrollToShow(0, at, visible, len(lines))
+	body := boxVState(title, info, lines[scroll:min(scroll+visible, len(lines))],
+		m.w, h, panelEditing, len(lines), scroll, 0)
 	mode := theme.Noted.Render("-- EDIT --") + "  " + m.editForm.Hint()
 	return body + "\n" + m.footer(mode)
 }

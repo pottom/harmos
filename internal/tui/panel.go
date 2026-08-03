@@ -68,11 +68,6 @@ func box(title, info string, content []string, w, h int, active bool) string {
 	return boxV(title, info, content, w, h, active, len(content), 0, 0)
 }
 
-// boxState is box with the border state named outright, for the editor's amber.
-func boxState(title, info string, content []string, w, h int, st panelState) string {
-	return boxVState(title, info, content, w, h, st, len(content), 0, 0)
-}
-
 // boxV is box with a vertical scrollbar in the right inner column when the list
 // overflows. total is the full item count, offset the first visible item, and
 // headerRows the number of pinned top rows (a table header) the bar skips.

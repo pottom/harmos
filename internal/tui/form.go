@@ -211,5 +211,14 @@ func (m Model) formView() string {
 	if m.formEditing {
 		title, info = "Edit source", m.formOrig
 	}
-	return box(title, info, m.form.View(), m.w, max(3, m.h-1), true) + "\n" + m.footer(m.form.Hint())
+	h := max(3, m.h-1)
+	lines, at := m.form.View()
+	visible := max(1, h-2)
+	// Stateless: the focus is the only thing that scrolls a form, so the
+	// offset is derived from it rather than remembered. Computing from the top
+	// each frame keeps the focused field on screen with the least scrolling
+	// that achieves it.
+	scroll := scrollToShow(0, at, visible, len(lines))
+	return boxV(title, info, lines[scroll:min(scroll+visible, len(lines))],
+		m.w, h, true, len(lines), scroll, 0) + "\n" + m.footer(m.form.Hint())
 }
