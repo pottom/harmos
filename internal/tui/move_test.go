@@ -14,10 +14,10 @@ import (
 
 // The move flow, walked the way somebody uses it.
 //
-// Written after a hand audit found three things: the picker never said what was
-// being moved, n cancelled it without saying so — the "no" of a confirmation it
-// had stopped being, and the new-entry key everywhere else — and nothing could
-// be moved to the top of a source, a place the vault has no trouble with.
+// m picks a row up and the tree stays live: the destination is chosen the way
+// anything in the tree is found. There used to be a list of destinations in a
+// window over the vault, which is the objection the rename and the new folder
+// already answered — a screen that covers the tree to ask a question about it.
 
 func moveModel(t *testing.T) Model {
 	t.Helper()
@@ -25,7 +25,8 @@ func moveModel(t *testing.T) Model {
 	return m.expandAll(true)
 }
 
-// m opens the picker from every surface a target can be selected on.
+// m picks up from every surface a target can be selected on, and comes back to
+// the tree — which is what the reader steers with from here.
 func TestMoveOpensFromEverySurface(t *testing.T) {
 	surfaces := map[string]func(*testing.T) Model{
 		"folder in the tree": func(t *testing.T) Model { return onRow(t, moveModel(t), "db") },
@@ -38,121 +39,113 @@ func TestMoveOpensFromEverySurface(t *testing.T) {
 	for name, start := range surfaces {
 		t.Run(name, func(t *testing.T) {
 			m := up(start(t), key2("m"))
-			if m.edit != editMove {
-				t.Fatalf("m should open the picker, got mode %d (%q)", m.edit, m.flash)
+			if m.edit != editCarry {
+				t.Fatalf("m should pick it up, got mode %d (%q)", m.edit, m.flash)
 			}
-			if len(m.moveDests) == 0 {
-				t.Error("and offer somewhere to go")
+			if m.focus != 0 || m.detail || m.showResults() {
+				t.Errorf("it should land in the tree: focus=%d detail=%v results=%v",
+					m.focus, m.detail, m.showResults())
+			}
+			if _, ok := m.destUnderCursor(); !ok {
+				t.Error("and on a row that can be steered from")
 			}
 		})
 	}
 }
 
-// The picker says what is moving and where it is now. Pressing m on the wrong
-// row is easy; noticing it from a list of destinations is not.
-func TestMovePickerNamesWhatIsMoving(t *testing.T) {
+// The footer says what is in hand and where it would land, all the way through.
+func TestCarryFooterSaysWhatAndWhere(t *testing.T) {
 	m := up(onEntry(t, moveModel(t), "db", "db-prod"), key2("m"))
+
+	m = pickDestination(t, m, "Net")
 	out := ansi.Strip(m.View())
-	if !strings.Contains(out, "db-prod") {
-		t.Errorf("the picker should name what is moving:\n%s", out)
+	for _, want := range []string{"-- MOVING --", "db-prod", "Net", "↵ drop", "esc"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the footer should say %q:\n%s", want, out)
+		}
 	}
-	if !strings.Contains(out, "now in") || !strings.Contains(out, "Infra › db") {
-		t.Errorf("and where it is now:\n%s", out)
+
+	// And on a folder that cannot take it, why not — rather than a silent ↵.
+	m = pickDestination(t, m, "db")
+	if out := ansi.Strip(m.View()); !strings.Contains(out, "already here") {
+		t.Errorf("it should say why this one is no good:\n%s", out)
 	}
 }
 
-// What is on offer, and what is deliberately not.
-func TestMoveDestinations(t *testing.T) {
-	t.Run("an entry is not offered its own folder", func(t *testing.T) {
+// The four rules, asked one folder at a time so the answer can be shown as the
+// cursor passes over it rather than by leaving it off a list with no reason.
+func TestCarryRefusals(t *testing.T) {
+	t.Run("its own folder", func(t *testing.T) {
 		m := up(onEntry(t, moveModel(t), "db", "db-prod"), key2("m"))
-		if labels(m).has("db") {
-			t.Errorf("offered the folder it is already in: %v", labels(m))
+		m = up(pickDestination(t, m, "db"), key2("enter"))
+		if m.dirtyCount() != 0 {
+			t.Error("dropping something where it already is staged a move")
+		}
+		if !strings.Contains(m.flash, "already here") {
+			t.Errorf("and it should say so: %q", m.flash)
 		}
 	})
-	t.Run("a folder is offered neither itself nor its parent", func(t *testing.T) {
+	t.Run("itself", func(t *testing.T) {
 		m := up(onRow(t, moveModel(t), "db"), key2("m"))
-		for _, no := range []string{"db", "Infra"} {
-			if labels(m).has(no) {
-				t.Errorf("offered %q: %v", no, labels(m))
-			}
+		m = up(pickDestination(t, m, "db"), key2("enter"))
+		if m.dirtyCount() != 0 || !strings.Contains(m.flash, "inside itself") {
+			t.Errorf("a folder dropped on itself: %d staged, %q", m.dirtyCount(), m.flash)
 		}
 	})
-	t.Run("the top of a source is a place", func(t *testing.T) {
-		// The tree draws a source there and gives the row no identity, so the
-		// walk used to skip it — and nothing could be moved to the top at all.
-		m := up(onEntry(t, moveModel(t), "db", "db-prod"), key2("m"))
-		var found bool
-		for _, d := range m.moveDests {
-			if strings.Contains(d.label, "top level") {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("the top level should be a destination: %v", labels(m))
+	t.Run("its own contents", func(t *testing.T) {
+		m := up(onRow(t, moveModel(t), "Infra"), key2("m"))
+		m = up(pickDestination(t, m, "db"), key2("enter"))
+		if m.dirtyCount() != 0 || !strings.Contains(m.flash, "own contents") {
+			t.Errorf("a folder dropped into its own subtree: %d staged, %q", m.dirtyCount(), m.flash)
 		}
 	})
-	t.Run("a folder staged for deletion is not", func(t *testing.T) {
+	t.Run("a folder staged for deletion", func(t *testing.T) {
 		m := up(onRow(t, moveModel(t), "Net"), key2("d"))
 		m = up(onEntry(t, m, "db", "db-prod"), key2("m"))
-		if labels(m).has("Net") {
-			t.Errorf("offered a folder about to stop existing: %v", labels(m))
+		m = up(pickDestination(t, m, "Net"), key2("enter"))
+		if m.dirtyCount() != 1 { // the deletion only
+			t.Errorf("dropped into a folder about to stop existing: %d staged", m.dirtyCount())
+		}
+		if !strings.Contains(m.flash, "deletion") {
+			t.Errorf("and it should say why: %q", m.flash)
+		}
+	})
+	t.Run("the top of a source takes it", func(t *testing.T) {
+		m := up(onEntry(t, moveModel(t), "db", "db-prod"), key2("m"))
+		m = up(pickDestination(t, m, "own"), key2("enter"))
+		if m.dirtyCount() != 1 {
+			t.Errorf("the root group is a folder like any other: %d staged (%q)",
+				m.dirtyCount(), m.flash)
 		}
 	})
 }
 
-type destLabels []string
-
-func (d destLabels) has(name string) bool {
-	for _, l := range d {
-		if l == name {
-			return true
-		}
-	}
-	return false
-}
-
-func labels(m Model) destLabels {
-	var out destLabels
-	for _, d := range m.moveDests {
-		out = append(out, strings.TrimSpace(d.label))
-	}
-	return out
-}
-
-// esc cancels; nothing else does. n used to, silently — it is the "no" of a
-// confirmation this stopped being, and the new-entry key everywhere else.
-func TestMovePickerOnlyEscapeCancels(t *testing.T) {
+// The tree stays live while something is held: every browsing key still browses,
+// ↵ drops, esc puts it back, and anything else says the mode is still on.
+func TestCarryKeepsTheTreeLive(t *testing.T) {
 	m := up(onEntry(t, moveModel(t), "db", "db-prod"), key2("m"))
+	at := m.tsel
 
-	for _, k := range []string{"n", "N", "q", "/", "d", "1"} {
-		if got := up(m, key2(k)).edit; got != editMove {
-			t.Errorf("%q closed the picker (mode %d)", k, got)
+	m = up(m, tea.KeyMsg{Type: tea.KeyDown})
+	if m.tsel == at {
+		t.Error("↓ should still move the tree cursor")
+	}
+	if m.edit != editCarry {
+		t.Fatal("and not put the row down")
+	}
+
+	for _, k := range []string{"d", "D", "n", "N", "r", "e", "/", "q"} {
+		mm := up(m, key2(k))
+		if mm.edit != editCarry {
+			t.Errorf("%q ended the move (mode %d)", k, mm.edit)
+		}
+		if mm.dirtyCount() != 0 || mm.searchMode {
+			t.Errorf("%q acted while another row was in hand", k)
 		}
 	}
-	for _, k := range []tea.KeyMsg{{Type: tea.KeyCtrlC}, {Type: tea.KeyCtrlS}} {
-		mm := up(m, k)
-		if mm.saveConfirm || mm.quitGuard {
-			t.Errorf("%v reached past the picker", k)
-		}
-	}
-	if got := up(m, tea.KeyMsg{Type: tea.KeyEsc}).edit; got != editNone {
-		t.Errorf("esc should close it, mode %d", got)
-	}
-}
 
-// The picker opens on wherever the last move went, so a run of moves out of one
-// folder costs one keystroke each after the first.
-func TestMovePickerRemembersAcrossASurface(t *testing.T) {
-	m := onEntry(t, moveModel(t), "db", "db-prod")
-	m = up(m, key2("m"))
-	m = pickDestination(t, m, "Net")
-	want := m.moveDests[m.moveSel].id
-	m = up(m, key2("enter"))
-
-	m = onEntry(t, m, "db", "db-stage")
-	m = up(m, key2("m"))
-	if got := m.moveDests[m.moveSel].id; got != want {
-		t.Errorf("the picker opened on %q, want %q", got, want)
+	if put := up(m, tea.KeyMsg{Type: tea.KeyEsc}); put.edit != editNone || put.dirtyCount() != 0 {
+		t.Errorf("esc should put it back: mode=%d staged=%d", put.edit, put.dirtyCount())
 	}
 }
 
@@ -165,8 +158,7 @@ func TestMoveOutOfADoomedFolderKeepsIt(t *testing.T) {
 	m = up(onRow(t, m, "db"), key2("d")) // the folder goes to the bin
 	m = onEntry(t, m, "db", "db-prod")
 	m = up(m, key2("m"))
-	m = pickDestination(t, m, "Net")
-	m = up(m, key2("enter")) // this one comes out first
+	m = up(pickDestination(t, m, "Net"), key2("enter")) // this one comes out first
 
 	c := m.switchTab(tabChanges)
 	c, _ = c.askToSave()
@@ -204,7 +196,7 @@ func TestMoveOnALockedSourceSaysHowToUnlock(t *testing.T) {
 	m = up(onEntry(t, m.expandAll(true), "db", "db-prod"), key2("m"))
 
 	if m.edit != editNone {
-		t.Error("a locked source should not open the picker")
+		t.Error("a locked source should not pick anything up")
 	}
 	if !strings.Contains(m.flash, "^w") {
 		t.Errorf("it should name the key that unlocks: %q", m.flash)
@@ -234,12 +226,7 @@ func TestNoMoveTouchesTheFile(t *testing.T) {
 func TestReviewNamesAMoveToTheTop(t *testing.T) {
 	m := onRow(t, moveModel(t), "db")
 	m = up(m, key2("m"))
-	for i, d := range m.moveDests {
-		if strings.Contains(d.label, "top level") {
-			m.moveSel = i
-		}
-	}
-	m = up(m, key2("enter"))
+	m = up(pickDestination(t, m, "own"), key2("enter"))
 
 	out := ansi.Strip(m.switchTab(tabChanges).View())
 	if strings.Contains(out, " moved ") || !strings.Contains(out, "top level") {
@@ -247,5 +234,59 @@ func TestReviewNamesAMoveToTheTop(t *testing.T) {
 	}
 	if !strings.Contains(out, "Infra") {
 		t.Errorf("and where it came from:\n%s", out)
+	}
+}
+
+// What is in hand says so, wherever it is sitting — and that is not where the
+// cursor is, which is the point: the two are different rows now.
+func TestCarriedRowIsMarked(t *testing.T) {
+	t.Setenv("HARMOS_NERDFONT", "0")
+
+	t.Run("an entry, while its folder is on screen", func(t *testing.T) {
+		m := up(onEntry(t, moveModel(t), "db", "db-prod"), key2("m"))
+		// After the model is built: the glyph set is chosen when New reads the
+		// config, so asking before that answers with whatever the last test left.
+		moved := ic().moved
+		if out := ansi.Strip(m.View()); !strings.Contains(out, moved+" db-prod") {
+			t.Errorf("the carried entry should be marked:\n%s", out)
+		}
+		// Once the cursor walks off to choose a destination the table follows
+		// it, so the entry is not on screen — which is why the footer names
+		// what is in hand the whole way. TestCarryFooterSaysWhatAndWhere.
+		m = pickDestination(t, m, "Net")
+		if out := ansi.Strip(m.View()); !strings.Contains(out, "db-prod") {
+			t.Errorf("the footer should still name it:\n%s", out)
+		}
+	})
+	t.Run("a folder, in the tree", func(t *testing.T) {
+		m := up(onRow(t, moveModel(t), "db"), key2("m"))
+		moved := ic().moved
+		m = pickDestination(t, m, "Net")
+		if out := ansi.Strip(m.View()); !strings.Contains(out, "db 2 "+moved) {
+			t.Errorf("the carried folder should be marked:\n%s", out)
+		}
+	})
+}
+
+// Picking something up does not change the vault, and putting it back does not
+// either — the file is untouched through the whole thing.
+func TestCarryingWritesNothing(t *testing.T) {
+	m, path := walkModel(t)
+	m = m.expandAll(true)
+	before := fileBytes(t, path)
+
+	m = up(onEntry(t, m, "db", "db-prod"), key2("m"))
+	m = pickDestination(t, m, "Net")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.dirtyCount() != 0 {
+		t.Errorf("esc staged %d change(s)", m.dirtyCount())
+	}
+
+	m = up(onEntry(t, m, "db", "db-prod"), key2("m"))
+	m = up(pickDestination(t, m, "Net"), key2("enter"))
+	_ = m.switchTab(tabChanges).View()
+
+	if after := fileBytes(t, path); after != before {
+		t.Error("carrying wrote to the file")
 	}
 }

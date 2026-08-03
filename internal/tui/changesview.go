@@ -943,18 +943,6 @@ func (m Model) alsoGoing(c edit.Change) string {
 	return " · with " + strings.Join(parts, " and ")
 }
 
-// pathOfNode is a tree node's folder path within its source, rebuilt from the
-// folder it stands for. A source root has no path of its own.
-func (m Model) pathOfNode(n *node) string {
-	if n == nil || n.id == "" {
-		return ""
-	}
-	if f, ok := m.folderByID(n.id); ok {
-		return f.Path
-	}
-	return ""
-}
-
 // contentsGoing lists what a folder deletion removes, as the tree it is.
 //
 // A count is a promise the reader cannot check, and they are about to approve

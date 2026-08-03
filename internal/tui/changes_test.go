@@ -986,19 +986,20 @@ func TestChangesClicksIgnoredUnderAModal(t *testing.T) {
 	}
 }
 
-// pickDestination puts the move picker's cursor on a named folder.
+// pickDestination steers a carried row onto a named folder, the way a reader
+// does: the tree is live while something is held, so this is the tree cursor.
 func pickDestination(t *testing.T, m Model, name string) Model {
 	t.Helper()
-	for i, d := range m.moveDests {
-		if strings.TrimSpace(d.label) == name {
-			m.moveSel = i
+	if m.edit != editCarry {
+		t.Fatalf("nothing is being carried (mode %d)", m.edit)
+	}
+	m = m.expandAll(true)
+	for i, tl := range m.visible() {
+		if tl.node.name == name {
+			m.tsel, m.focus = i, 0
 			return m
 		}
 	}
-	var have []string
-	for _, d := range m.moveDests {
-		have = append(have, strings.TrimSpace(d.label))
-	}
-	t.Fatalf("no destination %q; offered: %v", name, have)
+	t.Fatalf("no tree row %q; rows: %v", name, rowNames(m))
 	return m
 }

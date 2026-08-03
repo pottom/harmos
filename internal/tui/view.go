@@ -178,9 +178,10 @@ func (m Model) View() string {
 	if m.saving {
 		return m.savingView()
 	}
-	// editInline is the exception: it draws into the row it is renaming, so the
-	// vault view below renders as usual and the field arrives with it.
-	if m.edit != editNone && m.edit != editInline {
+	// Two exceptions, and for the same reason: they draw into the vault rather
+	// than over it. The rename field arrives on the row it is renaming, and a
+	// carried row is steered with the tree it is still sitting in.
+	if m.edit != editNone && m.edit != editInline && m.edit != editCarry {
 		return m.editorView()
 	}
 	switch m.tab {
@@ -782,6 +783,13 @@ func (m Model) treeLines(w, rows int) []string {
 
 		chg := changed[n]
 		nameStyle, iconStyle, markerStyle, markerGlyph := m.treeRowStyle(n, chg)
+		if m.carriedRow(n.id) {
+			// In hand: it is still where it was until it is dropped, and the row
+			// has to say that it is the one being moved rather than the one the
+			// cursor happens to be on — those are two different rows now.
+			nameStyle, iconStyle, markerStyle = theme.Noted, theme.Noted, theme.Noted
+			markerGlyph = ic().moved
+		}
 		marker, markerPlain := "", ""
 		if markerGlyph != "" {
 			marker = markerStyle.Render(markerGlyph)
@@ -911,6 +919,12 @@ func (m Model) entryLines(w, rows int) []string {
 		}
 		titleStyle, marker := changeStyle(state)
 		markerStyle := titleStyle
+		if m.carriedRow(e.ID) {
+			// In hand. It is still filed here until it is dropped, and the row
+			// has to say it is the one being moved — the tree cursor is
+			// somewhere else entirely by then.
+			titleStyle, markerStyle, marker = theme.Noted, theme.Noted, ic().moved
+		}
 		if !staged {
 			// Going because its folder is going. The marker is faded rather than
 			// absent: something has to say so without colour, but it is a
@@ -1353,6 +1367,8 @@ func (m Model) countdown() string {
 func (m Model) hints() string {
 	var full string
 	switch {
+	case m.edit == editCarry:
+		return m.carryHint()
 	case m.edit == editInline:
 		// The field is on the row, not in a box with a button, so the footer is
 		// the only place that can say how to finish or get out.

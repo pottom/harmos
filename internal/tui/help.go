@@ -174,7 +174,7 @@ func (m Model) keyList(w int) []string {
 			row("r", "rename in place: a folder, or an entry's title"),
 			row("n / N", "new entry (a form) / new folder (on its row)"),
 			row("d / D", "delete → bin / permanently (again undoes)"),
-			row("m", "move to another folder"),
+			row("m", "pick it up; steer with the tree, ↵ drops it"),
 			row("^g", "roll a password, in the editor"),
 			row("^s", "review and write the staged changes"),
 			"",
