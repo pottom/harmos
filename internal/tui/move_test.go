@@ -325,3 +325,32 @@ func TestTheCursorCarriesTheName(t *testing.T) {
 		}
 	}
 }
+
+// The review has to say where it was as well as where it is going. Filed under
+// the destination — which is where the projection already shows it — the tree
+// heading and the summary both named the same folder, and "where it came from"
+// was a bare word sharing a prefix with it: "Ibasa → Ibasa › linux".
+func TestReviewFilesAMoveWhereItCameFrom(t *testing.T) {
+	t.Setenv("HARMOS_NERDFONT", "0")
+	m := up(onRow(t, moveModel(t), "db"), key2("m"))
+	m = up(pickDestination(t, m, "Net"), key2("enter"))
+
+	out := ansi.Strip(m.switchTab(tabChanges).View())
+	var heading, row string
+	for _, ln := range strings.Split(out, "\n") {
+		switch {
+		case strings.Contains(ln, "db") && strings.Contains(ln, "from"):
+			row = ln
+		case strings.Contains(ln, "Infra") && !strings.Contains(ln, "from"):
+			heading = ln
+		}
+	}
+	if heading == "" {
+		t.Errorf("the row should sit under the folder the file still has it in:\n%s", out)
+	}
+	for _, want := range []string{"from Infra", "to Net"} {
+		if !strings.Contains(row, want) {
+			t.Errorf("the summary should say %q:\n%s", want, out)
+		}
+	}
+}

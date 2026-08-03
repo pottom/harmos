@@ -810,9 +810,9 @@ func TestReviewSaysFromWhatToWhat(t *testing.T) {
 
 	out := ansi.Strip(m.switchTab(tabChanges).View())
 	for _, want := range []string{
-		"Net → Networks",        // the first name, not "Network"
-		"Infra › db → Infra",    // out of here, into there
-		"db-prod → db-prod-new", // a title change reads where the title is
+		"Net → Networks",             // the first name, not "Network"
+		"from Infra › db → to Infra", // both ends named, and in words
+		"db-prod → db-prod-new",      // a title change reads where the title is
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the review should say %q:\n%s", want, out)
