@@ -163,10 +163,8 @@ func TestWalkEveryOperation(t *testing.T) {
 
 	m = onEntry(t, m, "db", "db-stage")
 	m = up(m, key2("m"))
-	for _, d := range m.moveDests {
-		if strings.TrimSpace(d.label) == "db" {
-			t.Error("the folder something is already in is not a destination")
-		}
+	if _, ok := m.canDropInto(m.carryFrom); ok {
+		t.Error("the folder something is already in should not take it")
 	}
 	m = pickDestination(t, m, "Infra")
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -629,32 +627,39 @@ func TestNothingIsStagedIntoSomethingThatIsGoing(t *testing.T) {
 		t.Errorf("and it should say so: %q", m.flash)
 	}
 
-	// And it is not offered as a destination for a move.
+	// And it will not take anything moved into it.
 	m = onEntry(t, m, "db", "db-prod")
 	m = up(m, key2("m"))
-	for _, d := range m.moveDests {
-		if strings.TrimSpace(d.label) == "Net" {
-			t.Error("a folder staged for deletion is not somewhere to move things to")
-		}
+	m = pickDestination(t, m, "Net")
+	if _, ok := m.canDropInto(mustDest(t, m)); ok {
+		t.Error("a folder staged for deletion is not somewhere to move things to")
 	}
 	m = up(m, tea.KeyMsg{Type: tea.KeyEsc})
+}
+
+// mustDest is the destination under the tree cursor.
+func mustDest(t *testing.T, m Model) string {
+	t.Helper()
+	dest, ok := m.destUnderCursor()
+	if !ok {
+		t.Fatalf("the cursor is not on a folder (row %d)", m.tsel)
+	}
+	return dest
 }
 
 // A folder cannot be moved into itself. The guard lived in the vault, after the
 // review and the confirmation had both said yes.
 func TestAFolderIsNotItsOwnDestination(t *testing.T) {
 	m, _ := walkModel(t)
-	m = onRow(t, m, "Infra")
+	m = onRow(t, m.expandAll(true), "Infra")
 	m = up(m, key2("m"))
-	if m.edit != editMove {
-		t.Fatalf("m should open the picker, got mode %d", m.edit)
+	if m.edit != editCarry {
+		t.Fatalf("m should pick it up, got mode %d", m.edit)
 	}
-	for _, d := range m.moveDests {
-		if strings.TrimSpace(d.label) == "db" {
-			t.Error("db is inside Infra; it cannot be where Infra goes")
-		}
-		if strings.TrimSpace(d.label) == "Infra" {
-			t.Error("and Infra is not its own destination")
+	for _, no := range []string{"Infra", "db"} {
+		mm := pickDestination(t, m, no)
+		if _, ok := mm.canDropInto(mustDest(t, mm)); ok {
+			t.Errorf("%q should not take the folder that contains it", no)
 		}
 	}
 }
@@ -746,15 +751,8 @@ func TestEditingAfterAMoveKeepsTheMove(t *testing.T) {
 	id := m.selEntry().ID
 
 	m = up(m, key2("m"))
-	var dest string
-	for i, d := range m.moveDests {
-		if strings.TrimSpace(d.label) == "Net" {
-			m.moveSel, dest = i, d.id
-		}
-	}
-	if dest == "" {
-		t.Fatal("expected Net as a destination")
-	}
+	m = pickDestination(t, m, "Net")
+	dest := mustDest(t, m)
 	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
 
 	m = m.revealTarget(id, false)

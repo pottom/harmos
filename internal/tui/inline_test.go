@@ -254,8 +254,6 @@ func TestRenamingBackLeavesNothingStaged(t *testing.T) {
 
 // And the same for a move: back where it came from is not a move.
 func TestMovingBackLeavesNothingStaged(t *testing.T) {
-	// The richer fixture: editModel has one folder with entries in it, so there
-	// is nowhere to move to and nothing to prove.
 	m, _ := walkModel(t)
 	m = onEntry(t, m.expandAll(true), "db", "db-prod")
 	e := m.selEntry()
@@ -265,25 +263,23 @@ func TestMovingBackLeavesNothingStaged(t *testing.T) {
 	home := e.GroupID
 
 	m = up(m, key2("m"))
-	if m.edit != editMove || len(m.moveDests) == 0 {
-		t.Fatalf("m should open the picker with somewhere to go, got mode %d (%q)", m.edit, m.flash)
+	if m.edit != editCarry {
+		t.Fatalf("m should pick it up, got mode %d (%q)", m.edit, m.flash)
 	}
-	m = pickDestination(t, m, "Net")
-	m = up(m, key2("enter"))
+	m = up(pickDestination(t, m, "Net"), key2("enter"))
 	if m.dirtyCount() == 0 {
-		t.Fatal("the first move should stage something")
+		t.Fatalf("the first move should stage something (%q)", m.flash)
 	}
 
-	// Back again: the original folder is a destination now, because it is no
-	// longer where the projection says the entry lives.
-	m = up(m, key2("m"))
-	var back int
-	for i, d := range m.moveDests {
-		if d.id == home {
-			back = i
+	// Back again: home is a destination now, because it is no longer where the
+	// projection says the entry lives.
+	m = up(onEntry(t, m, "Net", "db-prod"), key2("m"))
+	m = m.expandAll(true)
+	for i, tl := range m.visible() {
+		if tl.node.id == home {
+			m.tsel, m.focus = i, 0
 		}
 	}
-	m.moveSel = back
 	m = up(m, key2("enter"))
 
 	if n := m.dirtyCount(); n != 0 {

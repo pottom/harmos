@@ -125,8 +125,7 @@ type Model struct {
 	editFolderTarget bool        // the target is a folder
 	editBefore       *edit.Draft // the entry as it was, for the diff
 	editForm         form
-	moveDests        []vaultFolderRef
-	moveSel          int
+	carryFrom        string // the folder a carried row came out of
 	lastMoveTo       string // the picker reopens here: moving things is done in runs
 
 	// Inline rename: the row under the cursor turned into a field. It shares
@@ -688,7 +687,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// q-quits branch below. A form with free text in it cannot share a
 		// keyboard with a single-letter quit: typing "q" into a title would end
 		// the session and lose everything staged.
-		if m.edit != editNone {
+		// Carrying is a mode the tree runs inside: it answers two keys and hands
+		// every browsing key back, so the destination is chosen the way anything
+		// in the tree is found.
+		if m.edit == editCarry {
+			nm, through := m.updateCarry(key)
+			m = nm
+			if !through {
+				return m, nil
+			}
+		} else if m.edit != editNone {
 			nm, cmd := m.updateEditor(key, msg)
 			return nm, cmd
 		}

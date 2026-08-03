@@ -145,8 +145,8 @@ func auditSurfacesAt(width, height int) []surface {
 			m.inlineInput.SetValue("a folder name long enough to need the whole row and then some")
 			return m.View()
 		}},
-		{"editor/move", func(t *testing.T) string {
-			m := up(sized(editModel(t)), tea.KeyMsg{Type: tea.KeyTab})
+		{"move/carrying", func(t *testing.T) string {
+			m := intoTable(t, sized(editModel(t)))
 			return up(m, key2("m")).View()
 		}},
 		// The rename field draws into the vault rather than over it, so it is

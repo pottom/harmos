@@ -30,7 +30,10 @@ const (
 	editNone editMode = iota
 	editEntry
 	editFolder
-	editMove
+	// editCarry is the odd one out twice over: it draws nothing of its own and
+	// it does not own the keyboard. Something is held, the tree stays live to
+	// steer with, and only ↵ and esc mean anything new — see carry.go.
+	editCarry
 	// editInline is the odd one out: it takes the keyboard like the others, but
 	// it draws nothing of its own. The row being renamed is already on screen,
 	// so the vault stays visible behind — see inline.go.
@@ -184,8 +187,6 @@ func (m Model) draftFromForm() edit.Draft {
 // updateEditor owns every key while the editor is open.
 func (m Model) updateEditor(key string, msg tea.KeyMsg) (Model, tea.Cmd) {
 	switch m.edit {
-	case editMove:
-		return m.updateMovePicker(key), nil
 	case editInline:
 		return m.updateInlineRename(key, msg)
 	}
@@ -483,90 +484,6 @@ func (m Model) binEnabled(source string) bool {
 	return h != nil && h.RecycleBinEnabled()
 }
 
-// openMovePicker chooses a destination folder.
-//
-// It opens on wherever the last move went, when that folder is still on offer.
-// Moving things is done in runs — four entries out of one folder and into
-// another — and starting from the top of the list every time made the second
-// move cost as many keystrokes as the first.
-func (m Model) openMovePicker(target string, isFolder bool) Model {
-	m.edit = editMove
-	m.editTarget = target
-	m.editFolderTarget = isFolder
-	m.moveDests = m.moveDestinations()
-	if len(m.moveDests) == 0 {
-		m.edit = editNone
-		m.flash = "nowhere to move it to"
-		return m
-	}
-	m.moveSel = 0
-	for i, d := range m.moveDests {
-		if d.id == m.lastMoveTo {
-			m.moveSel = i
-			break
-		}
-	}
-	return m
-}
-
-// moveDestinations lists the folders in the same source that the target could
-// actually go to: not itself, and not where it already is.
-func (m Model) moveDestinations() []vaultFolderRef {
-	home := m.homeOf(m.editTarget)
-
-	// A folder cannot be moved inside itself, and the guard for that lived in
-	// the vault — after the review and the confirmation. The picker is where a
-	// destination stops being offered.
-	inside := m.editFolderTarget && m.editTarget != ""
-	targetPath := ""
-	if inside {
-		if f, ok := m.folderByID(m.editTarget); ok {
-			targetPath = f.Path
-		}
-	}
-
-	var out []vaultFolderRef
-	// The source's own root group. The tree draws a source there and gives the
-	// row no identity, so the walk below skips it — which meant nothing could
-	// ever be moved to the top of a source, a place the vault has no trouble
-	// with at all.
-	if h := m.handles[m.editSource]; h != nil {
-		if root := h.RootGroupID(); root != "" && root != home && root != m.editTarget {
-			out = append(out, vaultFolderRef{
-				// Named, not just indented: at depth zero beside the folders
-				// under it, the source's own row reads as a heading rather
-				// than as somewhere you can put a thing.
-				id: root, label: m.editSource + " · top level", path: m.editSource + " (top level)",
-			})
-		}
-	}
-
-	var walk func(ns []*node, depth int)
-	walk = func(ns []*node, depth int) {
-		for _, n := range ns {
-			ok := n.source == m.editSource && n.id != "" && n.id != m.editTarget && n.id != home
-			if ok && targetPath != "" && strings.HasPrefix(m.pathOfNode(n), targetPath+"/") {
-				ok = false // its own descendant
-			}
-			if ok {
-				if _, doomed := m.doomedParent(n.id); doomed {
-					ok = false // about to stop existing
-				}
-			}
-			if ok {
-				out = append(out, vaultFolderRef{
-					id:    n.id,
-					label: strings.Repeat("  ", depth) + n.name,
-					path:  strings.ReplaceAll(m.pathOfNode(n), "/", " › "),
-				})
-			}
-			walk(n.children, depth+1)
-		}
-	}
-	walk(m.roots, 0)
-	return out
-}
-
 // homeOf is the folder something is in now — offering it as a destination is
 // offering to do nothing.
 func (m Model) homeOf(id string) string {
@@ -583,86 +500,8 @@ func (m Model) homeOf(id string) string {
 	return ""
 }
 
-type vaultFolderRef struct {
-	id    string
-	label string // indented, for the picker
-	path  string // plain, for the messages
-}
-
-func (m Model) updateMovePicker(key string) Model {
-	switch key {
-	// esc alone. "n" used to cancel too — the "no" of a confirmation this
-	// stopped being — and it is the new-entry key everywhere else, so pressing
-	// it here shut the picker without a word about why.
-	case "esc":
-		m.edit = editNone
-	case "up", "ctrl+p":
-		if m.moveSel > 0 {
-			m.moveSel--
-		}
-	case "down", "ctrl+n":
-		if m.moveSel < len(m.moveDests)-1 {
-			m.moveSel++
-		}
-	case "enter":
-		kind := edit.MoveEntry
-		if m.editFolderTarget {
-			kind = edit.MoveGroup
-		}
-		m.chg, _ = m.chg.Add(edit.Op{
-			Kind: kind, Source: m.editSource, Target: m.editTarget,
-			// The name and the origin travel with the operation: a review that
-			// cannot say what moved, or where from, is not a review. The
-			// destination the view reads back off the projection.
-			Name:   m.nameOfTarget(m.editTarget, m.editFolderTarget),
-			Was:    m.homeOf(m.editTarget),
-			Parent: m.moveDests[m.moveSel].id,
-		})
-		m.flash = "staged: move to " + m.moveDests[m.moveSel].path + " · nothing is written until you save"
-		m.lastMoveTo = m.moveDests[m.moveSel].id
-		m.edit = editNone
-		m = m.restage()
-	}
-	return m
-}
-
-func (m Model) movePickerView() string {
-	rows := max(3, m.h-10)
-	start := windowStart(m.moveSel, rows, len(m.moveDests))
-	end := min(start+rows, len(m.moveDests))
-
-	lines := []string{""}
-	for i := start; i < end; i++ {
-		d := m.moveDests[i]
-		if i == m.moveSel {
-			lines = append(lines, theme.SelRow.Width(max(10, m.w-10)).Render("  "+d.label))
-			continue
-		}
-		lines = append(lines, "  "+theme.Strong.Render(d.label))
-	}
-	lines = append(lines, "")
-
-	// What is moving, and where it is now. The picker used to name only the
-	// source, so a reader who had pressed m on the wrong row had nothing on
-	// screen to tell them.
-	what := m.nameOfTarget(m.editTarget, m.editFolderTarget)
-	from := m.readablePath(m.homeOf(m.editTarget))
-	if from == "" {
-		from = m.editSource
-	}
-	head := theme.Strong.Render(what) + theme.Faded.Render("  now in ") + theme.Dimmed.Render(from)
-	lines = append([]string{"  " + head}, lines...)
-
-	return m.modal("Move to", m.editSource, lines, "↑↓ pick · ↵ stage · esc cancel")
-}
-
 // editorView renders whichever editor surface is open.
 func (m Model) editorView() string {
-	switch m.edit {
-	case editMove:
-		return m.movePickerView()
-	}
-
 	title := "Edit entry"
 	switch {
 	case m.edit == editFolder:
@@ -796,10 +635,10 @@ func (m Model) editKey(key string) (Model, bool) {
 		}
 	case "m":
 		if entry != nil {
-			return m.openMovePicker(entry.ID, false), true
+			return m.grabForMove(entry.ID, false), true
 		}
 		if folderID != "" {
-			return m.openMovePicker(folderID, true), true
+			return m.grabForMove(folderID, true), true
 		}
 	}
 	return m, true

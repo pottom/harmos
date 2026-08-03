@@ -149,6 +149,16 @@ func (m Model) groupChanges() []changeGroup {
 // folder holding it; for a folder, the folder holding *that*, so the folder
 // itself reads as the item rather than as its own heading.
 func (m Model) pathOfChange(c edit.Change) string {
+	// A move is filed where the file still has it. The projection already shows
+	// it at its destination, so grouping by that put the row under the folder it
+	// is going to and left "where it came from" as a word in the margin — the
+	// half of a move that is hardest to picture. Under the origin, the heading
+	// says where it was and the summary says where it goes.
+	if c.Kind == edit.MoveEntry || c.Kind == edit.MoveGroup {
+		if f, ok := m.folderByID(c.Was); ok {
+			return f.Path
+		}
+	}
 	if c.Kind == edit.CreateGroup || c.Kind == edit.DeleteGroup || c.Kind == edit.RenameGroup || c.Kind == edit.MoveGroup {
 		if f, ok := m.folderByID(c.Target); ok {
 			return parentPath(f.Path)
@@ -422,8 +432,12 @@ func (m Model) detailOf(c edit.Change) string {
 		if to == "" {
 			return c.Detail
 		}
+		// Both ends, both named. "Ibasa → Ibasa › linux" is a riddle when the
+		// two share a prefix and nothing says which end is which; the words
+		// make it a sentence, and detailSegs still puts the amber on the half
+		// that is the outcome.
 		if from := m.folderName(c.Source, c.Was); from != "" {
-			return from + " → " + to
+			return "from " + from + " → to " + to
 		}
 		return "moved to " + to
 	}
@@ -941,18 +955,6 @@ func (m Model) alsoGoing(c edit.Change) string {
 		parts = append(parts, plural(entries, "entry", "entries"))
 	}
 	return " · with " + strings.Join(parts, " and ")
-}
-
-// pathOfNode is a tree node's folder path within its source, rebuilt from the
-// folder it stands for. A source root has no path of its own.
-func (m Model) pathOfNode(n *node) string {
-	if n == nil || n.id == "" {
-		return ""
-	}
-	if f, ok := m.folderByID(n.id); ok {
-		return f.Path
-	}
-	return ""
 }
 
 // contentsGoing lists what a folder deletion removes, as the tree it is.

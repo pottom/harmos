@@ -251,7 +251,9 @@ Editing is deliberately several steps, and reversible until the last:
    the choice is remembered (`writable = true` in the config), so you are asked
    once rather than every launch. `ctrl+w` again locks it.
 2. **Change** things: `e` edits, `n` and `N` create an entry or a folder, `d`
-   sends to the recycle bin (`D` deletes permanently), `m` moves. `N` makes a
+   sends to the recycle bin (`D` deletes permanently). `m` picks a row up and
+   leaves the tree live: walk to the folder you want with the keys you browse
+   with, and `↵` puts it there — a drag, done with the keyboard. `N` makes a
    folder on its own row, where you can see which folder it goes in; `n` opens
    a form for an entry, and the frame names the folder it will land in. `r` renames
    in place: the row under the cursor turns into a field — a folder in the tree,
