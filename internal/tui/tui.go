@@ -127,6 +127,7 @@ type Model struct {
 	editForm         form
 	moveDests        []vaultFolderRef
 	moveSel          int
+	lastMoveTo       string // the picker reopens here: moving things is done in runs
 
 	// Inline rename: the row under the cursor turned into a field. It shares
 	// editTarget and editFolderTarget with the rest, because it is renaming the

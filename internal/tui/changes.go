@@ -540,3 +540,41 @@ func (m Model) savingView() string {
 	}
 	return m.modal("Save", "", lines, "")
 }
+
+// handleChangesClick routes a left-click in the Changes tab.
+//
+// The tab is a list, and a list you can scroll with the wheel but not click is
+// a list that only half-answers the mouse. Selecting is what a single click
+// does everywhere else here; folding is what a double-click does on a tree row
+// in the Vault tab, and these rows fold too.
+func (m Model) handleChangesClick(y int, dbl bool) (tea.Model, tea.Cmd) {
+	// A modal on this tab owns the screen; the rows behind it are not live.
+	if m.saveConfirm || m.saveConflict != "" || m.quitGuard {
+		return m, nil
+	}
+
+	// The same geometry changesView lays out with: the header takes row 0, the
+	// panel's top border row 1, and the content starts under it.
+	visible := m.changesVisibleRows()
+	rows := m.changeRows(m.contentW())
+	if y < 2 || y-2 >= visible {
+		return m, nil
+	}
+	idx := clampScroll(m.chgScroll, len(rows), visible) + (y - 2)
+	if idx < 0 || idx >= len(rows) || !rows[idx].selectable() {
+		return m, nil
+	}
+
+	sel := selectableRows(rows)
+	for i, at := range sel {
+		if at == idx {
+			m.chgSel = i
+			break
+		}
+	}
+	if dbl {
+		cur := m.contextRow(m.changeRows(m.contentW()))
+		m = m.setFold(cur, !m.folded(cur))
+	}
+	return m, nil
+}

@@ -605,3 +605,46 @@ func TestDeleteAdvancesTheCursor(t *testing.T) {
 		t.Errorf("flash = %q", m.flash)
 	}
 }
+
+// The move picker opens on wherever the last move went. Things are moved in
+// runs — four entries out of one folder into another — and starting at the top
+// of the list every time made the second move cost as much as the first.
+func TestMovePickerRemembersWhereYouWent(t *testing.T) {
+	m, _ := walkModel(t)
+	m = onEntry(t, m.expandAll(true), "db", "db-prod")
+
+	m = up(m, key2("m"))
+	if len(m.moveDests) < 2 {
+		t.Fatalf("need somewhere to go, got %d destinations", len(m.moveDests))
+	}
+	// Anywhere but the top, so "it remembered" and "it defaulted" differ.
+	m.moveSel = len(m.moveDests) - 1
+	want := m.moveDests[m.moveSel].id
+	m = up(m, key2("enter"))
+
+	// A second entry, out of the same folder.
+	m = onEntry(t, m, "db", "db-stage")
+	m = up(m, key2("m"))
+	if m.edit != editMove {
+		t.Fatalf("m should open the picker, got mode %d (%q)", m.edit, m.flash)
+	}
+	if got := m.moveDests[m.moveSel].id; got != want {
+		t.Errorf("the picker opened on %q, want the last destination %q", got, want)
+	}
+}
+
+// And falls back to the top when that folder is no longer on offer — it is the
+// entry's own folder now, or it has been staged for deletion since.
+func TestMovePickerFallsBackWhenTheLastPlaceIsGone(t *testing.T) {
+	m, _ := walkModel(t)
+	m = onEntry(t, m.expandAll(true), "db", "db-prod")
+	m.lastMoveTo = "own:g:nowhere"
+
+	m = up(m, key2("m"))
+	if m.edit != editMove {
+		t.Fatalf("m should open the picker, got mode %d (%q)", m.edit, m.flash)
+	}
+	if m.moveSel != 0 {
+		t.Errorf("an unavailable destination should leave the cursor at the top, got %d", m.moveSel)
+	}
+}

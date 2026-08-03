@@ -27,7 +27,10 @@ func (m Model) handleClick(x, y int) (tea.Model, tea.Cmd) {
 	if m.tab == tabGenerate {
 		return m.handleGenClick(x, y, dbl)
 	}
-	if m.tab == tabSettings || m.tab == tabChanges {
+	if m.tab == tabChanges {
+		return m.handleChangesClick(y, dbl)
+	}
+	if m.tab == tabSettings {
 		return m, nil // keyboard-driven for now
 	}
 

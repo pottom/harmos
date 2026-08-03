@@ -367,6 +367,19 @@ func (m Model) stageDelete(target, name string, isFolder, permanent bool) Model 
 	m = m.restage()
 	m, moved := m.advanceCursor()
 
+	// Something created this session and then deleted was never written, so
+	// there is no deletion and no recycle bin in it — the reduction drops the
+	// pair entirely. Saying "staged: delete entry to the recycle bin" about a
+	// row that is simply gone describes an act that will not happen.
+	if _, still := m.stagedDeletion(target); !still {
+		// And no hint about undoing it: the row is not in the tree any more, so
+		// there is nothing left to press the key on. Naming a key that cannot be
+		// pressed is worse than saying nothing.
+		m.flash = "the new " + strings.TrimSuffix(what, " and its contents") +
+			" is gone — it was never written"
+		return m
+	}
+
 	m.flash = "staged: delete " + what + " " + where + backTo(moved, permanent)
 	return m
 }
@@ -444,15 +457,27 @@ func (m Model) binEnabled(source string) bool {
 }
 
 // openMovePicker chooses a destination folder.
+//
+// It opens on wherever the last move went, when that folder is still on offer.
+// Moving things is done in runs — four entries out of one folder and into
+// another — and starting from the top of the list every time made the second
+// move cost as many keystrokes as the first.
 func (m Model) openMovePicker(target string, isFolder bool) Model {
 	m.edit = editMove
 	m.editTarget = target
 	m.editFolderTarget = isFolder
-	m.moveSel = 0
 	m.moveDests = m.moveDestinations()
 	if len(m.moveDests) == 0 {
 		m.edit = editNone
 		m.flash = "nowhere to move it to"
+		return m
+	}
+	m.moveSel = 0
+	for i, d := range m.moveDests {
+		if d.id == m.lastMoveTo {
+			m.moveSel = i
+			break
+		}
 	}
 	return m
 }
@@ -549,6 +574,7 @@ func (m Model) updateMovePicker(key string) Model {
 			Parent: m.moveDests[m.moveSel].id,
 		})
 		m.flash = "staged: move to " + m.moveDests[m.moveSel].path + " · nothing is written until you save"
+		m.lastMoveTo = m.moveDests[m.moveSel].id
 		m.edit = editNone
 		m = m.restage()
 	}
@@ -639,6 +665,15 @@ func (m Model) editKey(key string) (Model, bool) {
 				folderName = f.Name
 			}
 		}
+	}
+
+	// A source row is not a folder in the file — it stands for the root group,
+	// which has no name to change and cannot be deleted or moved. n and N still
+	// work there (they create inside it), so the rest has to say why it does not
+	// rather than swallow the key and look broken.
+	if entry == nil && folderID == "" && strings.ContainsAny(key, "eDdmr") {
+		m.flash = "that row is the source itself — open it and act on what is inside"
+		return m, true
 	}
 
 	switch key {
