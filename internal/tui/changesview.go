@@ -418,15 +418,34 @@ func (m Model) nameOfTarget(id string, isFolder bool) string {
 // its own leaves them to work out the other.
 func (m Model) detailOf(c edit.Change) string {
 	if c.Kind == edit.MoveEntry || c.Kind == edit.MoveGroup {
-		if f, ok := m.folderByID(c.Parent); ok {
-			to := readable(f.Path)
-			if from := m.readablePath(c.Was); from != "" {
-				return from + " → " + to
-			}
-			return "moved to " + to
+		to := m.folderName(c.Source, c.Parent)
+		if to == "" {
+			return c.Detail
 		}
+		if from := m.folderName(c.Source, c.Was); from != "" {
+			return from + " → " + to
+		}
+		return "moved to " + to
 	}
 	return c.Detail
+}
+
+// folderName is a folder's readable path, including the one the snapshot leaves
+// out: a source's root group is a real folder and a real destination, but it is
+// drawn as the source itself and never appears in Folders. Without this a move
+// to the top of a source said only "moved" — the one destination the review
+// could not name.
+func (m Model) folderName(source, id string) string {
+	if id == "" {
+		return ""
+	}
+	if p := m.readablePath(id); p != "" {
+		return p
+	}
+	if h := m.handles[source]; h != nil && h.RootGroupID() == id {
+		return source + " · top level"
+	}
+	return ""
 }
 
 // readable is a stored path as a reader should see it. The separator is a

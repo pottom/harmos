@@ -226,3 +226,26 @@ func TestNoMoveTouchesTheFile(t *testing.T) {
 		t.Error("staging a move wrote to the file")
 	}
 }
+
+// A move to the top of a source is nameable. The snapshot leaves the root group
+// out of Folders — nobody browses the container the tree draws as the source —
+// so the review could resolve every destination but that one, and a move there
+// said only "moved".
+func TestReviewNamesAMoveToTheTop(t *testing.T) {
+	m := onRow(t, moveModel(t), "db")
+	m = up(m, key2("m"))
+	for i, d := range m.moveDests {
+		if strings.Contains(d.label, "top level") {
+			m.moveSel = i
+		}
+	}
+	m = up(m, key2("enter"))
+
+	out := ansi.Strip(m.switchTab(tabChanges).View())
+	if strings.Contains(out, " moved ") || !strings.Contains(out, "top level") {
+		t.Errorf("the review should name where it went:\n%s", out)
+	}
+	if !strings.Contains(out, "Infra") {
+		t.Errorf("and where it came from:\n%s", out)
+	}
+}

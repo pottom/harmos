@@ -788,26 +788,35 @@ func (m Model) treeLines(w, rows int) []string {
 			markerPlain = " " + markerGlyph
 		}
 
-		if k == m.tsel {
-			// The badge and the marker go *inside* the selected row rather than
-			// after it. SelRow pads to the full width, so anything appended
-			// afterwards is pushed past the edge and clipped by the panel — which
-			// looked like the padlock vanishing whenever the cursor landed on a
-			// source. They are plain text here for the same reason the rest of the
-			// row is: the selection's colours own the line.
-			st := theme.Hi
-			if m.focus == 0 && !m.showResults() {
-				st = theme.SelRow.Width(w)
-			}
-			st = selRowStyle(st, chg.own)
-			plain := trunc(indent+icon+" "+n.name+count+markerPlain, nameW) + badgePlain
-			out = append(out, st.Render(plain))
-			continue
-		}
-
 		if counts != nil && counts[n] == 0 { // searching: dim folders with no hits
 			nameStyle, iconStyle = theme.Dimmed, theme.Faded
 		}
+
+		if k == m.tsel {
+			// Rendered in pieces rather than as one flat string, so the icon
+			// keeps its own colour under the cursor: what a row *is* does not
+			// change because the cursor is on it. The badge and the marker
+			// belong inside the row too — the selection pads to the full width,
+			// and anything appended afterwards is pushed past the edge and
+			// clipped, which looked like the padlock vanishing whenever the
+			// cursor landed on a source.
+			bg := lipgloss.NoColor{}
+			var back lipgloss.TerminalColor = bg
+			if m.focus == 0 && !m.showResults() {
+				back = theme.SelBg
+			}
+			segs := []rowSeg{
+				{indent + icon, iconStyle},
+				{" " + trunc(n.name, max(1, nameW-dw(indent)-dw(icon)-1-dw(count)-dw(markerPlain))), selRowStyle(nameStyle, chg.own)},
+				{count, countStyle},
+			}
+			if markerGlyph != "" {
+				segs = append(segs, rowSeg{" " + markerGlyph, markerStyle})
+			}
+			out = append(out, paintRow(segs, badgePlain, nameW+badgeW, back))
+			continue
+		}
+
 		name := nameStyle.Render(trunc(n.name, max(1, nameW-dw(indent)-2-dw(count)-dw(markerPlain))))
 		row := iconStyle.Render(indent+icon) + " " + name + countStyle.Render(count)
 		if marker != "" {
@@ -1544,4 +1553,34 @@ func (m Model) goingWithFolder(id string) edit.State {
 		}
 	}
 	return edit.Unchanged
+}
+
+// paintRow draws a row's pieces over one background, padding to width with it.
+//
+// A selected row used to be flattened into a single string and rendered in one
+// colour, because a nested style does not survive being handed to an outer
+// Render. That made the cursor change what a row looked like it *was*: the
+// folder icon, the entry count and the staged marker all turned the selection's
+// colour. Each piece keeps its own here, and only the background says which row
+// is current.
+func paintRow(segs []rowSeg, tail string, w int, back lipgloss.TerminalColor) string {
+	var b strings.Builder
+	used := 0
+	for _, s := range segs {
+		t := trunc(s.text, max(0, w-used))
+		if t == "" {
+			continue
+		}
+		used += dw(t)
+		b.WriteString(s.style.Background(back).Render(t))
+	}
+	if tail != "" && used < w {
+		t := trunc(tail, w-used)
+		used += dw(t)
+		b.WriteString(theme.Dimmed.Background(back).Render(t))
+	}
+	if used < w {
+		b.WriteString(lipgloss.NewStyle().Background(back).Render(strings.Repeat(" ", w-used)))
+	}
+	return b.String()
 }

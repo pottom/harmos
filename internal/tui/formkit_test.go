@@ -80,7 +80,7 @@ func TestMaskedFieldIsNotLegible(t *testing.T) {
 	f := newForm("Save", 60, maskedField("pw", "Password", ""))
 	f = typeForm(f, "hunter2")
 
-	rendered := ansi.Strip(strings.Join(f.View(), "\n"))
+	rendered := ansi.Strip(strings.Join(viewLines(f), "\n"))
 	if strings.Contains(rendered, "hunter2") {
 		t.Errorf("the masked value is legible on screen:\n%s", rendered)
 	}
@@ -94,11 +94,11 @@ func TestMaskedFieldIsNotLegible(t *testing.T) {
 
 	// Reveal, for checking what you just typed.
 	f, _ = press(f, "ctrl+r")
-	if !strings.Contains(ansi.Strip(strings.Join(f.View(), "\n")), "hunter2") {
+	if !strings.Contains(ansi.Strip(strings.Join(viewLines(f), "\n")), "hunter2") {
 		t.Error("ctrl+r should reveal")
 	}
 	f, _ = press(f, "ctrl+r")
-	if strings.Contains(ansi.Strip(strings.Join(f.View(), "\n")), "hunter2") {
+	if strings.Contains(ansi.Strip(strings.Join(viewLines(f), "\n")), "hunter2") {
 		t.Error("ctrl+r again should hide it")
 	}
 }
@@ -229,4 +229,11 @@ func contains(all []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// viewLines is form.View's lines alone, for tests that do not care where the
+// focus sits.
+func viewLines(f form) []string {
+	lines, _ := f.View()
+	return lines
 }

@@ -105,7 +105,13 @@ func Apply(t Theme) {
 	Noted = lipgloss.NewStyle().Foreground(Note)
 	Editable = lipgloss.NewStyle().Foreground(Writable)
 	Strong = lipgloss.NewStyle().Foreground(Steel).Bold(true)
-	SelRow = lipgloss.NewStyle().Background(SelBg).Foreground(AccentHi)
+	// The selection is the background. The row keeps the text colour it has
+	// everywhere else, so moving the cursor onto something does not change what
+	// it looks like it is — a row that turned accent under the cursor read as a
+	// different kind of row among its neighbours. A row with something staged
+	// against it still wears that state's colour; selRowStyle puts it back on
+	// top of this.
+	SelRow = lipgloss.NewStyle().Background(SelBg).Foreground(Steel).Bold(true)
 	Rule = lipgloss.NewStyle().Foreground(Faint)
 }
 
