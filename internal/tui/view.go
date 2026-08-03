@@ -770,6 +770,13 @@ func (m Model) treeLines(w, rows int) []string {
 				badgePlain = "  " + ansi.Strip(b)
 			}
 		}
+		// What is in hand rides along with the cursor, so the answer to "where
+		// would this land" sits on the row it would land on rather than only in
+		// the footer — and its colour is the other answer, whether it may.
+		if k == m.tsel && m.edit == editCarry {
+			plain, styled := m.carryTag(w)
+			badge, badgePlain, badgeW = styled, plain, dw(plain)
+		}
 		nameW := max(1, w-badgeW)
 
 		if m.renamingRow(n.id, true) {

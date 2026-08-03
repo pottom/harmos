@@ -192,3 +192,27 @@ func (m Model) carryHint() string {
 			theme.Bad.Render(why) + theme.Faded.Render("  ·  esc puts it back")
 	}
 }
+
+// carryTag is the name of what is being carried, for the row under the cursor:
+// the answer to "where would this go" put where it would go.
+//
+// Its colour is the other answer. Amber is a folder that will take it; rust is
+// one that will not, which the footer spells out — at the cursor there is only
+// room to say yes or no, and a glyph and a colour say it without being read.
+func (m Model) carryTag(w int) (plain, styled string) {
+	what := m.nameOfTarget(m.editTarget, m.editFolderTarget)
+	if what == "" {
+		return "", ""
+	}
+	st := theme.Noted
+	if dest, ok := m.destUnderCursor(); !ok {
+		st = theme.Bad
+	} else if _, can := m.canDropInto(dest); !can {
+		st = theme.Bad
+	}
+
+	// Half the row at most: the folder being landed on has to stay readable, or
+	// the tag has answered a question the reader can no longer ask.
+	tag := "  " + ic().moved + " " + trunc(what, max(3, w/2))
+	return tag, st.Render(tag)
+}

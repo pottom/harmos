@@ -290,3 +290,38 @@ func TestCarryingWritesNothing(t *testing.T) {
 		t.Error("carrying wrote to the file")
 	}
 }
+
+// The cursor carries the name. Where something would land is a question about
+// the row the cursor is on, so the answer belongs on that row — the footer says
+// it too, but the eye is in the tree.
+func TestTheCursorCarriesTheName(t *testing.T) {
+	t.Setenv("HARMOS_NERDFONT", "0")
+	m := up(onEntry(t, moveModel(t), "db", "db-prod"), key2("m"))
+	moved := ic().moved
+
+	for _, where := range []string{"Net", "Infra", "own"} {
+		mm := pickDestination(t, m, where)
+		rows := mm.treeLines(mm.leftPaneW()-2, 20)
+		row := ansi.Strip(rows[mm.tsel])
+		if !strings.Contains(row, moved+" db-prod") {
+			t.Errorf("the cursor on %q should carry what is in hand: %q", where, row)
+		}
+		if !strings.Contains(row, where) {
+			t.Errorf("and the folder it is landing on has to stay readable: %q", row)
+		}
+		// Only the cursor's row: a name on every row is a name on none.
+		for i, r := range rows {
+			if i != mm.tsel && strings.Contains(ansi.Strip(r), moved+" db-prod") {
+				t.Errorf("row %d also carries the tag: %q", i, ansi.Strip(r))
+			}
+		}
+	}
+
+	// Nothing is carried when nothing is in hand.
+	idle := onRow(t, moveModel(t), "Net")
+	for _, r := range idle.treeLines(idle.leftPaneW()-2, 20) {
+		if strings.Contains(ansi.Strip(r), moved+" ") {
+			t.Errorf("a tag with nothing in hand: %q", ansi.Strip(r))
+		}
+	}
+}
