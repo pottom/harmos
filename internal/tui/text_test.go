@@ -1,0 +1,108 @@
+package tui
+
+import (
+	"regexp"
+	"strings"
+	"testing"
+	"time"
+	"unicode/utf8"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
+
+	"github.com/pottom/harmos/internal/secret"
+	"github.com/pottom/harmos/internal/theme"
+	"github.com/pottom/harmos/internal/vault"
+)
+
+var escSeq = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+// Highlighting must not corrupt what it highlights.
+//
+// Lowercasing can change a string's byte length — "İ" is two bytes and becomes a
+// one-byte "i", "K" (U+212A) is three — so an offset found in the lowered string
+// is not an offset in the original. Slicing with one lands inside a rune and
+// puts a style code between the halves of a character, which prints garbage.
+//
+// The test needs a colour profile: without a TTY lipgloss renders no codes at
+// all, so there is nothing to land in the wrong place and the bug hides.
+func TestHighlightNeverSplitsARune(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+
+	cases := []struct{ s, q string }{
+		{"İstanbul", "i"}, // the one that was broken
+		{"KELVIN K", "k"}, // U+212A KELVIN SIGN, three bytes to one
+		{"straße", "ss"},  // one rune, two-character query
+		{"STRASSE", "ss"},
+		{"Ärger", "a"},
+		{"Ärger", "ä"},
+		{"münchen-db", "MÜNCHEN"},
+	}
+	for _, c := range cases {
+		for _, out := range []string{
+			highlight(c.s, c.q, theme.Strong),
+			highlightTerms(c.s, []string{strings.ToLower(c.q)}, theme.Strong),
+		} {
+			for _, run := range escSeq.Split(out, -1) {
+				if !utf8.ValidString(run) {
+					t.Errorf("%q / %q: a style code landed inside a rune: %q", c.s, c.q, out)
+					break
+				}
+			}
+			if plain := escSeq.ReplaceAllString(out, ""); plain != c.s {
+				t.Errorf("%q / %q: the text became %q", c.s, c.q, plain)
+			}
+		}
+	}
+}
+
+// The same arithmetic decides where a search snippet starts.
+func TestSnippetSlicesOnRuneBoundaries(t *testing.T) {
+	for _, c := range []struct{ val, term string }{
+		{"İstanbul office — the database credentials for the branch", "database"},
+		{"KELVIN Kmeasurements and the api key beyond", "api"},
+	} {
+		got := snippet(c.val, []string{c.term}, 30)
+		if !utf8.ValidString(ansi.Strip(got)) {
+			t.Errorf("snippet(%q, %q) is not valid UTF-8: %q", c.val, c.term, got)
+		}
+	}
+}
+
+// However deep a folder sits, its name stays readable. Past nine levels in a
+// narrow pane the indent used to take the whole row, leaving a lone ellipsis:
+// a row that can be counted and scrolled past but not identified or acted on.
+func TestADeepFolderStillHasAName(t *testing.T) {
+	path := ""
+	var ents []vault.Entry
+	for i := range 12 {
+		if path != "" {
+			path += "/"
+		}
+		path += "level" + string(rune('A'+i))
+		ents = append(ents, vault.Entry{
+			Source: "s", Path: path, Title: "e" + string(rune('A'+i)), Password: secret.New("p"),
+		})
+	}
+	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 60, Height: 30})
+	m = m.expandAll(true)
+
+	rows := m.treeLines(m.leftPaneW()-2, 20)
+	var named int
+	for _, r := range rows {
+		plain := ansi.Strip(r)
+		if strings.TrimSpace(plain) == "" {
+			continue
+		}
+		if !strings.Contains(plain, "level") && !strings.Contains(plain, "s ") {
+			t.Errorf("a tree row with no readable name: %q", plain)
+			continue
+		}
+		named++
+	}
+	if named < 13 {
+		t.Errorf("only %d of 13 rows carry a name", named)
+	}
+}
