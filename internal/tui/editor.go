@@ -247,12 +247,22 @@ func (m Model) stageEdit() Model {
 	return m
 }
 
-// openNewFolder names a folder that does not exist yet.
+// newFolderName is what a folder is called for the moment between being made
+// and being named. It is what the reader sees on the row they are typing over,
+// and what they keep if they press ↵ without typing — which is what every file
+// manager does, so it is not a surprise.
+const newFolderName = "New folder"
+
+// openNewFolder makes a folder and opens its name for editing, on its own row.
 //
-// Renaming one no longer comes through here: a name is edited on its own row
-// (inline.go), and a modal that covers the tree to ask for one word was the
-// wrong shape for the question. This surface stays because a folder that does
-// not exist yet has no row to edit.
+// It used to be a full-screen form with one field on it: twenty-eight blank
+// rows to collect one word, and — worse — a screen that covered the tree, so
+// nothing said *where* the folder was about to be made. The row says it, by
+// being in the place.
+//
+// The creation is staged first so the row exists to type on. Nothing is written
+// either way, and esc reverts it, so the reader can back out of a folder they
+// never finished naming.
 func (m Model) openNewFolder(parentID string) Model {
 	h := m.handles[m.editSource]
 	if h == nil {
@@ -263,19 +273,32 @@ func (m Model) openNewFolder(parentID string) Model {
 		m.flash = "that folder is going with " + folder + " — undo the deletion first"
 		return m
 	}
-	m.edit = editFolder
-	m.editNew = true
-	m.editParent = parentID
-	m.editTarget = h.MintGroupID()
-	m.editForm = newForm("Stage", m.formWidth(),
-		textField("name", "Name", "folder name", "").
-			withValidation(func(v string) error {
-				if v == "" {
-					return errors.New("a folder needs a name")
-				}
-				return nil
-			}),
-	)
+
+	id := h.MintGroupID()
+	var seq int
+	m.chg, seq = m.chg.Add(edit.Op{
+		Kind: edit.CreateGroup, Source: m.editSource, Target: id,
+		Parent: parentID, Name: newFolderName,
+	})
+	m = m.restage()
+	m = m.revealTarget(id, true)
+
+	m = m.openInlineRename(id, newFolderName, true)
+	if m.edit == editInline {
+		// Empty, with the placeholder greyed behind it: typing a name should
+		// replace the stand-in rather than land after it, and there is no
+		// select-all in a one-line field to arrange that any other way.
+		m.inlineInput.SetValue("")
+		m.inlineInput.Placeholder = newFolderName
+	}
+	if m.edit != editInline {
+		// The rename refused — nothing here should make it, but staging a
+		// creation and then leaving it unnamed and unmentioned would be worse
+		// than not having made it.
+		m.chg, _ = m.chg.Revert(seq)
+		return m.restage()
+	}
+	m.inlineNewSeq = seq
 	return m
 }
 
@@ -614,10 +637,21 @@ func (m Model) editorView() string {
 		title = "New entry"
 	}
 
+	// Where it is going, not just which source. A new entry opened from a search
+	// result or from the entry detail lands in whatever folder the cursor was
+	// left on, which may be somewhere the reader has not looked at in a while —
+	// and a screen that covers the tree cannot be checked against it.
+	info := m.editSource
+	if where := m.readablePath(m.editParent); where != "" {
+		info += theme.Faded.Render(" › ") + where
+	} else if m.editNew {
+		info += theme.Faded.Render(" › ") + "the top"
+	}
+
 	// The amber border and the mode line are the same statement twice: being in
 	// edit mode is a mode, and losing track of which one you are in is how a
 	// password ends up typed into a search box.
-	body := boxState(title, m.editSource, m.editForm.View(), m.w, max(3, m.h-1), panelEditing)
+	body := boxState(title, info, m.editForm.View(), m.w, max(3, m.h-1), panelEditing)
 	mode := theme.Noted.Render("-- EDIT --") + "  " + m.editForm.Hint()
 	return body + "\n" + m.footer(mode)
 }

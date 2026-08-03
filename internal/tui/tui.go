@@ -134,6 +134,10 @@ type Model struct {
 	// same things by the same identity.
 	inlineInput  textinput.Model
 	inlineBefore string // the name it started with, to spot "nothing changed"
+	// inlineNewSeq is the creation this field is naming, when the row was made
+	// to be typed on. esc reverts it: backing out of a folder you never finished
+	// naming should not leave one staged.
+	inlineNewSeq int
 
 	// The Changes tab and the save.
 	chgSel        int             // selected row, counting only selectable ones

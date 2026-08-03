@@ -1347,8 +1347,14 @@ func (m Model) hints() string {
 	case m.edit == editInline:
 		// The field is on the row, not in a box with a button, so the footer is
 		// the only place that can say how to finish or get out.
-		return theme.Noted.Render("-- RENAME --") + "  " +
-			theme.Faded.Render(trunc("↵ stage · esc cancel", max(4, m.w-14)))
+		// And which of the two acts it is: a row made to be typed on and a row
+		// being renamed look the same once the field is open.
+		mode, keys := "-- RENAME --", "↵ stage · esc cancel"
+		if m.inlineNewSeq != 0 {
+			mode, keys = "-- NEW FOLDER --", "↵ make it · esc cancel"
+		}
+		return theme.Noted.Render(mode) + "  " +
+			theme.Faded.Render(trunc(keys, max(4, m.w-dw(mode)-2)))
 	case m.searchMode:
 		full = "type to filter · ↑↓ pick · ↵ apply · esc cancel · field: | - \"…\" · ? syntax"
 	case m.showResults():

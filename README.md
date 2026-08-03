@@ -251,7 +251,9 @@ Editing is deliberately several steps, and reversible until the last:
    the choice is remembered (`writable = true` in the config), so you are asked
    once rather than every launch. `ctrl+w` again locks it.
 2. **Change** things: `e` edits, `n` and `N` create an entry or a folder, `d`
-   sends to the recycle bin (`D` deletes permanently), `m` moves. `r` renames
+   sends to the recycle bin (`D` deletes permanently), `m` moves. `N` makes a
+   folder on its own row, where you can see which folder it goes in; `n` opens
+   a form for an entry, and the frame names the folder it will land in. `r` renames
    in place: the row under the cursor turns into a field — a folder in the tree,
    an entry's title in the list — so the vault you are renaming inside stays on
    screen. `e` is the whole form, which only an entry has; on a folder row it

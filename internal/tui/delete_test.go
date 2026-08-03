@@ -293,8 +293,8 @@ func TestDeleteOnASourceRowExplainsItself(t *testing.T) {
 	}
 	// But creating there still works: that is the root group, not a mistake.
 	m := up(onRow(t, deleteModel(t), "own"), key2("N"))
-	if m.edit != editFolder {
-		t.Errorf("N on a source row should still open the folder editor, got %d", m.edit)
+	if m.edit != editInline {
+		t.Errorf("N on a source row should still make a folder there, got mode %d", m.edit)
 	}
 }
 

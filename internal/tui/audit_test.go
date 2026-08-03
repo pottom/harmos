@@ -140,8 +140,10 @@ func auditSurfacesAt(width, height int) []surface {
 		{"editor/entry", func(t *testing.T) string {
 			return intoEditor(t, sized(editModel(t))).View()
 		}},
-		{"editor/folder", func(t *testing.T) string {
-			return up(sized(editModel(t)), key2("N")).View()
+		{"new-folder/inline", func(t *testing.T) string {
+			m := up(intoFolder(t, sized(editModel(t))), key2("N"))
+			m.inlineInput.SetValue("a folder name long enough to need the whole row and then some")
+			return m.View()
 		}},
 		{"editor/move", func(t *testing.T) string {
 			m := up(sized(editModel(t)), tea.KeyMsg{Type: tea.KeyTab})
