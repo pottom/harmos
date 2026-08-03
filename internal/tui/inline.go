@@ -72,6 +72,16 @@ func (m Model) inlineWidth(isFolder bool) int {
 		// pane − frame − indent − the icon and the space after it − the cursor
 		return m.leftPaneW() - 2 - indent - 2 - 1
 	}
+	// Whichever list is showing owns the Title column, and they are not the same
+	// width. A field that thinks it is wider than its row scrolls to the wrong
+	// part of a long name — the renderer trims, so nothing spills, but what is
+	// under the cursor would be the wrong slice.
+	if m.detail {
+		return max(8, m.listPaneW()-2-2-9-4) // the detail's label column and margins
+	}
+	if m.showResults() {
+		return max(8, (m.listPaneW()-2)*3/10) - 2 - 1
+	}
 	titleW, _, _, _ := entryCols(m.listPaneW() - 2)
 	return titleW - 2 - 1 // the marker column, and the cursor
 }

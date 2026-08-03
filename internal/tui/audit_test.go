@@ -150,6 +150,13 @@ func auditSurfacesAt(width, height int) []surface {
 		// The rename field draws into the vault rather than over it, so it is
 		// the one editing surface that can push a row past the frame. Both
 		// rows, at every size.
+		{"rename/entry-detail", func(t *testing.T) string {
+			m := intoTable(t, sized(editModel(t)))
+			m = up(m, tea.KeyMsg{Type: tea.KeyRight})
+			m = up(m, key2("r"))
+			m.inlineInput.SetValue("a title long enough to want the whole pane and then some more")
+			return m.View()
+		}},
 		{"rename/folder", func(t *testing.T) string {
 			m := up(intoFolder(t, sized(editModel(t))), key2("r"))
 			m.inlineInput.SetValue("a folder name long enough to need the whole row and then some")

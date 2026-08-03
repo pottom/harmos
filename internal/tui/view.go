@@ -365,7 +365,10 @@ func (m Model) footer(left string) string {
 func (m Model) vaultBody() string {
 	searchLine := m.searchLine()
 	hint := m.hints()
-	if m.detail {
+	// The rename field owns the keyboard wherever it is open, the detail pane
+	// included — so the detail's own hints must not overwrite the mode line, or
+	// the reader is typing into a field with nothing on screen saying so.
+	if m.detail && m.edit != editInline {
 		var parts []string
 		if e := m.selEntry(); e != nil {
 			w, vis := m.detailViewport()
@@ -975,6 +978,15 @@ func (m Model) resultLines(w, rows int) []string {
 			lead, leadSt, titleSt = strings.TrimSpace(marker), st, st
 		}
 
+		// r works from this list too, so the field has to be able to appear in
+		// it. Without this the reader was left in rename mode with the row
+		// rendering exactly as before, typing into nothing.
+		if m.renamingRow(e.ID, false) {
+			out = append(out, " "+m.inlineField(titleW-2)+" "+
+				theme.Dimmed.Render(pad(loc, locW))+" "+theme.Faded.Render(field))
+			continue
+		}
+
 		if k == m.sel {
 			match := field
 			if snip != "" {
@@ -1140,11 +1152,19 @@ func (m Model) detailLines(e *vault.Entry, w int) []string {
 		pwVal, pwSt, pwKey = e.Password.Reveal(), theme.Hi, "ctrl+r"
 	}
 
-	b := []string{
-		"",
+	b := []string{""}
+	// Renaming from in here needs the field in here. r used to put the model in
+	// rename mode with nothing on screen to show for it: the pane rendered
+	// unchanged, so every keystroke went into a field the reader could not see
+	// and ↵ staged whatever had been typed blind.
+	if m.renamingRow(e.ID, false) {
+		lead := "  " + theme.Acc.Render(i.entry) + "  " + theme.Dimmed.Render(pad("name", 9))
+		b = append(b, spread(lead+m.inlineField(max(8, rowW-dw(lead)-1)), "", rowW))
+	}
+	b = append(b,
 		row(i.user, "user", user, userSt, userKey),
 		row(i.keyfile, "password", pwVal, pwSt, pwKey),
-	}
+	)
 	if e.TOTP != "" {
 		if k, err := otp.Parse(e.TOTP); err == nil {
 			now := time.Now()
