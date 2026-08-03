@@ -92,6 +92,43 @@ func TestComposition(t *testing.T) {
 			why:   "a history record for an entry about to cease existing is pointless",
 		},
 		{
+			name: "rename there and back is not a rename",
+			set: stage(
+				Op{Kind: RenameGroup, Target: "g1", Name: "interim", Was: "original"},
+				Op{Kind: RenameGroup, Target: "g1", Name: "original", Was: "interim"},
+			),
+			want: nil,
+			why:  "the file already has that name; staging it says the session is dirty when it is not",
+		},
+		{
+			name: "rename twice keeps the name the file has as the before",
+			set: stage(
+				Op{Kind: RenameGroup, Target: "g1", Name: "interim", Was: "original"},
+				Op{Kind: RenameGroup, Target: "g1", Name: "final", Was: "interim"},
+			),
+			want:  []Kind{RenameGroup},
+			state: Modified,
+			why:   "the review compares against the file, not against a name nobody ever saw",
+		},
+		{
+			name: "move there and back is not a move",
+			set: stage(
+				Op{Kind: MoveEntry, Target: "e1", Parent: "g2", Was: "g1"},
+				Op{Kind: MoveEntry, Target: "e1", Parent: "g1", Was: "g2"},
+			),
+			want: nil,
+			why:  "it ends in the folder the file has it in",
+		},
+		{
+			name: "an edit that restores every value is not an edit",
+			set: stage(
+				Op{Kind: EditEntry, Target: "e1", Before: draft("was"), After: draft("changed")},
+				Op{Kind: EditEntry, Target: "e1", Before: draft("changed"), After: draft("was")},
+			),
+			want: nil,
+			why:  "the diff has no lines, so a row saying something is staged would contradict it",
+		},
+		{
 			name: "edit then bin keeps both",
 			set: stage(
 				Op{Kind: EditEntry, Target: "e1", Before: draft("a"), After: draft("b")},

@@ -50,6 +50,22 @@ type DraftField struct {
 	Protected bool
 }
 
+// clone is a Draft the caller can no longer reach.
+//
+// The struct copies by value, but Fields is a slice header: without copying it
+// too, two drafts that look independent share one backing array, and appending
+// to one can overwrite the other's fields in place.
+func (d *Draft) clone() *Draft {
+	if d == nil {
+		return nil
+	}
+	out := *d
+	if d.Fields != nil {
+		out.Fields = append([]DraftField(nil), d.Fields...)
+	}
+	return &out
+}
+
 // field returns the field with this key, if the draft has one.
 func (d Draft) field(key string) (DraftField, bool) {
 	for _, f := range d.Fields {

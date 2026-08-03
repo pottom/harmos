@@ -100,10 +100,11 @@ func changeOf(states map[string]State, op Op) Change {
 	case EditEntry:
 		c.Lines = diffDrafts(op.Before, op.After)
 	case MoveEntry, MoveGroup:
+		// Where from and where to are both folder IDs, and resolving one to a
+		// path is a question about the vault this package deliberately cannot
+		// answer. The interface fills it in; this is the fallback for a caller
+		// that has no vault to ask.
 		c.Detail = "moved"
-		if op.Was != "" {
-			c.Detail = "moved out of " + op.Was
-		}
 	case DeleteEntry, DeleteGroup:
 		if op.Perm {
 			c.Detail = "deleted permanently"

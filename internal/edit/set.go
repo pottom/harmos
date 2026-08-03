@@ -38,6 +38,13 @@ func (s Set) Add(op Op) (Set, int) {
 	if op.At.IsZero() {
 		op.At = time.Now()
 	}
+	// The set owns what it is holding. Before and After are pointers into the
+	// caller's world, and a caller that keeps editing the value it passed —
+	// carrying one draft forward through a sequence of edits, say — would be
+	// rewriting history that has already been staged. The reduction compares the
+	// two to spot a change that came back to where it started, so an aliased
+	// Before would make every such edit look like a no-op.
+	op.Before, op.After = op.Before.clone(), op.After.clone()
 	s.ops = append(append([]Op(nil), s.ops...), op)
 	return s, op.Seq
 }
@@ -154,6 +161,19 @@ func cancelled(ops, effective []Op) map[string]bool {
 	return gone
 }
 
+// samePlace reports whether an edit ends where it started — every field back to
+// the value the file has.
+//
+// It asks the same comparison the review does, deliberately: "the Changes tab
+// shows no lines for this" and "there is nothing staged for this" have to be one
+// answer, or a session sits there looking dirty with an empty diff under it.
+func samePlace(before, after *Draft) bool {
+	if before == nil || after == nil {
+		return false // a creation or a deletion is never a no-op
+	}
+	return len(diffDrafts(before, after)) == 0
+}
+
 // reduceTarget collapses one target's operations. The input is in staging order.
 func reduceTarget(ops []Op) []Op {
 	var (
@@ -239,13 +259,18 @@ func reduceTarget(ops []Op) []Op {
 		// An edit survives unless the item is about to cease existing: writing a
 		// history record for something being permanently deleted is pointless.
 		permanentlyGone := deleted != nil && deleted.Perm
-		if edited != nil && !permanentlyGone {
+		if edited != nil && !permanentlyGone && !samePlace(edited.Before, edited.After) {
 			out = append(out, *edited)
 		}
-		if renamed != nil && deleted == nil {
+		// A rename back to the name the file already has is not a rename. The
+		// staging guard cannot catch this: it compares against the name on the
+		// row, which is the interim one. Only the reduction knows where the
+		// round trip started.
+		if renamed != nil && deleted == nil && renamed.Was != renamed.Name {
 			out = append(out, *renamed)
 		}
-		if moved != nil && deleted == nil {
+		// The same for a move that ends where it began.
+		if moved != nil && deleted == nil && moved.Was != moved.Parent {
 			out = append(out, *moved)
 		}
 		if deleted != nil {
