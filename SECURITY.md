@@ -30,8 +30,17 @@ library default, while keeping unlock well under a second.
 
 - **Memory zeroing is best-effort only.** Go's garbage collector may move
   objects and its strings are immutable, so secrets cannot be reliably wiped
-  from memory. Where practical, secrets are held in `[]byte` and zeroed on a
-  best-effort basis. No stronger claim is made.
+  from memory. Secrets are held in `[]byte` behind a type that redacts itself
+  through every formatting path, and zeroed where ownership of the buffer is
+  unambiguous — a downloaded Pleasant package, for instance, is zeroed as soon
+  as it has been mapped. The master password is **not** zeroed: it is kept for
+  the length of the session, because a sync or a re-unlock needs it. No stronger
+  claim is made.
+- **A Pleasant offline package never touches a filesystem.** It is every
+  credential on the server in the clear; it is downloaded into memory, mapped,
+  and zeroed. It used to be fetched to a `0600` temp file beside the cache and
+  deleted afterwards, which left it on disk for the length of the mapping and
+  the write, and left it there entirely if the process was killed.
 - **Never writes to a Pleasant server**, and never creates a `.lock` file
   beside any kdbx.
 - **Local kdbx files are read-only by default.** Writing requires an explicit

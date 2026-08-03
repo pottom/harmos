@@ -2,6 +2,7 @@ package pleasant
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -62,22 +63,30 @@ func Sync(ctx context.Context, c *Client, sourceURL string, opt SyncOptions) (*R
 		return nil, err
 	}
 
-	// Fetch to a temp zip in the cache dir (same filesystem, for atomic rename).
+	// The package is every password on the server, in the clear. It used to be
+	// fetched to a temp file beside the cache — 0600, removed on the way out,
+	// but on disk for the whole of the mapping and the write, which on a real
+	// vault is over a minute, and left behind entirely if the process is killed.
+	// A backup or a snapshot taken in that window keeps it forever.
+	//
+	// So it never touches a filesystem. The cost is holding it in memory, which
+	// for the vault this was measured against is tens of megabytes for the
+	// length of one explicit, user-initiated sync.
 	phase("downloading offline package")
-	zipPath, err := fetchPackage(ctx, c, dir, opt.Comment, report.Bytes)
+	pkg, err := fetchPackage(ctx, c, opt.Comment, report.Bytes)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = os.Remove(zipPath) }()
+	defer pkg.Wipe()
 
-	zr, err := zip.OpenReader(zipPath)
+	raw := pkg.Bytes()
+	zr, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
 	if err != nil {
 		return nil, fmt.Errorf("open package: %w", err)
 	}
-	defer func() { _ = zr.Close() }()
 
 	phase("building cache")
-	res, err := Map(&zr.Reader, Meta{SourceURL: sourceURL, FetchedAt: opt.Now})
+	res, err := Map(zr, Meta{SourceURL: sourceURL, FetchedAt: opt.Now})
 	if err != nil {
 		return nil, err
 	}
@@ -92,24 +101,16 @@ func Sync(ctx context.Context, c *Client, sourceURL string, opt SyncOptions) (*R
 	return res, nil
 }
 
-func fetchPackage(ctx context.Context, c *Client, dir, comment string, onBytes func(done, total int64)) (string, error) {
-	tmp, err := os.CreateTemp(dir, ".harmos-pkg-*.zip")
-	if err != nil {
-		return "", err
+// fetchPackage downloads the offline package into memory.
+//
+// It comes back as a Secret because that is what it is: every credential on the
+// server, in the clear. The wrapper buys the redaction on any accidental
+// formatting, and Wipe, which zeroes this exact buffer — best-effort, like
+// everywhere else here, since Go may have moved it while it grew.
+func fetchPackage(ctx context.Context, c *Client, comment string, onBytes func(done, total int64)) (secret.Secret, error) {
+	var buf bytes.Buffer
+	if _, err := c.OfflinePackage(ctx, comment, &buf, onBytes); err != nil {
+		return secret.Secret{}, err
 	}
-	path := tmp.Name()
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(path)
-		return "", err
-	}
-	_, err = c.OfflinePackage(ctx, comment, tmp, onBytes)
-	if cerr := tmp.Close(); cerr != nil && err == nil {
-		err = cerr
-	}
-	if err != nil {
-		_ = os.Remove(path)
-		return "", err
-	}
-	return path, nil
+	return secret.FromBytes(buf.Bytes()), nil
 }

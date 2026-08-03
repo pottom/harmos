@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
@@ -52,26 +53,52 @@ func pad(s string, w int) string {
 	return s
 }
 
+// folded is a string lowercased for searching, alongside the map back to where
+// each of its bytes came from.
+//
+// Lowercasing can change a string's byte length: "İ" is two bytes and lowercases
+// to a one-byte "i", "K" (U+212A KELVIN SIGN) is three and becomes one. An offset
+// found in the lowered string is therefore not an offset in the original, and
+// slicing the original with one lands inside a rune — which puts a style code
+// between the two halves of a character and prints garbage.
+//
+// at has one entry per byte of lower, holding the original offset of the rune
+// that byte belongs to, plus a final entry for the end. A match at [i, j) in the
+// lowered string is at [at[i], at[j]) in the original, always on rune boundaries.
+type folded struct {
+	lower string
+	at    []int
+}
+
+func fold(s string) folded {
+	var b strings.Builder
+	b.Grow(len(s))
+	at := make([]int, 0, len(s)+1)
+	for i, r := range s {
+		l := unicode.ToLower(r)
+		for range utf8.RuneLen(l) {
+			at = append(at, i)
+		}
+		b.WriteRune(l)
+	}
+	return folded{lower: b.String(), at: append(at, len(s))}
+}
+
+// orig translates an offset in the lowered string back to the original.
+func (f folded) orig(i int) int {
+	if i >= len(f.at) {
+		return f.at[len(f.at)-1]
+	}
+	return f.at[i]
+}
+
 // highlight renders s in the base style with every case-insensitive occurrence of
 // q emphasized — grep --color for the search query.
 func highlight(s, q string, base lipgloss.Style) string {
 	if q == "" {
 		return base.Render(s)
 	}
-	lq := strings.ToLower(q)
-	var b strings.Builder
-	rest := s
-	for {
-		i := strings.Index(strings.ToLower(rest), lq)
-		if i < 0 {
-			b.WriteString(base.Render(rest))
-			return b.String()
-		}
-		j := i + len(q)
-		b.WriteString(base.Render(rest[:i]))
-		b.WriteString(theme.Hi.Render(rest[i:j]))
-		rest = rest[j:]
-	}
+	return highlightTerms(s, []string{strings.ToLower(q)}, base)
 }
 
 // highlightTerms renders s in base with every case-insensitive occurrence of any
@@ -81,7 +108,7 @@ func highlightTerms(s string, terms []string, base lipgloss.Style) string {
 	if len(terms) == 0 {
 		return base.Render(s)
 	}
-	ls := strings.ToLower(s)
+	f := fold(s)
 	type span struct{ a, b int }
 	var spans []span
 	for _, t := range terms {
@@ -89,12 +116,13 @@ func highlightTerms(s string, terms []string, base lipgloss.Style) string {
 			continue
 		}
 		for from := 0; ; {
-			i := strings.Index(ls[from:], t)
+			i := strings.Index(f.lower[from:], t)
 			if i < 0 {
 				break
 			}
 			a := from + i
-			spans = append(spans, span{a, a + len(t)})
+			// Back to the original's coordinates before anything slices with it.
+			spans = append(spans, span{f.orig(a), f.orig(a + len(t))})
 			from = a + len(t)
 		}
 	}
@@ -673,6 +701,29 @@ func (m Model) searchLine() string {
 	return spread(left, right, m.w)
 }
 
+// treeMinName is how much room a folder's name keeps whatever its depth.
+//
+// Enough to tell two folders apart, which is the whole job of the row. Nine
+// levels deep in a narrow pane the indent used to take the lot, leaving rows
+// rendered as a lone ellipsis — present, countable, and impossible to act on.
+const treeMinName = 10
+
+// treeIndent is the depth's two-space ladder, given up when the name would have
+// nowhere left to go.
+//
+// The name identifies the row; the indent decorates it, and between the two
+// there is no contest. Past the point where the ladder would crowd the name out
+// it stops growing and takes a "‹" instead, which says the depth drawn is not
+// the depth — the panel's own title carries the real path.
+func treeIndent(depth, w int) string {
+	full := depth * 2
+	room := w - treeMinName - 2 // the icon and the space after it
+	if room < 2 || full <= room {
+		return strings.Repeat("  ", depth)
+	}
+	return "‹" + strings.Repeat(" ", room-1)
+}
+
 func (m Model) treeLines(w, rows int) []string {
 	flat := m.visible()
 	i := ic()
@@ -685,7 +736,7 @@ func (m Model) treeLines(w, rows int) []string {
 	var out []string
 	for k := start; k < end; k++ {
 		n := flat[k].node
-		indent := strings.Repeat("  ", flat[k].depth)
+		indent := treeIndent(flat[k].depth, w)
 		icon := i.folder
 		if len(n.children) > 0 && n.expanded {
 			icon = i.folderOpen
@@ -1007,14 +1058,18 @@ func snippet(val string, terms []string, width int) string {
 	if width < 6 {
 		width = 6
 	}
-	lv := strings.ToLower(val)
+	f := fold(val)
 	pos := -1
 	for _, t := range terms {
 		if t == "" {
 			continue
 		}
-		if idx := strings.Index(lv, t); idx >= 0 && (pos < 0 || idx < pos) {
-			pos = idx
+		// In the original's coordinates: pos slices val below, and lowercasing
+		// can change how many bytes a rune takes.
+		if idx := strings.Index(f.lower, t); idx >= 0 {
+			if o := f.orig(idx); pos < 0 || o < pos {
+				pos = o
+			}
 		}
 	}
 	if pos <= 0 { // no hit (a name-only match) or hit at the start — show from the top
