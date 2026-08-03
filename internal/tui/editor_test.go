@@ -37,13 +37,25 @@ func editModel(t *testing.T) Model {
 	return m
 }
 
-// Onto the entry, then into the editor.
-func intoEditor(t *testing.T, m Model) Model {
+// intoTable opens the tree — it arrives closed — and lands in the entry table of
+// the first folder that has entries, which is where a reader gets to by pressing
+// → a couple of times.
+func intoTable(t *testing.T, m Model) Model {
 	t.Helper()
-	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // tree → entry table
+	m = m.expandAll(true)
+	m.tsel = firstFolderWithEntries(m.roots)
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab})
 	if m.selEntry() == nil {
 		t.Fatal("expected an entry under the cursor")
 	}
+	return m
+}
+
+// Onto the entry, then into the editor. The tree arrives closed, so this opens
+// it first — as a reader would.
+func intoEditor(t *testing.T, m Model) Model {
+	t.Helper()
+	m = intoTable(t, m)
 	m = up(m, key2("e"))
 	if m.edit != editEntry {
 		t.Fatalf("e should open the editor, got mode %d", m.edit)
@@ -135,7 +147,7 @@ func TestEditorShowsItIsAMode(t *testing.T) {
 // to bin" delete is permanent, and saying otherwise is a lie.
 func TestDeleteStagesWithoutAskingAndSaysWhichKind(t *testing.T) {
 	m := editModel(t)
-	m = up(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = intoTable(t, m)
 	m = up(m, key2("d"))
 	if m.edit != editNone {
 		t.Fatalf("staging a delete must not open a modal, got mode %d", m.edit)
@@ -153,7 +165,7 @@ func TestDeleteStagesWithoutAskingAndSaysWhichKind(t *testing.T) {
 	// Now with the bin switched off.
 	m2 := editModel(t)
 	m2.handles["own"].DisableRecycleBinForTest()
-	m2 = up(m2, tea.KeyMsg{Type: tea.KeyTab})
+	m2 = intoTable(t, m2)
 	m2 = up(m2, key2("d"))
 	if !strings.Contains(m2.flash, "permanently") {
 		t.Errorf("with no bin, a plain delete is permanent and must say so, got %q", m2.flash)
@@ -167,7 +179,7 @@ func TestDeleteStagesWithoutAskingAndSaysWhichKind(t *testing.T) {
 // the set contains something the vault cannot get back.
 func TestSaveConfirmLeadsWithCancelOnPermanentDelete(t *testing.T) {
 	m := editModel(t)
-	m = up(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = intoTable(t, m)
 	m = up(m, key2("d")) // to the bin: recoverable
 	m = up(m, tabKey(tabChanges))
 	m = up(m, tea.KeyMsg{Type: tea.KeyCtrlS})
@@ -179,7 +191,7 @@ func TestSaveConfirmLeadsWithCancelOnPermanentDelete(t *testing.T) {
 	}
 
 	m2 := editModel(t)
-	m2 = up(m2, tea.KeyMsg{Type: tea.KeyTab})
+	m2 = intoTable(t, m2)
 	m2 = up(m2, key2("D")) // permanent
 	m2 = up(m2, tabKey(tabChanges))
 	m2 = up(m2, tea.KeyMsg{Type: tea.KeyCtrlS})
@@ -203,7 +215,7 @@ func TestEditKeysNeedAnUnlockedSource(t *testing.T) {
 	m := editModel(t)
 	m.writeOK = map[string]bool{} // locked again
 
-	m = up(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = intoTable(t, m)
 	m = up(m, key2("e"))
 	if m.edit != editNone {
 		t.Error("a locked source must not open the editor")
@@ -263,6 +275,7 @@ func readFile(p string) ([]byte, error) { return os.ReadFile(p) }
 func TestDeleteTargetsWhatTheCursorIsOn(t *testing.T) {
 	m := editModel(t)
 
+	m = m.expandAll(true)
 	var folder *node
 	for i, tl := range m.visible() {
 		if tl.node.id != "" {
@@ -286,7 +299,7 @@ func TestDeleteTargetsWhatTheCursorIsOn(t *testing.T) {
 	}
 
 	// In the table, the same key means the entry.
-	m2 := up(editModel(t), tea.KeyMsg{Type: tea.KeyTab})
+	m2 := intoTable(t, editModel(t))
 	entry := m2.selEntry()
 	m2 = up(m2, key2("d"))
 	ops2 := m2.chg.Effective()
@@ -300,6 +313,7 @@ func TestDeleteTargetsWhatTheCursorIsOn(t *testing.T) {
 // icon following, cursor or no cursor.
 func TestDeletedFolderStaysAndIsMarked(t *testing.T) {
 	m := editModel(t)
+	m = m.expandAll(true)
 	var folder *node
 	for i, tl := range m.visible() {
 		if tl.node.id != "" {
@@ -368,7 +382,7 @@ func TestDeletedFolderStaysAndIsMarked(t *testing.T) {
 
 // The delete key is a toggle: the same key on the same row takes it back.
 func TestDeleteKeyToggles(t *testing.T) {
-	m := up(editModel(t), tea.KeyMsg{Type: tea.KeyTab})
+	m := intoTable(t, editModel(t))
 
 	m = up(m, key2("d"))
 	if m.dirtyCount() != 1 {
@@ -418,6 +432,7 @@ func TestDeleteKeyToggles(t *testing.T) {
 func TestFolderDeletionCarriesItsContents(t *testing.T) {
 	m := editModel(t)
 
+	m = m.expandAll(true)
 	var folder *node
 	for i, tl := range m.visible() {
 		if tl.node.id != "" && len(tl.node.entries) > 0 {
@@ -435,9 +450,8 @@ func TestFolderDeletionCarriesItsContents(t *testing.T) {
 	}
 
 	// The entries inside it read as going, without a marker of their own.
-	doomed := m.doomedPrefixes()
 	for _, e := range folder.entries {
-		if !atOrUnderDoomedFolder(doomed, e.Source, e.Path) {
+		if _, going := m.inDoomedFolder(e.ID); !going {
 			t.Errorf("%q is inside the deleted folder but does not know it", e.Title)
 		}
 		if m.chg.StateOf(e.ID) != 0 {
@@ -562,7 +576,7 @@ func TestDeleteAdvancesTheCursor(t *testing.T) {
 	m.handles = map[string]*vault.Handle{"own": h}
 	m.writeOK = map[string]bool{"own": true}
 
-	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the entry table
+	m = intoTable(t, m)
 	if f := m.currentFolder(); f == nil || len(f.entries) < 2 {
 		t.Fatalf("expected two entries in the folder, got %v", f)
 	}
@@ -581,11 +595,11 @@ func TestDeleteAdvancesTheCursor(t *testing.T) {
 		t.Errorf("two presses should stage two deletions, got %d", m.dirtyCount())
 	}
 
-	// Un-staging leaves the cursor where it is: it is a correction, not a run.
+	// Un-staging advances too: the key moves you on whatever it did.
 	m.esel = 0
 	m = up(m, key2("d"))
-	if m.esel != 0 {
-		t.Errorf("un-staging should not move the cursor, esel = %d", m.esel)
+	if m.esel != 1 {
+		t.Errorf("un-staging should advance as well, esel = %d", m.esel)
 	}
 	if !strings.Contains(m.flash, "no longer staged") {
 		t.Errorf("flash = %q", m.flash)

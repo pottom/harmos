@@ -16,6 +16,7 @@ type Change struct {
 	Parent string // the folder it lives in, so a reviewer can be told where
 	Title  string // what to call it in a list
 	Detail string // a one-line summary, e.g. "Infra → Archive"
+	Was    string // the name or place it had before; empty when there is none
 	Lines  []Line // field-level diff, empty for a move or a delete
 }
 
@@ -90,6 +91,7 @@ func changeOf(states map[string]State, op Op) Change {
 		Target: op.Target,
 		Parent: parentOf(op),
 		Title:  titleOf(op),
+		Was:    op.Was,
 	}
 
 	switch op.Kind {
@@ -99,6 +101,9 @@ func changeOf(states map[string]State, op Op) Change {
 		c.Lines = diffDrafts(op.Before, op.After)
 	case MoveEntry, MoveGroup:
 		c.Detail = "moved"
+		if op.Was != "" {
+			c.Detail = "moved out of " + op.Was
+		}
 	case DeleteEntry, DeleteGroup:
 		if op.Perm {
 			c.Detail = "deleted permanently"
@@ -108,7 +113,13 @@ func changeOf(states map[string]State, op Op) Change {
 	case CreateGroup:
 		c.Detail = "new folder"
 	case RenameGroup:
+		// The row already carries the new name, so "renamed to X" repeated it and
+		// left out the only thing the reader could not see: what it was called
+		// before. Both, the way a diff writes a rename.
 		c.Detail = "renamed to " + op.Name
+		if op.Was != "" {
+			c.Detail = op.Was + " → " + op.Name
+		}
 	}
 	return c
 }

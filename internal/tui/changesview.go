@@ -9,6 +9,7 @@ import (
 
 	"github.com/pottom/harmos/internal/edit"
 	"github.com/pottom/harmos/internal/theme"
+	"github.com/pottom/harmos/internal/vault"
 )
 
 // The Changes tab's body.
@@ -164,6 +165,14 @@ func (m Model) pathOfChange(c edit.Change) string {
 	}
 	if f, ok := m.folderByID(c.Parent); ok {
 		return f.Path
+	}
+	return ""
+}
+
+// readablePath is a folder's path as a reader should see it, by ID.
+func (m Model) readablePath(id string) string {
+	if f, ok := m.folderByID(id); ok {
+		return readable(f.Path)
 	}
 	return ""
 }
@@ -402,23 +411,45 @@ func (m Model) nameOfTarget(id string, isFolder bool) string {
 	return ""
 }
 
-// detailOf is the sentence beside a change. A move says where to: "moved" alone
-// is the half of it the reader already knew.
+// detailOf is the sentence beside a change. A move says where from and where to:
+// "moved" alone is the half of it the reader already knew, and either half on
+// its own leaves them to work out the other.
 func (m Model) detailOf(c edit.Change) string {
 	if c.Kind == edit.MoveEntry || c.Kind == edit.MoveGroup {
 		if f, ok := m.folderByID(c.Parent); ok {
-			return "moved to " + strings.ReplaceAll(f.Path, "/", " › ")
+			to := readable(f.Path)
+			if from := readable(c.Was); from != "" {
+				return from + " → " + to
+			}
+			return "moved to " + to
 		}
 	}
 	return c.Detail
 }
 
+// readable is a stored path as a reader should see it. The separator is a
+// chevron everywhere a path is shown to somebody, so a folder whose own name
+// contains a slash cannot pass for two folders.
+func readable(path string) string { return strings.ReplaceAll(path, "/", " › ") }
+
 // changeHeading is one staged item: its marker, its name, and what will happen.
 func changeHeading(c edit.Change, folded bool, extra string, w int) []rowSeg {
 	style, marker := changeStyle(c.State)
 
+	was := renamedFrom(c)
+
 	detail := c.Detail
-	if detail == "" && len(c.Lines) > 0 {
+	switch {
+	case was != "":
+		// The name half is about to say old → new. Saying it again on the right
+		// is the row answering one question twice.
+		detail = ""
+	case len(c.Lines) == 1:
+		// One changed field fits on the line, so say which and to what. "1
+		// field" told the reader something changed and left the only part they
+		// could not already see for them to go and unfold.
+		detail = oneFieldSummary(c.Lines[0], max(8, w/2))
+	case len(c.Lines) > 0:
 		detail = plural(len(c.Lines), "field", "fields")
 	}
 	if folded {
@@ -436,15 +467,95 @@ func changeHeading(c edit.Change, folded bool, extra string, w int) []rowSeg {
 	// The name wears the state, because the name is the thing being deleted. The
 	// summary never does: it describes what will happen, and dressing it as
 	// deleted says it will not.
-	name := marker + " " + typeIcon(c.Kind) + " " + c.Title
+	// The marker keeps the state's colour along with the name: it is the signal
+	// a reader without colour has, and it is no use to them in the same grey as
+	// the indentation.
 	lead := "     "
-	gap := max(1, w-dw(lead)-dw(name)-dw(detail))
-	return []rowSeg{
-		{lead, theme.Faded},
-		{trunc(name, max(1, w-dw(lead)-dw(detail)-1)), style},
-		{strings.Repeat(" ", gap), theme.Faded},
-		{detail, theme.Faded.Strikethrough(false)},
+	badge := marker + " " + typeIcon(c.Kind) + " "
+	right := detailSegs(detail)
+	room := max(6, w-dw(lead)-dw(badge)-dw(detail)-1) // what the name half has
+
+	var left []rowSeg
+	// A name change is written where the name is, not remarked on at the far
+	// edge. It used to sit in the right margin in the faintest colour the theme
+	// has, on top of the selection background — present, and unreadable. The one
+	// thing a rename has to say is old → new, so the row says it, in the place
+	// the eye already is. A folder's name and an entry's title are the same
+	// thing to a reader, so they read the same way.
+	if was != "" {
+		// The old name stays legible — it is half of what the reader is here to
+		// compare — and the new one takes the state's colour, so which is which
+		// needs no explaining.
+		from := trunc(was, max(3, room/2))
+		left = []rowSeg{
+			{from, theme.Dimmed},
+			{" → ", theme.Noted},
+			{trunc(c.Title, max(1, room-dw(from)-3)), style},
+		}
+	} else {
+		left = []rowSeg{{trunc(c.Title, room), style}}
 	}
+
+	out := []rowSeg{{lead, theme.Faded}, {badge, style}}
+	out = append(out, left...)
+	used := dw(lead) + dw(badge)
+	for _, s := range left {
+		used += dw(s.text)
+	}
+	out = append(out, rowSeg{strings.Repeat(" ", max(1, w-used-dw(detail))), theme.Faded})
+	return append(out, right...)
+}
+
+// renamedFrom is what this change used to be called, when that is the thing it
+// mostly is. A folder rename says so outright; an entry whose only changed field
+// is its Title is the same act by another name, and the reader should not have to
+// know which of the two they are looking at.
+func renamedFrom(c edit.Change) string {
+	if c.Kind == edit.RenameGroup {
+		return c.Was
+	}
+	if len(c.Lines) == 1 && c.Lines[0].Field == "Title" {
+		return c.Lines[0].Old
+	}
+	return ""
+}
+
+// detailSegs styles the sentence beside a change.
+//
+// Dimmed, not faded: this row can be under the cursor, and the faintest colour
+// in the palette on the selection background is text that is technically on
+// screen. What it changed *to* takes the amber, so the outcome is the part that
+// catches the eye.
+func detailSegs(detail string) []rowSeg {
+	base := theme.Dimmed.Strikethrough(false)
+	if before, after, found := strings.Cut(detail, " → "); found {
+		return []rowSeg{
+			{before, base},
+			{" → ", theme.Noted},
+			{after, theme.Noted},
+		}
+	}
+	return []rowSeg{{detail, base}}
+}
+
+// oneFieldSummary is a single changed field on one line: what it is, and what it
+// went from and to.
+//
+// The values are whatever the diff put in the Line, which means a protected one
+// arrives already masked — the summary can no more leak a password than the hunk
+// below it can.
+func oneFieldSummary(l edit.Line, w int) string {
+	half := max(3, (w-dw(l.Field)-5)/2)
+	old, next := trunc(l.Old, half), trunc(l.New, half)
+	switch {
+	case old == next && next != "":
+		return l.Field + " changed" // two identical masks say nothing
+	case old == "":
+		return l.Field + " + " + next
+	case next == "":
+		return l.Field + " − " + old
+	}
+	return l.Field + " " + old + " → " + next
 }
 
 // hunkLines renders one field's change in git's shape: the field named once,
@@ -638,128 +749,144 @@ func (m Model) contentW() int { return max(1, m.w-2) }
 // So the deletion is one operation and the whole subtree wears it. Only the
 // folder carries the marker, because only the folder is staged.
 
-// doomedPrefixes is, per source, the folder paths staged for deletion.
-func (m Model) doomedPrefixes() map[string][]string {
+// What is going, and what is going with it.
+//
+// All of this works on identities. It used to work on paths, and paths are not
+// identities: two folders can legitimately share one — a recycle bin routinely
+// holds two folders of the same name — and then a guard keyed on the path
+// refused to stage the second because it looked like it was inside the first.
+// That is the same mistake the tree itself used to make.
+
+// isFolderKind reports whether an operation is about a folder.
+func isFolderKind(k edit.Kind) bool {
+	return k == edit.CreateGroup || k == edit.DeleteGroup || k == edit.RenameGroup || k == edit.MoveGroup
+}
+
+// doomedFolders is the set of folder IDs staged for deletion.
+func (m Model) doomedFolders() map[string]bool {
 	if m.chg.Empty() {
 		return nil
 	}
-	out := map[string][]string{}
+	out := map[string]bool{}
 	for _, c := range m.chg.Diff() {
-		if c.State != edit.Deleted || !isFolderKind(c.Kind) {
-			continue
-		}
-		if f, ok := m.folderByID(c.Target); ok {
-			out[c.Source] = append(out[c.Source], f.Path)
+		if c.State == edit.Deleted && isFolderKind(c.Kind) {
+			out[c.Target] = true
 		}
 	}
 	return out
 }
 
-func isFolderKind(k edit.Kind) bool {
-	return k == edit.CreateGroup || k == edit.DeleteGroup || k == edit.RenameGroup || k == edit.MoveGroup
-}
-
-// underDoomedFolder reports whether a path in a source sits inside one of the
-// folders staged for deletion — the folder itself excluded, since it carries its
-// own state.
-func underDoomedFolder(doomed map[string][]string, source, path string) bool {
-	for _, p := range doomed[source] {
-		if strings.HasPrefix(path, p+"/") {
-			return true
-		}
-	}
-	return false
-}
-
-// atOrUnderDoomedFolder is the same question including the folder itself, which
-// is what an entry filed directly in it needs to ask.
-func atOrUnderDoomedFolder(doomed map[string][]string, source, path string) bool {
-	for _, p := range doomed[source] {
-		if path == p || strings.HasPrefix(path, p+"/") {
-			return true
-		}
-	}
-	return false
-}
-
-// inDoomedFolder reports whether an ID sits in a folder that is staged for
-// deletion, and names the folder.
+// folderParents maps a folder to the folder above it, for walking upward.
 //
-// The design has always said a change staged underneath an already-deleted
-// folder should be refused; nothing implemented it, and the results were quiet
-// and bad — an entry moved into a deleted folder was silently binned with it, a
-// new entry was created inside the recycle bin, and deleting something inside a
-// folder already staged for deletion produced a set that could not be applied
-// at all.
-func (m Model) inDoomedFolder(id string) (string, bool) {
-	doomed := m.doomedPrefixes()
-	if len(doomed) == 0 {
+// The link is the parent's identity. Where a caller has not supplied one — the
+// same case buildTree covers, a list that carries paths and nothing else — the
+// path is used to find it, which is right for data with no duplicates and no
+// worse than what such a caller can express.
+func (m Model) folderParents() map[string]string {
+	byPath := make(map[string]string, len(m.viewFolders))
+	for _, f := range m.viewFolders {
+		byPath[f.Source+"\x00"+f.Path] = f.ID
+	}
+	out := make(map[string]string, len(m.viewFolders))
+	for _, f := range m.viewFolders {
+		if f.ParentID != "" {
+			out[f.ID] = f.ParentID
+			continue
+		}
+		if up := parentPath(f.Path); up != "" {
+			out[f.ID] = byPath[f.Source+"\x00"+up]
+		}
+	}
+	return out
+}
+
+// ancestorDoomed walks up from a folder and reports the first one on the way
+// that is staged for deletion. The folder itself is not considered: it carries
+// its own state, and "already going with itself" is not a sentence.
+func (m Model) ancestorDoomed(folderID string) (string, bool) {
+	doomed := m.doomedFolders()
+	if len(doomed) == 0 || folderID == "" {
 		return "", false
 	}
-	source, path, ok := m.locate(id)
-	if !ok {
-		return "", false
-	}
-	for _, p := range doomed[source] {
-		if path == p || strings.HasPrefix(path, p+"/") {
-			if id == m.folderIDOfPath(source, p) {
-				return "", false // the folder itself, not something inside it
-			}
-			return p, true
+	parents := m.folderParents()
+	seen := map[string]bool{}
+	for id := parents[folderID]; id != "" && !seen[id]; id = parents[id] {
+		seen[id] = true
+		if doomed[id] {
+			return m.nameOfTarget(id, true), true
 		}
 	}
 	return "", false
 }
 
-// locate is where something lives: its source and the folder path holding it.
-func (m Model) locate(id string) (source, path string, ok bool) {
+// inDoomedFolder reports whether something sits inside a folder that is staged
+// for deletion, and names that folder.
+//
+// The design has always said a change staged underneath an already-deleted
+// folder should be refused; nothing implemented it, and the results were quiet
+// and bad — an entry moved into a deleted folder was silently binned with it, a
+// new entry was created inside the recycle bin, and deleting something inside a
+// folder already staged for deletion produced a set that could not be applied.
+func (m Model) inDoomedFolder(id string) (string, bool) {
+	if id == "" {
+		return "", false
+	}
+	// An entry hangs off its group; a folder hangs off its parent.
 	for _, e := range m.viewEntries {
 		if e.ID == id {
-			return e.Source, e.Path, true
+			if m.doomedFolders()[e.GroupID] {
+				return m.nameOfTarget(e.GroupID, true), true
+			}
+			return m.ancestorDoomed(e.GroupID)
 		}
 	}
-	for _, f := range m.viewFolders {
-		if f.ID == id {
-			return f.Source, f.Path, true
-		}
-	}
-	return "", "", false
+	return m.ancestorDoomed(id)
 }
 
-func (m Model) folderIDOfPath(source, path string) string {
+// descendantsOf is every folder and entry under a folder, by identity.
+func (m Model) descendantsOf(folderID string) (folders []vault.Folder, entries []vault.Entry) {
+	if folderID == "" {
+		return nil, nil
+	}
+	parents := m.folderParents()
+	under := func(id string) bool {
+		seen := map[string]bool{}
+		for p := parents[id]; p != "" && !seen[p]; p = parents[p] {
+			seen[p] = true
+			if p == folderID {
+				return true
+			}
+		}
+		return false
+	}
+	inside := map[string]bool{folderID: true}
+	paths := map[string]bool{} // for entries that carry no group of their own
 	for _, f := range m.viewFolders {
-		if f.Source == source && f.Path == path {
-			return f.ID
+		if f.ID == folderID || under(f.ID) {
+			if f.ID != folderID {
+				folders = append(folders, f)
+			}
+			inside[f.ID] = true
+			paths[f.Source+"\x00"+f.Path] = true
 		}
 	}
-	return ""
+	for _, e := range m.viewEntries {
+		switch {
+		case e.GroupID != "" && inside[e.GroupID]:
+		case e.GroupID == "" && paths[e.Source+"\x00"+e.Path]:
+		default:
+			continue
+		}
+		entries = append(entries, e)
+	}
+	return folders, entries
 }
 
 // goesWithIt counts what a folder deletion takes along, so the change can say so
 // rather than leaving the reader to work it out from the tree.
 func (m Model) goesWithIt(folderID string) (entries, folders int) {
-	f, ok := m.folderByID(folderID)
-	if !ok {
-		return 0, 0
-	}
-	source := ""
-	for _, mf := range m.viewFolders {
-		if mf.ID == folderID {
-			source = mf.Source
-			break
-		}
-	}
-	for _, e := range m.viewEntries {
-		if e.Source == source && (e.Path == f.Path || strings.HasPrefix(e.Path, f.Path+"/")) {
-			entries++
-		}
-	}
-	for _, mf := range m.viewFolders {
-		if mf.Source == source && strings.HasPrefix(mf.Path, f.Path+"/") {
-			folders++
-		}
-	}
-	return entries, folders
+	f, e := m.descendantsOf(folderID)
+	return len(e), len(f)
 }
 
 // alsoGoing is the phrase appended to a folder deletion's summary.
@@ -1146,26 +1273,22 @@ func lastSegment(path string) string {
 // that is now being deleted as a whole. They are the same decision, and staging
 // them twice made the write do two different things to one item.
 func (m Model) dropDeletionsUnder(folderID string) Model {
-	f, ok := m.folderByID(folderID)
-	if !ok {
+	folders, entries := m.descendantsOf(folderID)
+	inside := map[string]bool{}
+	for _, f := range folders {
+		inside[f.ID] = true
+	}
+	for _, e := range entries {
+		inside[e.ID] = true
+	}
+	if len(inside) == 0 {
 		return m
 	}
-	source := ""
-	for _, mf := range m.viewFolders {
-		if mf.ID == folderID {
-			source = mf.Source
-			break
-		}
-	}
 	for _, op := range m.chg.Effective() {
-		if op.Source != source || (op.Kind != edit.DeleteEntry && op.Kind != edit.DeleteGroup) {
+		if op.Kind != edit.DeleteEntry && op.Kind != edit.DeleteGroup {
 			continue
 		}
-		src, path, found := m.locate(op.Target)
-		if !found || src != source {
-			continue
-		}
-		if strings.HasPrefix(path, f.Path+"/") || (op.Kind == edit.DeleteEntry && path == f.Path) {
+		if inside[op.Target] {
 			m.chg, _ = m.chg.Revert(op.Seq)
 		}
 	}

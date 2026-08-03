@@ -322,11 +322,15 @@ func TestOnlyTheNameCarriesTheState(t *testing.T) {
 		Detail: "moved to the recycle bin"}
 	segs := changeHeading(c, false, "", 80)
 
-	var name, detail rowSeg
+	del, marker := changeStyle(edit.Deleted)
+
+	var name, badge, detail rowSeg
 	for _, s := range segs {
 		switch {
 		case strings.Contains(s.text, "PrismaCloud"):
 			name = s
+		case strings.Contains(s.text, strings.TrimSpace(marker)):
+			badge = s
 		case strings.Contains(s.text, "recycle bin"):
 			detail = s
 		}
@@ -334,12 +338,16 @@ func TestOnlyTheNameCarriesTheState(t *testing.T) {
 	if name.text == "" || detail.text == "" {
 		t.Fatalf("expected a name and a summary segment, got %+v", segs)
 	}
-	del, marker := changeStyle(edit.Deleted)
 	if name.style.GetForeground() != del.GetForeground() {
 		t.Error("the name of a deleted thing should carry the delete colour")
 	}
-	if !strings.Contains(name.text, strings.TrimSpace(marker)) {
-		t.Errorf("and its marker, which is the signal readers without colour get: %q", name.text)
+	// The marker is its own segment — a rename puts two names in the name half,
+	// so the badge cannot ride along with one of them — and it carries the same
+	// colour, because it is the signal readers without colour get.
+	if badge.text == "" {
+		t.Errorf("no marker segment: %+v", segs)
+	} else if badge.style.GetForeground() != del.GetForeground() {
+		t.Error("the marker should carry the state's colour too")
 	}
 	if detail.style.GetForeground() == del.GetForeground() {
 		t.Error("the summary is not the thing being deleted")
@@ -763,5 +771,71 @@ func TestImpactTallyStaysShort(t *testing.T) {
 		if !strings.Contains(tally, want) {
 			t.Errorf("the tally should carry %q: %q", want, tally)
 		}
+	}
+}
+
+// A review that says something changed, without saying from what to what, is
+// half a review. The user's words: "csak az látszik, hogy változott, de az hogy
+// miről mire, az nem."
+func TestReviewSaysFromWhatToWhat(t *testing.T) {
+	m, _ := walkModel(t)
+	m = m.expandAll(true)
+
+	// A folder rename, twice — the review has to name what the *file* has, not
+	// the interim name nobody ever saw.
+	m = onRow(t, m, "Net")
+	m = up(m, key2("r"))
+	m = typeStr(m, "work")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m = onRow(t, m, "Network")
+	m = up(m, key2("r"))
+	m = typeStr(m, "s")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	// A move, which has an origin as well as a destination.
+	m = onEntry(t, m, "db", "db-stage")
+	m = up(m, key2("m"))
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	// A single-field edit, whose one-line summary is all a folded row shows.
+	m = onEntry(t, m, "db", "db-prod")
+	m = up(m, key2("r"))
+	m = typeStr(m, "-new")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	out := ansi.Strip(m.switchTab(tabChanges).View())
+	for _, want := range []string{
+		"Net → Networks",        // the first name, not "Network"
+		"Infra › db → Infra",    // out of here, into there
+		"db-prod → db-prod-new", // a title change reads where the title is
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the review should say %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "renamed to") {
+		t.Errorf("a rename that knows its old name should not fall back to \"renamed to\":\n%s", out)
+	}
+}
+
+// The one-line summary is a diff line too, so a password's summary is as masked
+// as its hunk. It reads off the Line the diff produced, which is already masked —
+// this pins that it stays that way.
+func TestOneFieldSummaryMasksSecrets(t *testing.T) {
+	m := intoEditor(t, editModel(t))
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = typeStr(m, "hunter2")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	// Fold the hunk away, so the summary is the only thing on screen.
+	c := m.switchTab(tabChanges)
+	c = up(c, key2("z"))
+	out := ansi.Strip(c.View())
+	if strings.Contains(out, "hunter2") {
+		t.Errorf("the summary leaked a password:\n%s", out)
+	}
+	if !strings.Contains(out, "Password") {
+		t.Errorf("it should still name the field:\n%s", out)
 	}
 }

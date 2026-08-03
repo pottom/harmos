@@ -31,6 +31,10 @@ const (
 	editEntry
 	editFolder
 	editMove
+	// editInline is the odd one out: it takes the keyboard like the others, but
+	// it draws nothing of its own. The row being renamed is already on screen,
+	// so the vault stays visible behind — see inline.go.
+	editInline
 )
 
 // openEntryEditor loads an entry losslessly and stages nothing yet.
@@ -178,6 +182,8 @@ func (m Model) updateEditor(key string, msg tea.KeyMsg) (Model, tea.Cmd) {
 	switch m.edit {
 	case editMove:
 		return m.updateMovePicker(key), nil
+	case editInline:
+		return m.updateInlineRename(key, msg)
 	}
 
 	switch key {
@@ -217,11 +223,8 @@ func (m Model) stageEdit() Model {
 
 	op := edit.Op{Source: m.editSource, Target: m.editTarget, After: &after}
 	switch {
-	case m.edit == editFolder && m.editNew:
-		op.Kind, op.Parent, op.Name = edit.CreateGroup, m.editParent, m.editForm.Value("name")
-		op.After = nil
 	case m.edit == editFolder:
-		op.Kind, op.Name = edit.RenameGroup, m.editForm.Value("name")
+		op.Kind, op.Parent, op.Name = edit.CreateGroup, m.editParent, m.editForm.Value("name")
 		op.After = nil
 	case m.editNew:
 		op.Kind, op.Parent = edit.CreateEntry, m.editParent
@@ -244,8 +247,13 @@ func (m Model) stageEdit() Model {
 	return m
 }
 
-// openFolderEditor creates or renames a folder.
-func (m Model) openFolderEditor(parentID, existingID, name string) Model {
+// openNewFolder names a folder that does not exist yet.
+//
+// Renaming one no longer comes through here: a name is edited on its own row
+// (inline.go), and a modal that covers the tree to ask for one word was the
+// wrong shape for the question. This surface stays because a folder that does
+// not exist yet has no row to edit.
+func (m Model) openNewFolder(parentID string) Model {
 	h := m.handles[m.editSource]
 	if h == nil {
 		m.flash = "this source is not open for writing"
@@ -256,14 +264,11 @@ func (m Model) openFolderEditor(parentID, existingID, name string) Model {
 		return m
 	}
 	m.edit = editFolder
-	m.editNew = existingID == ""
+	m.editNew = true
 	m.editParent = parentID
-	m.editTarget = existingID
-	if m.editNew {
-		m.editTarget = h.MintGroupID()
-	}
+	m.editTarget = h.MintGroupID()
 	m.editForm = newForm("Stage", m.formWidth(),
-		textField("name", "Name", "folder name", name).
+		textField("name", "Name", "folder name", "").
 			withValidation(func(v string) error {
 				if v == "" {
 					return errors.New("a folder needs a name")
@@ -300,6 +305,7 @@ func (m Model) stageDelete(target, name string, isFolder, permanent bool) Model 
 		// It is already going, with the folder above it. Staging it separately
 		// produced a set that could not be applied — and on the paths where it
 		// could, the child was pulled out of the folder it was deleted with.
+		m, _ = m.advanceCursor()
 		m.flash = "already going with " + lastSegment(folder)
 		return m
 	}
@@ -313,8 +319,10 @@ func (m Model) stageDelete(target, name string, isFolder, permanent bool) Model 
 	if prev, ok := m.stagedDeletion(target); ok {
 		m.chg, _ = m.chg.Revert(prev.Seq)
 		if prev.Perm == perm {
-			m.flash = "no longer staged for deletion" + describes(name)
-			return m.restage()
+			m = m.restage()
+			m, moved := m.advanceCursor()
+			m.flash = "no longer staged for deletion" + describes(name) + backTo(moved, permanent)
+			return m
 		}
 	}
 
@@ -347,20 +355,29 @@ func (m Model) stageDelete(target, name string, isFolder, permanent bool) Model 
 			where = "permanently (this database has no recycle bin)"
 		}
 	}
-	// Move on. Marking a run of rows should cost one key per row, not a key and
-	// an arrow, which is how every file manager has done it for thirty years.
-	// Only after staging: un-staging is a correction, and moving away from a
-	// correction is the wrong direction.
+	// Move on. Working down a list should cost one key per row, not a key and an
+	// arrow, which is how every file manager has done it for thirty years.
+	//
+	// The key always advances, whatever it did — staged, un-staged, or refused
+	// because the thing is already going with its folder. It used to advance
+	// only on staging, on the argument that un-staging is a correction and you
+	// want to see what you corrected; but that is a rule with an exception you
+	// have to know, and working down a list it stalled on exactly the rows you
+	// had already dealt with.
 	m = m.restage()
-	moved := false
-	m, moved = m.advanceCursor()
+	m, moved := m.advanceCursor()
 
-	undo := toggleKey(permanent) + " again undoes it"
-	if moved {
-		undo = "↑ then " + toggleKey(permanent) + " undoes it"
-	}
-	m.flash = "staged: delete " + what + " " + where + " · " + undo
+	m.flash = "staged: delete " + what + " " + where + backTo(moved, permanent)
 	return m
+}
+
+// backTo names the key that undoes what just happened, from wherever the cursor
+// now is.
+func backTo(moved, permanent bool) string {
+	if moved {
+		return " · ↑ then " + toggleKey(permanent) + " undoes it"
+	}
+	return " · " + toggleKey(permanent) + " again undoes it"
 }
 
 // advanceCursor steps one row down whichever list has focus, and reports whether
@@ -524,9 +541,11 @@ func (m Model) updateMovePicker(key string) Model {
 		}
 		m.chg, _ = m.chg.Add(edit.Op{
 			Kind: kind, Source: m.editSource, Target: m.editTarget,
-			// The name travels with the operation: a review that cannot say
-			// what moved is not a review.
+			// The name and the origin travel with the operation: a review that
+			// cannot say what moved, or where from, is not a review. The
+			// destination the view reads back off the projection.
 			Name:   m.nameOfTarget(m.editTarget, m.editFolderTarget),
+			Was:    m.readablePath(m.homeOf(m.editTarget)),
 			Parent: m.moveDests[m.moveSel].id,
 		})
 		m.flash = "staged: move to " + m.moveDests[m.moveSel].path + " · nothing is written until you save"
@@ -563,10 +582,8 @@ func (m Model) editorView() string {
 
 	title := "Edit entry"
 	switch {
-	case m.edit == editFolder && m.editNew:
-		title = "New folder"
 	case m.edit == editFolder:
-		title = "Rename folder"
+		title = "New folder"
 	case m.editNew:
 		title = "New entry"
 	}
@@ -626,21 +643,32 @@ func (m Model) editKey(key string) (Model, bool) {
 
 	switch key {
 	case "e":
+		// e opens the editor, and only an entry has one. A folder is its name,
+		// which r edits on the row itself — so e here names the key rather than
+		// quietly doing r's job, which is how two keys end up meaning one thing
+		// and neither gets remembered.
 		if entry != nil {
 			return m.openEntryEditor(entry.ID), true
 		}
 		if folderID != "" {
-			return m.openFolderEditor("", folderID, folderName), true
+			m.flash = "a folder is its name — r renames it, here on its row"
+			return m, true
 		}
 	case "n":
 		// An empty folder ID is the source's own root group, which is a real
 		// folder in the file even though the tree shows the source there.
 		return m.openNewEntry(folderID), true
 	case "N":
-		return m.openFolderEditor(folderID, "", ""), true
+		return m.openNewFolder(folderID), true
 	case "r":
+		// In place, on the row itself. The name is one word and the tree is what
+		// tells you which one you are changing; a modal that covers the tree to
+		// ask for it is the wrong shape for the question.
+		if entry != nil {
+			return m.openInlineRename(entry.ID, entry.Title, false), true
+		}
 		if folderID != "" {
-			return m.openFolderEditor("", folderID, folderName), true
+			return m.openInlineRename(folderID, folderName, true), true
 		}
 	case "d", "D":
 		perm := key == "D"

@@ -173,6 +173,16 @@ func TestWalkEveryOperation(t *testing.T) {
 		t.Errorf("the message should name the destination plainly: %q", m.flash)
 	}
 
+	// An entry renamed on its own row, after it has been moved — the rename has
+	// to find the entry where the staged move put it, not where the file says.
+	m = onEntry(t, m, "Infra", "db-stage")
+	m = up(m, key2("r"))
+	if m.edit != editInline {
+		t.Fatalf("r on an entry should open the inline field, got mode %d (%q)", m.edit, m.flash)
+	}
+	m = typeStr(m, "-renamed")
+	m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+
 	m = onEntry(t, m, "Infra", "jump-host")
 	m = up(m, key2("d"))
 	m = onRow(t, m, "Network")
@@ -181,7 +191,7 @@ func TestWalkEveryOperation(t *testing.T) {
 	// The review names the same things the tree does.
 	c := m.switchTab(tabChanges)
 	review := ansi.Strip(c.View())
-	for _, want := range []string{"Fresh", "brand-new-v2", "db-prod-edited", "db-stage", "jump-host", "router"} {
+	for _, want := range []string{"Fresh", "brand-new-v2", "db-prod-edited", "db-stage-renamed", "jump-host", "router"} {
 		if !strings.Contains(review, want) {
 			t.Errorf("the review should mention %q:\n%s", want, review)
 		}
@@ -226,7 +236,7 @@ func TestWalkEveryOperation(t *testing.T) {
 	want := []string{
 		"Infra/Fresh/",             // the folder that was created
 		"Infra/Fresh/brand-new-v2", // the entry created inside it, edited again
-		"Infra/db-stage",           // moved out of db
+		"Infra/db-stage-renamed",   // moved out of db, then renamed on its row
 		"Infra/db/",
 		"Infra/db/db-prod-edited", // edited
 		"Infra/",
@@ -1308,6 +1318,7 @@ func TestStagingNeverMovesTheReader(t *testing.T) {
 		{"delete a folder", "db", []tea.KeyMsg{key2("d")}},
 		{"delete permanently", "db", []tea.KeyMsg{key2("D")}},
 		{"rename a folder", "db", []tea.KeyMsg{key2("r"), key2("X"), {Type: tea.KeyEnter}}},
+		{"rename an entry", "db", []tea.KeyMsg{key2("r"), key2("X"), {Type: tea.KeyEnter}}},
 		{"edit an entry", "db", []tea.KeyMsg{key2("e"), key2("X"), {Type: tea.KeyEnter}}},
 	}
 
@@ -1322,7 +1333,7 @@ func TestStagingNeverMovesTheReader(t *testing.T) {
 				}
 			}
 			m = onRow(t, m, st.on)
-			if strings.HasPrefix(st.name, "delete an entry") || strings.HasPrefix(st.name, "edit an entry") {
+			if strings.HasSuffix(st.name, "an entry") {
 				m.focus, m.esel = 1, 0 // acting on an entry, from the table
 			}
 
@@ -1354,4 +1365,143 @@ func treeShape(m Model) []string {
 		out = append(out, fmt.Sprintf("%d:%s/%s", tl.depth, tl.node.source, tl.node.id))
 	}
 	return out
+}
+
+// Two folders of the same name in one place are two folders, and marking one
+// must not speak for the other. A recycle bin routinely holds a pair: the guard
+// keyed on the path refused the second with "already going with Ibasa copy".
+func TestMarkingOneOfTwoSameNamedFolders(t *testing.T) {
+	path := t.TempDir() + "/pair.kdbx"
+	vaulttest.Write(t, path, vaulttest.RecycleBin(), vaulttest.Shape(func(db *gokeepasslib.Database) []gokeepasslib.Group {
+		mk := func(title string) gokeepasslib.Entry {
+			e := gokeepasslib.NewEntry()
+			e.Values = append(e.Values, vaulttest.Val("Title", title), vaulttest.PVal("Password", "pw"))
+			e.Times = gokeepasslib.NewTimeData()
+			return e
+		}
+		inner := gokeepasslib.NewGroup()
+		inner.Name = "amq"
+		inner.Entries = []gokeepasslib.Entry{mk("deep")}
+
+		first := gokeepasslib.NewGroup()
+		first.Name = "copy"
+		first.Entries = []gokeepasslib.Entry{mk("in-first")}
+		second := gokeepasslib.NewGroup()
+		second.Name = "copy"
+		second.Groups = []gokeepasslib.Group{inner}
+		second.Entries = []gokeepasslib.Entry{mk("in-second")}
+
+		holder := gokeepasslib.NewGroup()
+		holder.Name = "Holder"
+		holder.Groups = []gokeepasslib.Group{first, second}
+		root := gokeepasslib.NewGroup()
+		root.Name = "Root"
+		root.Groups = []gokeepasslib.Group{holder}
+		return []gokeepasslib.Group{root}
+	}))
+
+	h, err := vault.OpenHandle(path, "own", vault.Credentials{Password: secret.New("pw")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := h.Snapshot()
+	m := up(New(v.Entries, v.Folders, "", 30*time.Second), tea.WindowSizeMsg{Width: 110, Height: 34})
+	m.handles = map[string]*vault.Handle{"own": h}
+	m.writeOK = map[string]bool{"own": true}
+	m = m.expandAll(true)
+
+	var ids []string
+	for _, tl := range m.visible() {
+		if tl.node.name == "copy" {
+			ids = append(ids, tl.node.id)
+		}
+	}
+	if len(ids) != 2 {
+		t.Fatalf("expected two folders named copy, got %d", len(ids))
+	}
+
+	mark := func(m Model, id string) Model {
+		t.Helper()
+		for i, tl := range m.visible() {
+			if tl.node.id == id {
+				m.tsel, m.focus = i, 0
+			}
+		}
+		return up(m, key2("d"))
+	}
+
+	m = mark(m, ids[0])
+	if m.dirtyCount() != 1 {
+		t.Fatalf("the first should stage: %d (%q)", m.dirtyCount(), m.flash)
+	}
+	m = mark(m, ids[1])
+	if m.dirtyCount() != 2 {
+		t.Errorf("the second is a different folder and must stage too: %d staged (%q)",
+			m.dirtyCount(), m.flash)
+	}
+
+	// And what is genuinely inside one of them is still refused.
+	var deep string
+	for _, e := range m.viewEntries {
+		if e.Title == "deep" {
+			deep = e.ID
+		}
+	}
+	before := m.dirtyCount()
+	m = m.revealTarget(deep, false)
+	m = up(m, key2("d"))
+	if m.dirtyCount() != before {
+		t.Errorf("an entry inside a folder already going should not stage again (%q)", m.flash)
+	}
+}
+
+// Working down a list costs one key per row, whatever each row turns out to
+// need — including rows that are already going with a folder above them, which
+// used to stall the run.
+func TestTheDeleteKeyAlwaysMovesOn(t *testing.T) {
+	m, _ := walkModel(t)
+	m = onRow(t, m, "db")
+	m.focus, m.esel = 1, 0
+	f := m.currentFolder()
+	if f == nil || len(f.entries) < 2 {
+		t.Fatal("this test needs two entries in one folder")
+	}
+
+	// Advance while there is somewhere to go; at the end of the list it stays,
+	// which is the only place it should.
+	at := m.esel
+	for range len(f.entries) {
+		m = up(m, key2("d"))
+		want := min(at+1, len(f.entries)-1)
+		if m.esel != want {
+			t.Fatalf("staging from row %d should land on %d, landed on %d", at, want, m.esel)
+		}
+		at = m.esel
+	}
+
+	// Back to the top and press again: it un-stages, and still moves on.
+	m.esel = 0
+	m = up(m, key2("d"))
+	if m.esel != 1 {
+		t.Errorf("un-staging should advance too, esel = %d", m.esel)
+	}
+
+	// And a row that is already going with its folder does not stall either.
+	m2, _ := walkModel(t)
+	m2 = onRow(t, m2, "db")
+	m2 = up(m2, key2("d")) // the folder goes
+	m2 = m2.expandAll(true)
+	for i, tl := range m2.visible() {
+		if tl.node.name == "db" {
+			m2.tsel, m2.focus, m2.esel = i, 1, 0
+		}
+	}
+	before := m2.esel
+	m2 = up(m2, key2("d"))
+	if m2.esel == before {
+		t.Errorf("a row already going should not stall the run (%q)", m2.flash)
+	}
+	if !strings.Contains(m2.flash, "already going") {
+		t.Errorf("and it should still say why: %q", m2.flash)
+	}
 }

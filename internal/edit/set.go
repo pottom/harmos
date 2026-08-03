@@ -186,9 +186,19 @@ func reduceTarget(ops []Op) []Op {
 			}
 		case MoveEntry, MoveGroup:
 			m := op
+			if moved != nil {
+				// The destination is the latest one, but "where it was" is where
+				// the *file* has it — the first move's origin. Taking the last
+				// op's Was named a folder the change never came from, because by
+				// then the projection already showed it in the interim one.
+				m.Was, m.Seq = moved.Was, min(moved.Seq, op.Seq)
+			}
 			moved = &m
 		case RenameGroup:
 			r := op
+			if renamed != nil {
+				r.Was, r.Seq = renamed.Was, min(renamed.Seq, op.Seq)
+			}
 			renamed = &r
 		case DeleteEntry, DeleteGroup:
 			d := op

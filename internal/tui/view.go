@@ -150,7 +150,9 @@ func (m Model) View() string {
 	if m.saving {
 		return m.savingView()
 	}
-	if m.edit != editNone {
+	// editInline is the exception: it draws into the row it is renaming, so the
+	// vault view below renders as usual and the field arrives with it.
+	if m.edit != editNone && m.edit != editInline {
 		return m.editorView()
 	}
 	switch m.tab {
@@ -230,6 +232,10 @@ func (m Model) leftPaneW() int {
 	}
 	return min(42, max(18, m.w*2/5))
 }
+
+// listPaneW is the entry pane's outer width: whatever the tree leaves, less the
+// one-column gap between them.
+func (m Model) listPaneW() int { return m.w - m.leftPaneW() - 1 }
 
 // treeRail renders the collapsed folder pane: a thin bordered rail with the source
 // icons stacked, so the tree is clearly still there (reopen with ctrl+b or a
@@ -711,6 +717,15 @@ func (m Model) treeLines(w, rows int) []string {
 		}
 		nameW := max(1, w-badgeW)
 
+		if m.renamingRow(n.id, true) {
+			// The row keeps its indent and its icon — what is being renamed has
+			// to stay recognisable while you rename it — and the name becomes
+			// the field.
+			out = append(out, theme.Faded.Render(indent+icon)+" "+
+				m.inlineField(nameW-dw(indent)-dw(icon)-1))
+			continue
+		}
+
 		chg := changed[n]
 		nameStyle, iconStyle, markerStyle, markerGlyph := m.treeRowStyle(n, chg)
 		marker, markerPlain := "", ""
@@ -749,20 +764,29 @@ func (m Model) treeLines(w, rows int) []string {
 	return out
 }
 
-func (m Model) entryLines(w, rows int) []string {
-	f := m.currentFolder()
-	// No password column: every entry has one, so a column of dots carries no
-	// information. Title + Username by default; when the pane is wide enough (e.g.
-	// the tree is collapsed, or a big terminal) an extra URL column earns its keep.
-	urlCol := w >= 64
-	titleW := max(8, w*13/20)
-	userW := max(6, w-titleW-1)
-	urlW := 0
+// entryCols is the entry table's column layout for a pane of this width.
+//
+// No password column: every entry has one, so a column of dots carries no
+// information. Title + Username by default; when the pane is wide enough (e.g.
+// the tree is collapsed, or a big terminal) an extra URL column earns its keep.
+//
+// Shared, because the inline rename field has to be exactly as wide as the Title
+// cell it replaces, and a second copy of this arithmetic would drift.
+func entryCols(w int) (titleW, userW, urlW int, urlCol bool) {
+	urlCol = w >= 64
+	titleW = max(8, w*13/20)
+	userW = max(6, w-titleW-1)
 	if urlCol {
 		titleW = max(8, w*2/5)
 		userW = max(6, w*3/10)
 		urlW = max(6, w-titleW-userW-2)
 	}
+	return titleW, userW, urlW, urlCol
+}
+
+func (m Model) entryLines(w, rows int) []string {
+	f := m.currentFolder()
+	titleW, userW, urlW, urlCol := entryCols(w)
 	header := pad("Title", titleW) + " " + pad("Username", userW)
 	if urlCol {
 		header += " URL"
@@ -773,7 +797,21 @@ func (m Model) entryLines(w, rows int) []string {
 		return out
 	}
 	states := m.chg.State()
-	doomed := m.doomedPrefixes()
+	doomedFolder := m.doomedFolders()
+	parents := m.folderParents()
+	goingWith := func(groupID string) bool {
+		if doomedFolder[groupID] {
+			return true
+		}
+		seen := map[string]bool{}
+		for p := parents[groupID]; p != "" && !seen[p]; p = parents[p] {
+			seen[p] = true
+			if doomedFolder[p] {
+				return true
+			}
+		}
+		return false
+	}
 	avail := max(1, rows-1)
 	start := windowStart(m.esel, avail, len(f.entries))
 	end := min(start+avail, len(f.entries))
@@ -782,8 +820,20 @@ func (m Model) entryLines(w, rows int) []string {
 		// An entry in a folder staged for deletion is going too, and says so —
 		// without a marker, since nothing was staged against the entry itself.
 		state, staged := states[e.ID], true
-		if state == 0 && atOrUnderDoomedFolder(doomed, e.Source, e.Path) {
+		if state == 0 && goingWith(e.GroupID) {
 			state, staged = edit.Deleted, false
+		}
+		if m.renamingRow(e.ID, false) {
+			// The username and URL stay where they are, so the row still reads
+			// as the entry it is while its title is in hand — and the field
+			// starts in the title column, not in the marker's.
+			line := " " + m.inlineField(titleW-2) + " " +
+				theme.Dimmed.Render(pad(e.Username, userW))
+			if urlCol {
+				line += " " + theme.Dimmed.Render(trunc(e.URL, urlW))
+			}
+			out = append(out, line)
+			continue
 		}
 		if k == m.esel && m.focus == 1 {
 			_, marker := changeStyle(state)
@@ -1200,6 +1250,11 @@ func (m Model) countdown() string {
 func (m Model) hints() string {
 	var full string
 	switch {
+	case m.edit == editInline:
+		// The field is on the row, not in a box with a button, so the footer is
+		// the only place that can say how to finish or get out.
+		return theme.Noted.Render("-- RENAME --") + "  " +
+			theme.Faded.Render(trunc("↵ stage · esc cancel", max(4, m.w-14)))
 	case m.searchMode:
 		full = "type to filter · ↑↓ pick · ↵ apply · esc cancel · field: | - \"…\" · ? syntax"
 	case m.showResults():
@@ -1209,7 +1264,7 @@ func (m Model) hints() string {
 		if m.focus == 1 {
 			full = "e edit · n new · d delete · m move · ^s write · ↵ copy pw · → details · ?"
 		} else {
-			full = "e edit · N folder · d delete · r rename · ^s write · →/⇥ into · / search · ?"
+			full = "r rename · N folder · d delete · m move · ^s write · →/⇥ into · / search · ?"
 		}
 	case m.focus == 1:
 		full = "↑↓ move · ↵ copy pw · → details · c get-cmd · ^b tree · / search · ?"

@@ -378,6 +378,8 @@ func TestEntryTableURLColumn(t *testing.T) {
 	es := []vault.Entry{{Source: "s", Path: "F", Title: "gw", Username: "a", URL: "https://example.test", Password: secret.New("p")}}
 	m := New(es, nil, "", 30*time.Second)
 	m = up(m, tea.WindowSizeMsg{Width: 80, Height: 20})
+	m = opened(m)
+	m.tsel = firstFolderWithEntries(m.roots)
 	m = up(m, tea.KeyMsg{Type: tea.KeyTab}) // into the table
 	if strings.Contains(ansi.Strip(m.View()), "example.test") {
 		t.Error("a narrow entry table should not show the URL column")
@@ -515,7 +517,8 @@ func TestSlashSearchFlow(t *testing.T) {
 // Navigating the tree into a folder's table and opening an entry's details.
 func TestBrowseIntoDetails(t *testing.T) {
 	m := up(testModel(), tea.WindowSizeMsg{Width: 100, Height: 30})
-	// visible tree: personal, Net, work, Infra (roots expanded, leaves collapsed)
+	// The tree arrives closed; open it, as a reader would with z or →.
+	m = m.expandAll(true)
 	// walk down to a folder that holds entries, then into its table
 	var folder *node
 	for i := 0; i < len(m.visible()); i++ {
@@ -721,6 +724,8 @@ func TestScrollbarAndWheel(t *testing.T) {
 		ents = append(ents, vault.Entry{Source: "s", Path: "f", Title: "entry", Password: secret.New("p")})
 	}
 	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 80, Height: 12})
+	m = m.expandAll(true)
+	m.tsel = firstFolderWithEntries(m.roots)
 	m = up(m, tea.KeyMsg{Type: tea.KeyRight}) // into the entry table
 	if m.focus != 1 {
 		t.Fatalf("→ should focus the table, got focus=%d", m.focus)
@@ -753,6 +758,7 @@ func TestMouseClick(t *testing.T) {
 		{Source: "s", Path: "f", Title: "c", Password: secret.New("p")},
 	}
 	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = opened(m)
 	// visible tree = [s (0), f (1)]; panel content starts at Y=2, left pane X<40
 
 	m = up(m, click(5, 2)) // tree row 0 → source "s"
@@ -799,6 +805,7 @@ func TestRightClickCopies(t *testing.T) {
 		{Source: "s", Path: "f", Title: "c", Password: secret.New("p")},
 	}
 	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = opened(m)
 	m = up(m, rclick(50, 5)) // right-click entry "c" (row 2, Y=5)
 	if m.esel != 2 || m.focus != 1 {
 		t.Errorf("right-click should select the entry under it, got esel=%d focus=%d", m.esel, m.focus)
@@ -812,6 +819,7 @@ func TestRightClickCopies(t *testing.T) {
 func TestRightClickInDetail(t *testing.T) {
 	ents := []vault.Entry{{Source: "s", Path: "f", Title: "a", Password: secret.New("p")}}
 	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = opened(m)
 	m = up(m, click(50, 3)) // select
 	m = up(m, click(50, 3)) // open detail
 	if !m.detail {
@@ -830,6 +838,7 @@ func TestDetailClickTreeExits(t *testing.T) {
 		{Source: "s", Path: "f", Title: "b", Password: secret.New("p")},
 	}
 	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = opened(m)
 	m = up(m, click(50, 3)) // select entry
 	m = up(m, click(50, 3)) // double-click → open detail
 	if !m.detail {
@@ -848,7 +857,8 @@ func TestDetailClickTreeExits(t *testing.T) {
 func TestFolderDoubleClick(t *testing.T) {
 	ents := []vault.Entry{{Source: "s", Path: "parent/child", Title: "x", Password: secret.New("p")}}
 	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
-	// visible tree = [s, parent]; "parent" is collapsed so "child" is hidden
+	// open the source one level: visible tree = [s, parent], "child" hidden
+	m = up(selectNode(t, m, "s"), tea.KeyMsg{Type: tea.KeyRight})
 	before := len(m.visible())
 
 	m = up(m, click(5, 3)) // select "parent" (row 1)
@@ -885,6 +895,7 @@ func TestMatchCounts(t *testing.T) {
 		{ID: "s:3", Source: "s", Path: "b", Title: "bar", Password: secret.New("p")},
 	}
 	m := up(New(ents, nil, "", 30*time.Second), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = opened(m)
 	if m.matchCounts() != nil {
 		t.Error("no counts without an active query")
 	}
@@ -1099,10 +1110,10 @@ func selectNode(t *testing.T, m Model, name string) Model {
 // shift+←/→ reach one branch: the selected folder and everything under it.
 func TestExpandSubtree(t *testing.T) {
 	m := treeModel()
-	// Close the other source first, so "did this reach outside the branch?" is a
-	// question the visible rows can answer — source roots start open.
-	m = selectNode(t, m, "personal")
-	m = up(m, tea.KeyMsg{Type: tea.KeyShiftLeft})
+	// Open "work" one level, no further: whatever shift+→ reveals below Infra is
+	// then shift+→'s doing, and "personal" stays shut to show it reached nowhere
+	// near the other source.
+	m = up(selectNode(t, m, "work"), tea.KeyMsg{Type: tea.KeyRight})
 	m = selectNode(t, m, "Infra")
 
 	m = up(m, tea.KeyMsg{Type: tea.KeyShiftRight})
@@ -1146,15 +1157,16 @@ func TestToggleAll(t *testing.T) {
 	m := treeModel()
 	total := nodeCount(m.roots)
 
-	// The roots start open, so the first Z has something to close.
-	m = up(m, key('Z'))
-	if got := len(m.visible()); got != len(m.roots) {
-		t.Errorf("Z should close down to the source roots: %d of %d visible", got, len(m.roots))
-	}
+	// The tree arrives shut, so the first Z is the one that opens it.
 	m = up(m, key('Z'))
 	if got := len(m.visible()); got != total {
-		t.Errorf("Z again should open every folder: %d of %d visible", got, total)
+		t.Errorf("Z should open every folder: %d of %d visible", got, total)
 	}
+	m = up(m, key('Z'))
+	if got := len(m.visible()); got != len(m.roots) {
+		t.Errorf("Z again should close down to the source roots: %d of %d visible", got, len(m.roots))
+	}
+	m = up(m, key('Z')) // open again, for the deep cursor below
 
 	// park deep inside work, in that folder's table, then close everything
 	m = selectNode(t, m, "prod")
@@ -1214,9 +1226,8 @@ func TestToggleSubtreeAtEveryDepth(t *testing.T) {
 // closed with it, so nothing restores the old depth behind the user's back.
 func TestOneLevelAfterFold(t *testing.T) {
 	m := treeModel()
-	m = up(selectNode(t, m, "work"), key('z')) // open → so this folds it shut, descendants included
-	m = up(selectNode(t, m, "work"), key('z')) // open it fully again
-	m = up(selectNode(t, m, "work"), key('z')) // and shut, this time from a deep expansion
+	m = up(selectNode(t, m, "work"), key('z')) // shut → so this opens the whole branch
+	m = up(selectNode(t, m, "work"), key('z')) // and shuts it again, from a deep expansion
 
 	m = up(m, tea.KeyMsg{Type: tea.KeyRight})
 	var names []string
@@ -1267,4 +1278,12 @@ func TestTabFrameIsUniform(t *testing.T) {
 			t.Errorf("%s: %q appears %d times, want 1 (one tab indicator)", spec.label, "Generate", n)
 		}
 	}
+}
+
+// opened is the tree as a reader has it after a moment: everything visible, the
+// cursor on the first folder that holds entries. The tree itself arrives closed.
+func opened(m Model) Model {
+	m = m.expandAll(true)
+	m.tsel = firstFolderWithEntries(m.roots)
+	return m
 }
