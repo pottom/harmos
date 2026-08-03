@@ -49,6 +49,10 @@ func (m Model) openEntryEditor(id string) Model {
 		m.flash = "this source is not open for writing"
 		return m
 	}
+	if why, yes := m.onItsWayOut(id); yes {
+		m.flash = why
+		return m
+	}
 
 	d, staged := m.stagedDraft(id)
 	if !staged {

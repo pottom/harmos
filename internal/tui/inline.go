@@ -29,12 +29,8 @@ func (m Model) openInlineRename(target, name string, isFolder bool) Model {
 		m.flash = "this source is not open for writing"
 		return m
 	}
-	if folder, yes := m.inDoomedFolder(target); yes {
-		m.flash = "that is going with " + lastSegment(folder) + " — undo the deletion first"
-		return m
-	}
-	if _, doomed := m.stagedDeletion(target); doomed {
-		m.flash = "this is staged for deletion — press " + toggleKey(false) + " to keep it first"
+	if why, yes := m.onItsWayOut(target); yes {
+		m.flash = why
 		return m
 	}
 
@@ -58,6 +54,24 @@ func (m Model) openInlineRename(target, name string, isFolder bool) Model {
 	m.inlineBefore = name
 	m.inlineInput = ti
 	return m
+}
+
+// onItsWayOut reports whether a target is staged to stop existing, and how to
+// undo that — either because it is marked itself, or because a folder above it
+// is taking it.
+//
+// Changing something on its way out describes two different futures for one
+// thing, and the review can only draw one of them. Shared by every key that
+// alters a target so they cannot disagree about it: e used to open the editor
+// happily on a row that r refused to rename.
+func (m Model) onItsWayOut(target string) (string, bool) {
+	if folder, yes := m.inDoomedFolder(target); yes {
+		return "that is going with " + lastSegment(folder) + " — undo the deletion first", true
+	}
+	if op, doomed := m.stagedDeletion(target); doomed {
+		return "this is staged for deletion — press " + toggleKey(op.Perm) + " to keep it first", true
+	}
+	return "", false
 }
 
 // inlineWidth is how much room the name has on the row it is being edited in —
