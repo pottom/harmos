@@ -124,3 +124,42 @@ func TestSelectionKeepsTheRowsColour(t *testing.T) {
 		t.Error("a row staged for deletion keeps its state colour under the cursor")
 	}
 }
+
+// The cursor says which row is current; it does not repaint what the row is.
+//
+// A selected row used to be flattened into one string and rendered in a single
+// colour, so the folder icon, the entry count and the staged marker all took the
+// selection's. Each keeps its own now, over the selection's background.
+func TestSelectedRowKeepsItsOwnColours(t *testing.T) {
+	t.Setenv("HARMOS_NERDFONT", "0")
+	lipgloss.SetColorProfile(termenv.TrueColor)
+
+	m, _ := walkModel(t)
+	m = m.expandAll(true)
+	m = up(onRow(t, m, "db"), key2("d")) // a marker to carry
+	m = onRow(t, m, "Infra")             // whose parent is the row under the cursor
+
+	rows := m.treeLines(m.leftPaneW()-2, 10)
+	if len(rows) < 2 {
+		t.Fatalf("expected a few rows, got %d", len(rows))
+	}
+	selected := rows[m.tsel]
+
+	if got := len(foregrounds(selected)); got < 2 {
+		t.Errorf("the selected row renders %d colour(s) — the icon and the marker "+
+			"lost theirs to the selection:\n%q", got, selected)
+	}
+	// And it is a background that marks it, across the whole width.
+	if !strings.Contains(selected, "48;2;") {
+		t.Errorf("the selected row has no background:\n%q", selected)
+	}
+}
+
+// foregrounds is the set of distinct foreground colours in a rendered line.
+func foregrounds(s string) map[string]bool {
+	out := map[string]bool{}
+	for _, m := range regexp.MustCompile(`38;2;[0-9;]+`).FindAllString(s, -1) {
+		out[m] = true
+	}
+	return out
+}
