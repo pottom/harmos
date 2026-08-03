@@ -248,3 +248,44 @@ func TestSourceNamesThatWouldBreakIdentity(t *testing.T) {
 		}
 	}
 }
+
+// Editing a source keeps every key the form does not collect.
+//
+// The block builders write the fields their form has, which is not every field
+// a source can carry: editing or renaming one dropped `writable = true`, so a
+// vault the user had unlocked for editing came back read-only at the next
+// launch with nothing having said so — and until then the running session and
+// the config disagreed about it.
+func TestEditingASourceKeepsWhatTheFormDoesNotAskFor(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	if _, err := WriteKdbxSource(path, "own", "/tmp/own.kdbx", "/tmp/own.key", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetSourceWritable(path, "own", true); err != nil {
+		t.Fatal(err)
+	}
+
+	// Edit it the way the Settings form does: same name, a new path.
+	if _, err := WriteKdbxSource(path, "own", "/tmp/moved.kdbx", "/tmp/own.key", true); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := cfg.Source("own")
+	if p == nil {
+		t.Fatal("the source went missing")
+	}
+	if p.Path != "/tmp/moved.kdbx" {
+		t.Errorf("path = %q, the edit should have landed", p.Path)
+	}
+	if !p.Writable {
+		t.Error("writable = true was dropped by an edit that never asked about it")
+	}
+	if p.Keyfile == "" {
+		t.Error("and the keyfile went with it")
+	}
+}

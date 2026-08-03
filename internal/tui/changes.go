@@ -99,21 +99,28 @@ func (m Model) updateChanges(key string) (Model, tea.Cmd) {
 		// against it too, so say how many rather than surprising anyone.
 		switch cur.kind {
 		case rowChange:
-			if n := len(m.chg.Cascade(cur.seq)); n > 0 {
-				m.flash = fmt.Sprintf("reverted, and %d dependent change(s) with it", n)
+			// The whole row, not one operation of it. A row is what the reader
+			// is pointing at, and the Seq it carries is the *first* of a
+			// collapsed chain — so undoing "the change" left the later halves
+			// staged, the row where it was, and the diff showing a before the
+			// file never held: two edits to a username reverted to
+			// "step-one → step-two".
+			set, dropped := m.chg.RevertTarget(cur.target)
+			m.chg = set
+			if n := len(dropped); n > 0 {
+				m.flash = fmt.Sprintf("reverted, and %s with it", plural(n, "change", "changes"))
 			} else {
 				m.flash = "reverted"
 			}
-			m.chg, _ = m.chg.Revert(cur.seq)
 		case rowFolder:
 			n := 0
 			for _, r := range rows {
 				if r.kind == rowChange && m.groupOf(rows, r) == cur.target {
-					m.chg, _ = m.chg.Revert(r.seq)
+					m.chg, _ = m.chg.RevertTarget(r.target)
 					n++
 				}
 			}
-			m.flash = fmt.Sprintf("reverted %d change(s) here", n)
+			m.flash = fmt.Sprintf("reverted %s here", plural(n, "change", "changes"))
 		}
 		m = m.restage()
 		m.chgSel = clampIndex(m.chgSel, len(selectableRows(m.changeRows(m.contentW()))))

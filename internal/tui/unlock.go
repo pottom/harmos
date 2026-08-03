@@ -219,6 +219,18 @@ func (m Model) submitStep(skip bool) (tea.Model, tea.Cmd) {
 			st.got, st.done = pw, true
 			if st.name == "" {
 				m.ulMaster, m.ulHasM = pw, true
+			} else {
+				// Kept beside the step, not only in it. A failed unlock rebuilds
+				// the step list from what went wrong, and a source that opened
+				// on the first pass has no step in the new one — so its password,
+				// which lived nowhere else, was thrown away. The vault then came
+				// up with that source missing for "no credentials", never asked
+				// again, and only a restart fixed it. The master survived this
+				// only because it was already kept apart.
+				if m.ulGot == nil {
+					m.ulGot = map[string]secret.Secret{}
+				}
+				m.ulGot[st.name] = pw
 			}
 		} else {
 			st.done = false // left unanswered → source will be excluded
@@ -244,6 +256,12 @@ func (m Model) openCmd() tea.Cmd {
 	master := m.ulMaster
 	typed := map[string]secret.Secret{}
 	answered := map[string]bool{}
+	// Everything answered in this session, not only what the current step list
+	// still asks about.
+	for name, pw := range m.ulGot {
+		typed[name] = pw
+		answered[name] = true
+	}
 	for _, s := range m.ulSteps {
 		if s.name != "" && s.done {
 			typed[s.name] = s.got

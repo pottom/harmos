@@ -91,16 +91,17 @@ type Model struct {
 
 	// Unlock phase (locked == true until every source is opened).
 	locked   bool
-	cfg      *config.Config  // the config being unlocked (nil once browsing)
-	ulInput  textinput.Model // masked credential input
-	ulSteps  []ulStep        // remaining credentials to collect
-	ulIdx    int             // current step
-	ulMaster secret.Secret   // the shared master, once resolved
-	ulHasM   bool            // master resolved (env/keyring/typed)
-	ulStats  []srcStat       // per-source status rows for the unlock table
-	ulErr    string          // inline error (wrong password)
-	ulBusy   bool            // an open attempt (Argon2) is running
-	ulSkip   map[string]bool // sources the user chose to skip (esc)
+	cfg      *config.Config           // the config being unlocked (nil once browsing)
+	ulInput  textinput.Model          // masked credential input
+	ulSteps  []ulStep                 // remaining credentials to collect
+	ulIdx    int                      // current step
+	ulGot    map[string]secret.Secret // per-source passwords answered this run
+	ulMaster secret.Secret            // the shared master, once resolved
+	ulHasM   bool                     // master resolved (env/keyring/typed)
+	ulStats  []srcStat                // per-source status rows for the unlock table
+	ulErr    string                   // inline error (wrong password)
+	ulBusy   bool                     // an open attempt (Argon2) is running
+	ulSkip   map[string]bool          // sources the user chose to skip (esc)
 
 	excluded []session.Excluded // sources that could not be opened, shown while browsing
 

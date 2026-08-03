@@ -249,3 +249,67 @@ func TestAConflictHasToBeAnswered(t *testing.T) {
 		t.Error("now the save confirmation should come up")
 	}
 }
+
+// x reverts the row, not one operation of it.
+//
+// A row's Seq is the *first* of a collapsed chain, and x used to Revert that
+// number — so the later halves stayed staged, the row stayed where it was, and
+// the diff showed a "before" the file never held: two edits to a username
+// reverted to "step-one → step-two".
+func TestRevertUndoesTheWholeRow(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		stage func(*testing.T, Model) Model
+	}{
+		{"two edits of one entry", func(t *testing.T, m Model) Model {
+			for _, v := range []string{"step-one", "step-two"} {
+				m = up(onEntry(t, m, "db", "db-prod"), key2("e"))
+				m.editForm = m.editForm.setValue("username", v)
+				m = up(m, tea.KeyMsg{Type: tea.KeyEnter})
+			}
+			return m
+		}},
+		{"two renames of one folder", func(t *testing.T, m Model) Model {
+			for _, v := range []string{"Net-one", "Net-two"} {
+				m = up(onRow(t, m, currentNetName(m)), key2("r"))
+				m.inlineInput.SetValue(v)
+				m = up(m, key2("enter"))
+			}
+			return m
+		}},
+		{"two moves of one entry", func(t *testing.T, m Model) Model {
+			m = up(onEntry(t, m, "db", "db-prod"), key2("m"))
+			m = up(pickDestination(t, m, "Net"), key2("enter"))
+			m = up(onEntry(t, m, "Net", "db-prod"), key2("m"))
+			m = up(pickDestination(t, m, "Infra"), key2("enter"))
+			return m
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m, _ := walkModel(t)
+			m = c.stage(t, m.expandAll(true))
+			if m.dirtyCount() == 0 {
+				t.Fatal("nothing staged")
+			}
+
+			ch := up(m.switchTab(tabChanges), key2("x"))
+			if n := ch.dirtyCount(); n != 0 {
+				t.Errorf("x left %d change(s) staged: %v", n, ch.chg.Effective())
+			}
+			if !strings.Contains(ch.flash, "reverted") {
+				t.Errorf("flash = %q", ch.flash)
+			}
+		})
+	}
+}
+
+// currentNetName is whatever the Net folder is called right now, since the
+// rename cases keep changing it.
+func currentNetName(m Model) string {
+	for _, n := range rowNames(m) {
+		if strings.HasPrefix(n, "Net") {
+			return n
+		}
+	}
+	return "Net"
+}

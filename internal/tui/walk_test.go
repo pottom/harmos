@@ -690,7 +690,7 @@ func TestRevertingAFolderTakesItsStagedContents(t *testing.T) {
 	if c.dirtyCount() != 0 {
 		t.Errorf("undoing the folder should take the entry with it, %d left", c.dirtyCount())
 	}
-	if !strings.Contains(c.flash, "dependent") {
+	if !strings.Contains(c.flash, "with it") {
 		t.Errorf("and say how many went with it: %q", c.flash)
 	}
 }
