@@ -31,7 +31,7 @@ func (m Model) handleClick(x, y int) (tea.Model, tea.Cmd) {
 		return m.handleChangesClick(y, dbl)
 	}
 	if m.tab == tabSettings {
-		return m, nil // keyboard-driven for now
+		return m.handleSettingsClick(x, y)
 	}
 
 	panelsH := max(3, m.h-3)

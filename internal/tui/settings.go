@@ -365,3 +365,92 @@ func (m Model) removeConfirmView() string {
 	body := box("Remove source", fmt.Sprintf("%q", p.Name), lines, m.w, max(3, m.h-1), true)
 	return body + "\n" + m.footer(theme.Faded.Render("↑↓ move · space toggle · ↵ apply · esc cancel"))
 }
+
+// settingsLeftW is the width of the category pane. Shared by the layout and the
+// mouse hit-test so they cannot disagree about where the panes divide.
+const settingsLeftW = 22
+
+// settingsRowAt maps a content row of the right pane to the cursor index it
+// belongs to.
+//
+// Every pane starts its rows at a different offset — the sources table spends a
+// line on its column headings, the preferences pane an empty one, the theme
+// list starts straight away — and this is the one place that knows it. A second
+// copy in the mouse code would drift from the renderers, which is exactly the
+// bug the tab hit-test was fixed for once already. TestSettingsRowAtMatchesTheRender
+// walks the rendered lines and holds the two together.
+func settingsRowAt(cat, row, count int) (int, bool) {
+	var first int
+	switch cat {
+	case catSources:
+		first = 1 // the NAME/TYPE/LOCATION heading
+	case catPrefs:
+		first = 1 // a blank line above the two settings
+	case catTheme:
+		first = 0
+	default:
+		return 0, false // icons is one toggle, with no row to land on
+	}
+	idx := row - first
+	if idx < 0 || idx >= count {
+		return 0, false
+	}
+	return idx, true
+}
+
+// settingsRowCount is how many rows the right pane's cursor can stop on.
+func (m Model) settingsRowCount() int {
+	switch m.setCat {
+	case catSources:
+		return len(m.sources())
+	case catTheme:
+		return len(theme.Names())
+	case catPrefs:
+		return 2
+	}
+	return 0
+}
+
+// handleSettingsClick routes a left-click on the Settings tab.
+//
+// The categories are a list and the right pane is a list; both answer a click
+// the way every other list in the program does. The forms and prompts this tab
+// raises own the whole screen, so a click through one reaches nothing.
+func (m Model) handleSettingsClick(x, y int) (tea.Model, tea.Cmd) {
+	if m.setMode != setList {
+		return m, nil
+	}
+	// The header takes row 0 and the panel's top border row 1, as in
+	// settingsView; the content starts under them.
+	panelsH := max(3, m.h-3)
+	if y < 2 || y > panelsH-1 {
+		return m, nil
+	}
+	row := y - 2
+
+	if x < settingsLeftW {
+		if row < len(settingsCats) {
+			m.focus, m.setCat, m.setStatus = 0, row, ""
+		}
+		return m, nil
+	}
+
+	m.focus = 1
+	idx, ok := settingsRowAt(m.setCat, row, m.settingsRowCount())
+	if !ok {
+		return m, nil
+	}
+	m.setStatus = ""
+	switch m.setCat {
+	case catSources:
+		m.setSel = idx
+	case catTheme:
+		// The theme pane previews as the cursor moves, so landing on a row has
+		// to preview too — otherwise a click would select a theme the screen
+		// does not show.
+		return m.applyThemeAt(idx), nil
+	case catPrefs:
+		m.prefSel = idx
+	}
+	return m, nil
+}
