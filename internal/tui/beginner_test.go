@@ -1,8 +1,11 @@
 package tui
 
 import (
+	"github.com/pottom/harmos/internal/secret"
+	"github.com/pottom/harmos/internal/vault"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -114,5 +117,52 @@ func TestTheHelpFrameDoesNotJump(t *testing.T) {
 			t.Errorf("%dx%d: the vault's frame ends at row %d and the help's at %d",
 				size[0], size[1], vault, help)
 		}
+	}
+}
+
+// A copy that did nothing said nothing, so it was indistinguishable from one
+// that worked — and the reader pasted whatever the clipboard held before.
+func TestACopyThatFoundNothingSaysSo(t *testing.T) {
+	ents := []vault.Entry{{ID: "s:1", GroupID: "s:g:1", Source: "s", Path: "f", Title: "bare",
+		Password: secret.New("p")}} // no username, no url
+	m := up(New(ents, []vault.Folder{{ID: "s:g:1", Source: "s", Path: "f", Name: "f"}}, "", 30*time.Second),
+		tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = m.expandAll(true)
+	m.tsel = firstFolderWithEntries(m.roots)
+	m = up(m, tea.KeyMsg{Type: tea.KeyTab})
+
+	for _, k := range []tea.KeyMsg{{Type: tea.KeyCtrlU}, {Type: tea.KeyCtrlO}} {
+		mm := up(m, k)
+		if mm.remaining != 0 {
+			t.Errorf("%v started a countdown for a field that is not there", k)
+		}
+		if mm.flash == "" {
+			t.Errorf("%v said nothing at all", k)
+		}
+	}
+}
+
+// ctrl+t is offered only for a TOTP that can be read. The footer promised it for
+// any non-empty otp field while the detail drew no row and the key did nothing,
+// so a malformed seed looked like harmos having lost the TOTP.
+func TestTOTPIsOnlyOfferedWhenItCanBeRead(t *testing.T) {
+	mk := func(otp string) Model {
+		ents := []vault.Entry{{ID: "s:1", GroupID: "s:g:1", Source: "s", Path: "f",
+			Title: "e", Password: secret.New("p"), TOTP: otp}}
+		m := up(New(ents, []vault.Folder{{ID: "s:g:1", Source: "s", Path: "f", Name: "f"}}, "", 30*time.Second),
+			tea.WindowSizeMsg{Width: 100, Height: 30})
+		m = m.expandAll(true)
+		m.tsel = firstFolderWithEntries(m.roots)
+		m = up(m, tea.KeyMsg{Type: tea.KeyTab})
+		return up(m, tea.KeyMsg{Type: tea.KeyRight})
+	}
+
+	good := ansi.Strip(mk("otpauth://totp/x?secret=JBSWY3DPEHPK3PXP").View())
+	if !strings.Contains(good, "ctrl+t") {
+		t.Errorf("a readable TOTP should offer the key:\n%s", good)
+	}
+	bad := ansi.Strip(mk("this is not an otpauth uri").View())
+	if strings.Contains(bad, "ctrl+t") {
+		t.Errorf("an unreadable one must not:\n%s", bad)
 	}
 }

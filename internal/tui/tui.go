@@ -545,10 +545,16 @@ func (m *Model) copySel(what string) tea.Cmd {
 // clear countdown. what labels it in the countdown line, provenance says where it
 // came from. Shared by the vault copy and the generator.
 func (m *Model) copyString(val, what, provenance string) tea.Cmd {
+	// A copy that did nothing and a copy that worked were indistinguishable:
+	// no countdown, no message, nothing. ^u on an entry with no username is a
+	// perfectly ordinary keystroke, and silence let a reader paste whatever the
+	// clipboard held before.
 	if val == "" {
+		m.flash = "no " + what + " on this entry"
 		return nil
 	}
 	if err := clip.Copy([]byte(val)); err != nil {
+		m.flash = "could not reach the clipboard: " + err.Error()
 		return nil
 	}
 	m.copied = provenance
@@ -570,6 +576,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
+		// The panes clamp at draw time, so the screen was always right — but the
+		// stored offsets were not, and they are what the keys move. Scroll to the
+		// bottom of a long note, grow the window, and the next seventy presses
+		// of ↑ changed nothing.
+		_, vis := m.detailViewport()
+		m.detailScroll = clampScroll(m.detailScroll, len(m.detailLinesForScroll()), vis)
+		m.helpScroll = clampScroll(m.helpScroll, m.helpTotal(), max(1, max(3, m.h-3)-2))
+		m.chgScroll = clampScroll(m.chgScroll, len(m.changeRows(m.contentW())), m.changesVisibleRows())
 		return m, nil
 
 	case tickMsg:
@@ -670,7 +684,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key == "ctrl+c" {
 			// Quitting with staged changes throws them away, and ctrl+c is the
 			// most reflexive way to leave — so it asks too, not just q.
-			if m.dirtyCount() > 0 && !m.quitGuard && !m.saving {
+			// While a save is running, ctrl+c used to quit — abandoning the
+			// goroutine mid-write. The atomic rename keeps the vault safe, but
+			// the staged set goes with the process and a temp file can be left
+			// behind. Keys are ignored during a save; this is one of them.
+			if m.saving {
+				return m, nil
+			}
+			if m.dirtyCount() > 0 && !m.quitGuard {
 				m.quitGuard = true
 				m.confirmSel = 0 // Save and quit leads; discarding is the danger
 				return m, nil

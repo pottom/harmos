@@ -312,9 +312,10 @@ func spread(left, right string, w int) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-// modal renders a centered, content-sized panel with a hint beneath it — the
-// shared superfile-style frame for the save-password and sync screens (echoing
-// the unlock screen's look).
+// modal centres a content-sized panel with a hint beneath it. The hint is
+// truncated like everything else: it used to be joined and placed untouched, so
+// the attachment picker's 51-cell line made every row 52 columns on the 41-wide
+// terminal the program declares as its minimum.
 func (m Model) modal(title, info string, lines []string, hint string) string {
 	inner := 0
 	for _, ln := range lines {
@@ -348,7 +349,8 @@ func (m Model) modal(title, info string, lines []string, hint string) string {
 	panel := box(title, info, lines, boxW, len(lines)+2, true)
 	block := panel
 	if hint != "" {
-		block = lipgloss.JoinVertical(lipgloss.Center, panel, "", theme.Faded.Render(hint))
+		block = lipgloss.JoinVertical(lipgloss.Center, panel, "",
+			theme.Faded.Render(trunc(hint, max(4, m.w-2))))
 	}
 	return lipgloss.Place(max(1, m.w), max(1, m.h), lipgloss.Center, lipgloss.Center, block)
 }
@@ -380,7 +382,11 @@ func (m Model) vaultBody() string {
 				parts = append(parts, "↑↓ scroll")
 			}
 			parts = append(parts, "↵ copy password")
-			if e.TOTP != "" {
+			// Only when it can actually be read. The footer promised the key
+			// for any non-empty otp field, while the detail drew no row and the
+			// key did nothing — so a malformed seed looked like harmos losing
+			// the TOTP rather than declining to guess at it.
+			if _, err := otp.Parse(e.TOTP); err == nil {
 				parts = append(parts, "ctrl+t copy totp")
 			}
 			if len(e.Files) > 0 {
@@ -700,7 +706,10 @@ func (m Model) searchLine() string {
 	if m.showResults() {
 		right = theme.Dimmed.Render(plural(len(m.results), "match", "matches"))
 	}
-	if n := len(m.excluded); n > 0 && !m.showResults() {
+	// Shown while searching too. It used to be replaced by the match count —
+	// exactly when "nothing found" is the wrong conclusion to draw, because a
+	// whole source is missing from what was searched.
+	if n := len(m.excluded); n > 0 {
 		right += theme.Bad.Render(fmt.Sprintf("  ⚠ %d unavailable", n))
 	}
 	// The search box takes whatever the brand and the badge leave. It used to
@@ -1622,4 +1631,15 @@ func paintRow(segs []rowSeg, tail string, w int, back lipgloss.TerminalColor) st
 		b.WriteString(lipgloss.NewStyle().Background(back).Render(strings.Repeat(" ", w-used)))
 	}
 	return b.String()
+}
+
+// detailLinesForScroll is the current entry's detail height, for clamping the
+// scroll offset when the terminal changes size.
+func (m Model) detailLinesForScroll() []string {
+	e := m.selEntry()
+	if e == nil {
+		return nil
+	}
+	w, _ := m.detailViewport()
+	return m.detailLines(e, w)
 }

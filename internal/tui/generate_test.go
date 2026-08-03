@@ -177,7 +177,7 @@ func TestGenerateMouseAndColor(t *testing.T) {
 		t.Fatal("expected a recent list after rerolling")
 	}
 	// order[0] is the current hero; click the second row to pick a different one.
-	m = up(m, click(genLeftW+5, 2+listStart+1))
+	m = up(m, click(m.genLeftW()+5, 2+listStart+1))
 	if m.focus != 1 || m.genList[m.genSel] == heroBefore {
 		t.Errorf("clicking a recent entry should promote it (hero was %q, now %q)", heroBefore, m.genList[m.genSel])
 	}
